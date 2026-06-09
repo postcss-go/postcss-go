@@ -51,3 +51,40 @@ func TestNewInputWithoutFile(t *testing.T) {
 		t.Fatalf("unexpected default from: %q", got)
 	}
 }
+
+func TestNewInputWithSourceMap(t *testing.T) {
+	const sourceMap = `{
+		"version": 3,
+		"file": "generated.css",
+		"sourceRoot": "/src",
+		"sources": ["original.css"],
+		"sourcesContent": [".orig {\n  color: red;\n}"],
+		"names": [],
+		"mappings": "AAAA"
+	}`
+
+	input, err := NewInput(".gen{}", Options{
+		From:         "generated.css",
+		SourceMapURL: "generated.css.map",
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("new input with sourcemap failed: %v", err)
+	}
+
+	errObj := input.Error("boom", 1, 1, "demo")
+	if errObj.File != "/src/original.css" {
+		t.Fatalf("expected mapped file, got %q", errObj.File)
+	}
+	if errObj.Line != 1 || errObj.Column != 1 {
+		t.Fatalf("expected mapped location 1:1, got %d:%d", errObj.Line, errObj.Column)
+	}
+	if !strings.Contains(errObj.Source, ".orig") {
+		t.Fatalf("expected original source content, got %q", errObj.Source)
+	}
+
+	loc := input.Location(Position{Line: 1, Column: 1, Offset: 0}, Position{Line: 1, Column: 2, Offset: 1})
+	if loc.Input == nil || loc.Input.File != "/src/original.css" {
+		t.Fatalf("expected mapped location input file, got %#v", loc.Input)
+	}
+}

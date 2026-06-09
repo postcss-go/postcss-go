@@ -23,17 +23,31 @@ export type {
 export async function parse(
   css: string,
   options: ProcessOptions = {},
-  service: PostcssGoService = new NodePostcssGoService(),
+  service?: PostcssGoService,
 ): Promise<ParseResult> {
-  return service.parse(css, options);
+  const activeService = service ?? new NodePostcssGoService();
+  try {
+    return await activeService.parse(css, options);
+  } finally {
+    if (!service) {
+      await activeService.close();
+    }
+  }
 }
 
 export async function process(
   css: string,
   options: ProcessOptions = {},
-  service: PostcssGoService = new NodePostcssGoService(),
+  service?: PostcssGoService,
 ): Promise<ProcessResult> {
-  return service.process(css, options);
+  const activeService = service ?? new NodePostcssGoService();
+  try {
+    return await activeService.process(css, options);
+  } finally {
+    if (!service) {
+      await activeService.close();
+    }
+  }
 }
 
 export function createNodeService(options: NodePostcssGoServiceOptions = {}): NodePostcssGoService {

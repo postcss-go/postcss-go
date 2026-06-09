@@ -1,42 +1,43 @@
 # postcss-go
 
-`postcss-go` 的目标是把 [eryue0220/postcss](https://github.com/eryue0220/postcss) 的核心架构迁到 Go，并用 [eryue0220/rslint](https://github.com/eryue0220/rslint) 那种清晰的分层组织仓库。
+The goal of `postcss-go` is to port the core architecture of [eryue0220/postcss](https://github.com/eryue0220/postcss) to Go, and organize the repository with the same clear layering as [eryue0220/rslint](https://github.com/eryue0220/rslint).
 
-当前阶段已经具备这条主链路：
+At the current stage, the main pipeline is in place:
 
-1. `tokenizer` 把 CSS 变成 token stream
-2. `parser` 把 token stream 变成 AST
-3. `processor` 用 visitor 风格插件遍历并修改 AST
-4. `stringifier` 把 AST 输出回 CSS
+1. `tokenizer` turns CSS into a token stream
+2. `parser` turns the token stream into an AST
+3. `processor` walks and mutates the AST with visitor-style plugins
+4. `stringifier` outputs the AST back to CSS
 
-## 仓库结构
+## Repository layout
 
-- `internal/postcss`：Go 侧 facade，聚合 AST / parser / processor / stringifier
-- `internal/ast`：节点、容器、遍历
-- `internal/tokenizer`：tokenizer
-- `internal/parser`：parser
-- `internal/processor`：插件 visitor 管线
-- `internal/result`：结果和 warning
-- `internal/stringifier`：CSS 输出
-- `packages/postcss-go`：Node.js / TypeScript 互操作入口
-- `packages/postcss-go-wasm`：浏览器 / worker / wasm 入口骨架
-- `docs/architecture.md`：架构说明
+- `internal/postcss`: Go-side facade that aggregates AST / parser / processor / stringifier
+- `internal/ast`: nodes, containers, traversal
+- `internal/tokenizer`: tokenizer
+- `internal/parser`: parser
+- `internal/processor`: plugin visitor pipeline
+- `internal/result`: results and warnings
+- `internal/stringifier`: CSS output
+- `packages/postcss-go`: Node.js / TypeScript interop entry point
+- `packages/postcss-go-wasm`: browser / worker / wasm entry skeleton
+- `docs/architecture.md`: architecture overview
 
 ## Workspace
 
-仓库现在使用 `pnpm` 管理前端包工作区：
+The repository uses `pnpm` to manage the frontend package workspace:
 
 ```bash
 pnpm install
 pnpm build
 pnpm check
+pnpm check:all
 ```
 
-当前 `packages/` 先提供包边界和类型入口，Go bridge / wasm runtime 还在后续实现中。
+At the moment, `packages/` provides package boundaries and type entry points; the Go bridge / wasm runtime are still to be implemented.
 
-Go 侧已经进一步收敛到 `internal/` 下，不再保留根级公开 facade；仓库当前更偏向“内部 Go 引擎 + JS/TS packages 对外接口”的组织方式。
+The Go side has been consolidated under `internal/` with no root-level public facade; the repository is organized around an internal Go engine with JS/TS packages as the external interface.
 
-## 示例
+## Example
 
 ```go
 package main
@@ -73,7 +74,7 @@ func main() {
 
 ## Visitor Hooks
 
-目前支持这些 hook：
+Currently supported hooks:
 
 - `Once`
 - `OnceExit`
@@ -83,18 +84,50 @@ func main() {
 - `Declaration` / `DeclarationExit`
 - `Comment` / `CommentExit`
 
-## 当前边界
+## Current limitations
 
-这一版已经比最初的简化实现更接近 upstream 架构，但还没有完全移植：
+This version is closer to the upstream architecture than the initial simplified implementation, but the port is not complete:
 
-- 还没有 `lazy-result` 和 async plugin
-- 还没有 `raws`、source map、保真格式输出
-- JS/TS `packages/` 还只是互操作骨架，尚未真正桥接 Go 二进制或 wasm runtime
-- parser / tokenizer 还需要继续向 upstream 行为对齐
+- No `lazy-result` or async plugins yet
+- No `raws`, source maps, or faithful formatting output yet
+- JS/TS `packages/` are still interop skeletons and do not yet bridge to the Go binary or wasm runtime
+- parser / tokenizer still need to be aligned further with upstream behavior
 
-## 验证
+## Verification
 
 ```bash
 go test ./...
 pnpm check
+pnpm check:all
 ```
+
+Upstream PostCSS compatibility (Phases 1–3):
+
+```bash
+pnpm check:upstream      # fail if vendor/postcss is stale
+pnpm sync:upstream       # refresh vendor/postcss from postcss/postcss@main
+pnpm test:upstream       # run full vendored PostCSS unit suite (652 tests)
+pnpm test:upstream:go    # run Go compat tokenizer subset
+```
+
+See [docs/upstream-tests.md](docs/upstream-tests.md) for the full upstream test strategy.
+
+## Benchmark vs postcss
+
+Compare core parse/stringify/process performance against upstream [postcss/postcss](https://github.com/postcss/postcss):
+
+```bash
+pnpm install
+pnpm bench
+```
+
+Benchmarks cover synthetic scaling workloads and real-world CSS fixtures (modern-normalize, Tailwind preflight, animate.css, Bootstrap). See [docs/benchmark.md](docs/benchmark.md) for workload details and individual commands.
+
+GitHub Actions CI runs four lanes:
+
+- Upstream snapshot: verify `vendor/postcss/` matches `postcss/postcss@main`
+- Upstream tests: full vendored PostCSS unit suite plus Go compat tokenizer subset
+- Node / TypeScript: `prettier --check`, `eslint`, workspace typecheck/tests, and `pnpm build`
+- Go: `gofmt` verification, `go vet ./...`, and `go test ./...`
+
+A scheduled workflow (`.github/workflows/upstream-postcss-sync.yml`) opens a PR when upstream tests change.

@@ -1,0 +1,37 @@
+[
+  {
+    "id": "ModernNormalize",
+    "file": "css/modern-normalize.css",
+    "source": "https://github.com/sindresorhus/modern-normalize",
+    "version": "3.0.1",
+    "license": "MIT"
+  },
+  {
+    "id": "TailwindPreflight",
+    "file": "css/tailwind-preflight.css",
+    "source": "https://github.com/tailwindlabs/tailwindcss",
+    "version": "3.4.17",
+    "license": "MIT"
+  },
+  {
+    "id": "AnimateMin",
+    "file": "css/animate.min.css",
+    "source": "https://github.com/animate-css/animate.css",
+    "version": "4.1.1",
+    "license": "MIT"
+  },
+  {
+    "id": "Bootstrap",
+    "file": "css/bootstrap.css",
+    "source": "https://github.com/twbs/bootstrap",
+    "version": "5.3.3",
+    "license": "MIT"
+  },
+  {
+    "id": "BootstrapMin",
+    "file": "css/bootstrap.min.css",
+    "source": "https://github.com/twbs/bootstrap",
+    "version": "5.3.3",
+    "license": "MIT"
+  }
+]

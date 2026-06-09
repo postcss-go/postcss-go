@@ -1,6 +1,7 @@
 package jsbridge
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -55,5 +56,35 @@ func TestBridgeErrors(t *testing.T) {
 
 	if _, err := FromDTO(&NodeDTO{Type: "mystery"}); err == nil {
 		t.Fatal("expected unknown dto type to fail")
+	}
+}
+
+func TestRPCMethods(t *testing.T) {
+	parseRes, err := ParseRPC(context.Background(), ParseParams{
+		CSS: ".a { color: red; }",
+		Options: RequestOpts{
+			From: "demo.css",
+		},
+	})
+	if err != nil || parseRes == nil || parseRes.Root == nil {
+		t.Fatalf("parse rpc failed: res=%#v err=%v", parseRes, err)
+	}
+
+	processRes, err := ProcessRPC(context.Background(), ProcessParams{
+		CSS: ".a { color: red; }",
+	})
+	if err != nil || processRes == nil || !strings.Contains(processRes.CSS, "color: red;") {
+		t.Fatalf("process rpc failed: res=%#v err=%v", processRes, err)
+	}
+
+	stringifyRes, err := StringifyRPC(context.Background(), StringifyParams{
+		AST: parseRes.Root,
+	})
+	if err != nil || stringifyRes == nil || !strings.Contains(stringifyRes.CSS, ".a") {
+		t.Fatalf("stringify rpc failed: res=%#v err=%v", stringifyRes, err)
+	}
+
+	if _, err := StringifyRPC(context.Background(), StringifyParams{}); err == nil {
+		t.Fatal("expected stringify rpc without ast to fail")
 	}
 }

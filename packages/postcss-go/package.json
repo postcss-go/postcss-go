@@ -1,6 +1,6 @@
 {
   "name": "@postcss-go/core",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Node.js API surface for the postcss-go engine.",
   "type": "module",
   "main": "./dist/index.js",

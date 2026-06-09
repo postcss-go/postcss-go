@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/csserrors"
 )
 
@@ -21,16 +22,20 @@ type Location struct {
 }
 
 type Options struct {
-	From     string
-	Document string
+	From         string
+	Document     string
+	SourceMapURL string
+	SourceMap    []byte
 }
 
 type Input struct {
-	CSS      string
-	Document string
-	File     string
-	HasBOM   bool
-	lineIdx  []int
+	CSS         string
+	Document    string
+	File        string
+	HasBOM      bool
+	lineIdx     []int
+	consumer    *sourcemap.Consumer
+	originCache map[string]*Input
 }
 
 func NewInput(css string, opts Options) (*Input, error) {
@@ -58,8 +63,18 @@ func NewInput(css string, opts Options) (*Input, error) {
 			input.File = abs
 		}
 	}
-	input.buildLineIndex()
+	if len(opts.SourceMap) > 0 {
+		consumer, err := sourcemap.Parse(opts.SourceMapURL, opts.SourceMap)
+		if err != nil {
+			return nil, err
+		}
+		input.consumer = consumer
+	}
 	return input, nil
+}
+
+func (i *Input) TracksSource() bool {
+	return i.File != "" || i.consumer != nil
 }
 
 func (i *Input) From() string {
@@ -70,6 +85,9 @@ func (i *Input) From() string {
 }
 
 func (i *Input) Error(message string, line, column int, plugin string) *csserrors.SyntaxError {
+	if source, mappedInput, mappedLine, mappedColumn, ok := i.origin(line, column); ok {
+		return csserrors.New(message, mappedLine, mappedColumn, source, mappedInput.File, plugin)
+	}
 	return csserrors.New(message, line, column, i.CSS, i.File, plugin)
 }
 
@@ -79,6 +97,7 @@ func (i *Input) ErrorAtOffset(message string, offset int, plugin string) *csserr
 }
 
 func (i *Input) FromOffset(offset int) Position {
+	i.ensureLineIndex()
 	if offset < 0 {
 		offset = 0
 	}
@@ -104,6 +123,7 @@ func (i *Input) FromOffset(offset int) Position {
 }
 
 func (i *Input) FromLineAndColumn(line, column int) (int, error) {
+	i.ensureLineIndex()
 	if line <= 0 || line > len(i.lineIdx) {
 		return 0, fmt.Errorf("line out of range: %d", line)
 	}
@@ -122,6 +142,63 @@ func (i *Input) buildLineIndex() {
 	}
 }
 
+func (i *Input) ensureLineIndex() {
+	if i.lineIdx != nil {
+		return
+	}
+	i.buildLineIndex()
+}
+
 func (i *Input) String() string {
 	return strings.TrimSpace(i.CSS)
+}
+
+func (i *Input) Location(start, end Position) *Location {
+	startInput := i
+	endInput := i
+	startPos := start
+	endPos := end
+
+	if _, mappedInput, line, column, ok := i.origin(start.Line, start.Column); ok {
+		startInput = mappedInput
+		startPos = Position{Line: line, Column: column, Offset: start.Offset}
+	}
+	if _, mappedInput, line, column, ok := i.origin(end.Line, end.Column); ok {
+		endInput = mappedInput
+		endPos = Position{Line: line, Column: column, Offset: end.Offset}
+	}
+	if startInput == endInput {
+		return &Location{Start: startPos, End: endPos, Input: startInput}
+	}
+	return &Location{Start: start, End: end, Input: i}
+}
+
+func (i *Input) origin(line, column int) (string, *Input, int, int, bool) {
+	if i.consumer == nil {
+		return "", nil, 0, 0, false
+	}
+	file, _, originalLine, originalColumn, ok := i.consumer.Source(line, column)
+	if !ok {
+		return "", nil, 0, 0, false
+	}
+	content := i.consumer.SourceContent(file)
+	return content, i.cachedOriginInput(file, content), originalLine, originalColumn + 1, true
+}
+
+func (i *Input) cachedOriginInput(file, content string) *Input {
+	if i.originCache == nil {
+		i.originCache = map[string]*Input{}
+	}
+	key := file + "\x00" + content
+	if input, ok := i.originCache[key]; ok {
+		return input
+	}
+	input := &Input{
+		CSS:      content,
+		Document: content,
+		File:     file,
+	}
+	input.buildLineIndex()
+	i.originCache[key] = input
+	return input
 }

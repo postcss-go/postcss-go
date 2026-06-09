@@ -10,10 +10,12 @@ import (
 )
 
 type Parser struct {
-	input string
-	tok   *tokenizer.Tokenizer
-	root  *ast.Root
-	src   *source.Input
+	input       string
+	tok         *tokenizer.Tokenizer
+	root        *ast.Root
+	src         *source.Input
+	stmtBuf     []tokenizer.Token
+	trackSource bool
 }
 
 func Parse(css string, opts source.Options) (*ast.Root, error) {
@@ -22,20 +24,20 @@ func Parse(css string, opts source.Options) (*ast.Root, error) {
 		return nil, err
 	}
 	p := &Parser{
-		input: css,
-		tok:   tokenizer.New(css),
-		root:  ast.NewRoot(),
-		src:   input,
+		input:       css,
+		tok:         tokenizer.New(css),
+		root:        ast.NewRoot(),
+		src:         input,
+		stmtBuf:     make([]tokenizer.Token, 0, 32),
+		trackSource: input.TracksSource(),
 	}
 	if err := p.parseInto(p.root, false); err != nil {
 		return nil, err
 	}
 	p.root.SetRange(ast.SourceRange{Start: 0, End: len(css)})
-	p.root.SetSource(&source.Location{
-		Start: input.FromOffset(0),
-		End:   input.FromOffset(len(css)),
-		Input: input,
-	})
+	if p.trackSource {
+		p.root.SetSource(input.Location(input.FromOffset(0), input.FromOffset(len(css))))
+	}
 	return p.root, nil
 }
 
@@ -65,7 +67,7 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 }
 
 func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, error) {
-	var tokens []tokenizer.Token
+	tokens := p.stmtBuf[:0]
 	depth := 0
 
 	for !p.tok.EOF() {
@@ -77,12 +79,15 @@ func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, er
 		switch token.Kind {
 		case "{":
 			if depth == 0 {
-				return append(tokens, token), false, nil
+				tokens = append(tokens, token)
+				p.stmtBuf = tokens
+				return tokens, false, nil
 			}
 			depth++
 		case "}":
 			if depth == 0 {
 				if stopOnBrace {
+					p.stmtBuf = tokens
 					return tokens, true, nil
 				}
 				return nil, false, p.syntaxError("unexpected closing brace", token.Start)
@@ -90,13 +95,16 @@ func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, er
 			depth--
 		case ";":
 			if depth == 0 {
-				return append(tokens, token), false, nil
+				tokens = append(tokens, token)
+				p.stmtBuf = tokens
+				return tokens, false, nil
 			}
 		}
 
 		tokens = append(tokens, token)
 	}
 
+	p.stmtBuf = tokens
 	return tokens, false, nil
 }
 
@@ -156,37 +164,38 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 }
 
 func (p *Parser) makeRule(tokens []tokenizer.Token) *ast.Rule {
-	selector := tokensText(tokens)
+	selector := p.tokensText(tokens)
 	node := ast.NewRule(strings.TrimSpace(selector))
 	node.SetRange(ast.SourceRange{Start: tokens[0].Start, End: tokens[len(tokens)-1].End})
-	node.SetSource(p.location(tokens[0].Start, tokens[len(tokens)-1].End+1))
+	p.attachSource(node, tokens[0].Start, tokens[len(tokens)-1].End+1)
 	return node
 }
 
 func (p *Parser) makeAtRule(tokens []tokenizer.Token) *ast.AtRule {
-	name := strings.TrimPrefix(tokens[0].Value, "@")
-	params := strings.TrimSpace(tokensText(tokens[1:]))
+	name := strings.TrimPrefix(tokens[0].Text(p.input), "@")
+	params := strings.TrimSpace(p.tokensText(tokens[1:]))
 	node := ast.NewAtRule(name, params)
 	node.SetRange(ast.SourceRange{Start: tokens[0].Start, End: tokens[len(tokens)-1].End})
-	node.SetSource(p.location(tokens[0].Start, tokens[len(tokens)-1].End+1))
+	p.attachSource(node, tokens[0].Start, tokens[len(tokens)-1].End+1)
 	return node
 }
 
 func (p *Parser) makeComment(token tokenizer.Token) *ast.Comment {
-	text := strings.TrimSuffix(strings.TrimPrefix(token.Value, "/*"), "*/")
+	raw := token.Text(p.input)
+	text := strings.TrimSuffix(strings.TrimPrefix(raw, "/*"), "*/")
 	node := ast.NewComment(strings.TrimSpace(text))
 	node.SetRange(ast.SourceRange{Start: token.Start, End: token.End})
-	node.SetSource(p.location(token.Start, token.End+1))
+	p.attachSource(node, token.Start, token.End+1)
 	return node
 }
 
 func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, error) {
 	colon := topLevelColon(tokens)
 	if colon < 0 {
-		return nil, p.syntaxError(fmt.Sprintf("expected declaration, got %q", tokensText(tokens)), tokens[0].Start)
+		return nil, p.syntaxError(fmt.Sprintf("expected declaration, got %q", p.tokensText(tokens)), tokens[0].Start)
 	}
-	prop := strings.TrimSpace(tokensText(tokens[:colon]))
-	value := strings.TrimSpace(tokensText(tokens[colon+1:]))
+	prop := strings.TrimSpace(p.tokensText(tokens[:colon]))
+	value := strings.TrimSpace(p.tokensText(tokens[colon+1:]))
 	if prop == "" {
 		return nil, p.syntaxError("empty declaration property", tokens[0].Start)
 	}
@@ -199,8 +208,31 @@ func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, er
 	node := ast.NewDeclaration(prop, value)
 	node.Important = important
 	node.SetRange(ast.SourceRange{Start: tokens[0].Start, End: tokens[len(tokens)-1].End})
-	node.SetSource(p.location(tokens[0].Start, tokens[len(tokens)-1].End+1))
+	p.attachSource(node, tokens[0].Start, tokens[len(tokens)-1].End+1)
 	return node, nil
+}
+
+func (p *Parser) attachSource(node ast.Node, start, end int) {
+	if !p.trackSource {
+		return
+	}
+	node.SetSource(p.location(start, end))
+}
+
+func (p *Parser) tokensText(tokens []tokenizer.Token) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	if len(tokens) == 1 {
+		return tokens[0].Text(p.input)
+	}
+
+	var builder strings.Builder
+	builder.Grow(tokens[len(tokens)-1].End - tokens[0].Start + 1)
+	for _, token := range tokens {
+		builder.WriteString(token.Text(p.input))
+	}
+	return builder.String()
 }
 
 func trimSpaceTokens(tokens []tokenizer.Token) []tokenizer.Token {
@@ -213,14 +245,6 @@ func trimSpaceTokens(tokens []tokenizer.Token) []tokenizer.Token {
 		end--
 	}
 	return tokens[start:end]
-}
-
-func tokensText(tokens []tokenizer.Token) string {
-	var builder strings.Builder
-	for _, token := range tokens {
-		builder.WriteString(token.Value)
-	}
-	return builder.String()
 }
 
 func topLevelColon(tokens []tokenizer.Token) int {
@@ -237,9 +261,5 @@ func (p *Parser) syntaxError(message string, offset int) error {
 }
 
 func (p *Parser) location(start, end int) *source.Location {
-	return &source.Location{
-		Start: p.src.FromOffset(start),
-		End:   p.src.FromOffset(end),
-		Input: p.src,
-	}
+	return p.src.Location(p.src.FromOffset(start), p.src.FromOffset(end))
 }

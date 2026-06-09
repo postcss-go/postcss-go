@@ -60,29 +60,54 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
-func TestHelpersTrimTokensAndColon(t *testing.T) {
-	tokens := []tokenizerTokenAlias{
-		{Kind: "space", Value: " "},
-		{Kind: "word", Value: "color"},
-		{Kind: ":", Value: ":"},
-		{Kind: "word", Value: "red"},
-		{Kind: "space", Value: " "},
+func TestParseWithSourceMapMapsLocations(t *testing.T) {
+	const sourceMap = `{
+		"version": 3,
+		"file": "generated.css",
+		"sourceRoot": "/src",
+		"sources": ["original.css"],
+		"sourcesContent": [".orig {\n  color: red;\n}"],
+		"names": [],
+		"mappings": "AAAA"
+	}`
+
+	root, err := Parse(".gen { color: red; }", source.Options{
+		From:         "generated.css",
+		SourceMapURL: "generated.css.map",
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	trimmed := trimSpaceTokens(castTokens(tokens))
+	if root.Source() == nil || root.Source().Input == nil || root.Source().Input.File != "/src/original.css" {
+		t.Fatalf("expected mapped root source, got %#v", root.Source())
+	}
+}
+
+func TestHelpersTrimTokensAndColon(t *testing.T) {
+	const input = " color:red "
+	tokens := []tokenizer.Token{
+		{Kind: "space", Start: 0, End: 0},
+		{Kind: "word", Start: 1, End: 5},
+		{Kind: ":", Start: 6, End: 6},
+		{Kind: "word", Start: 7, End: 9},
+		{Kind: "space", Start: 10, End: 10},
+	}
+	trimmed := trimSpaceTokens(tokens)
 	if len(trimmed) != 3 {
 		t.Fatalf("expected 3 trimmed tokens, got %d", len(trimmed))
 	}
 	if got := topLevelColon(trimmed); got != 1 {
 		t.Fatalf("expected colon at 1, got %d", got)
 	}
-	if got := tokensText(trimmed); got != "color:red" {
+	parser := &Parser{input: input}
+	if got := parser.tokensText(trimmed); got != "color:red" {
 		t.Fatalf("unexpected tokens text: %q", got)
 	}
 }
 
 type tokenizerTokenAlias struct {
 	Kind  string
-	Value string
 	Start int
 	End   int
 }

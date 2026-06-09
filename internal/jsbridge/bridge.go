@@ -1,9 +1,11 @@
 package jsbridge
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
+	"github.com/creachadair/jrpc2/handler"
 	"postcss-go/internal/ast"
 	postcss "postcss-go/internal/postcss"
 )
@@ -63,45 +65,108 @@ type SourceLocationDTO struct {
 	File  string            `json:"file,omitempty"`
 }
 
+type ParseParams struct {
+	CSS     string      `json:"css"`
+	Options RequestOpts `json:"options,omitempty"`
+}
+
+type ParseResult struct {
+	Root *NodeDTO `json:"root"`
+}
+
+type ProcessParams struct {
+	CSS     string      `json:"css"`
+	Options RequestOpts `json:"options,omitempty"`
+}
+
+type ProcessResult struct {
+	CSS      string       `json:"css"`
+	Root     *NodeDTO     `json:"root"`
+	Messages []WarningDTO `json:"messages,omitempty"`
+}
+
+type StringifyParams struct {
+	AST *NodeDTO `json:"ast"`
+}
+
+type StringifyResult struct {
+	CSS string `json:"css"`
+}
+
+func Assigner() handler.Map {
+	assigner := handler.Map{
+		"parse":     handler.New(ParseRPC),
+		"process":   handler.New(ProcessRPC),
+		"stringify": handler.New(StringifyRPC),
+	}
+	for method, rpc := range tokenizeAssigner() {
+		assigner[method] = rpc
+	}
+	return assigner
+}
+
 func Execute(req Request) Response {
 	switch req.Command {
 	case "parse":
-		root, err := postcss.ParseWithOptions(req.CSS, postcss.ParseOptions{From: req.Options.From})
+		result, err := ParseRPC(context.Background(), ParseParams{CSS: req.CSS, Options: req.Options})
 		if err != nil {
 			return errorResponse(err)
 		}
-		dto, err := ToDTO(root)
-		if err != nil {
-			return errorResponse(err)
-		}
-		return Response{OK: true, Root: dto}
+		return Response{OK: true, Root: result.Root}
 	case "process":
-		result, err := postcss.New().Process(req.CSS, postcss.ProcessOptions{From: req.Options.From})
+		result, err := ProcessRPC(context.Background(), ProcessParams{CSS: req.CSS, Options: req.Options})
 		if err != nil {
 			return errorResponse(err)
 		}
-		dto, err := ToDTO(result.Root)
-		if err != nil {
-			return errorResponse(err)
-		}
-		return Response{
-			OK:       true,
-			CSS:      result.CSS,
-			Root:     dto,
-			Messages: warningsToDTO(result.Messages),
-		}
+		return Response{OK: true, CSS: result.CSS, Root: result.Root, Messages: result.Messages}
 	case "stringify":
-		if req.AST == nil {
-			return errorResponse(fmt.Errorf("missing ast payload"))
-		}
-		node, err := FromDTO(req.AST)
+		result, err := StringifyRPC(context.Background(), StringifyParams{AST: req.AST})
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, CSS: postcss.Stringify(node)}
+		return Response{OK: true, CSS: result.CSS}
 	default:
 		return errorResponse(fmt.Errorf("unsupported command %q", req.Command))
 	}
+}
+
+func ParseRPC(_ context.Context, params ParseParams) (*ParseResult, error) {
+	root, err := postcss.ParseWithOptions(params.CSS, postcss.ParseOptions{From: params.Options.From})
+	if err != nil {
+		return nil, err
+	}
+	dto, err := ToDTO(root)
+	if err != nil {
+		return nil, err
+	}
+	return &ParseResult{Root: dto}, nil
+}
+
+func ProcessRPC(_ context.Context, params ProcessParams) (*ProcessResult, error) {
+	result, err := postcss.New().Process(params.CSS, postcss.ProcessOptions{From: params.Options.From})
+	if err != nil {
+		return nil, err
+	}
+	dto, err := ToDTO(result.Root)
+	if err != nil {
+		return nil, err
+	}
+	return &ProcessResult{
+		CSS:      result.CSS,
+		Root:     dto,
+		Messages: warningsToDTO(result.Messages),
+	}, nil
+}
+
+func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, error) {
+	if params.AST == nil {
+		return nil, fmt.Errorf("missing ast payload")
+	}
+	node, err := FromDTO(params.AST)
+	if err != nil {
+		return nil, err
+	}
+	return &StringifyResult{CSS: postcss.Stringify(node)}, nil
 }
 
 func ToJSON(resp Response) ([]byte, error) {
