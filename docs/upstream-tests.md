@@ -60,10 +60,10 @@ pnpm test:upstream:go
 
 `packages/postcss-compat/overrides/` can replace individual modules under `vendor/postcss/lib/`.
 
-| Mode | Command | Behavior |
-|------|---------|----------|
-| `upstream` | `POSTCSS_COMPAT_MODE=upstream` | Vendored upstream `lib/` only |
-| `go` | `POSTCSS_COMPAT_MODE=go` | Apply overrides from `overrides/go/` |
+| Mode       | Command                        | Behavior                             |
+| ---------- | ------------------------------ | ------------------------------------ |
+| `upstream` | `POSTCSS_COMPAT_MODE=upstream` | Vendored upstream `lib/` only        |
+| `go`       | `POSTCSS_COMPAT_MODE=go`       | Apply overrides from `overrides/go/` |
 
 See `packages/postcss-compat/overrides/go/README.md` for the current Go-backed module status.
 

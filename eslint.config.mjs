@@ -5,7 +5,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/*.d.ts', 'pnpm-lock.yaml'],
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.git/**',
+      '**/*.d.ts',
+      'pnpm-lock.yaml',
+      'vendor/**',
+      'benchmark/fixtures/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

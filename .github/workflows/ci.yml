@@ -66,6 +66,8 @@ jobs:
   upstream-tests:
     name: Upstream PostCSS Test Suite
     runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
 
     steps:
       - name: Checkout
@@ -100,6 +102,8 @@ jobs:
   go:
     name: Go Checks
     runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
 
     steps:
       - name: Checkout

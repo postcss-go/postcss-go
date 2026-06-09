@@ -20,13 +20,13 @@ The generator lives in `benchmark/fixtures.go` and is mirrored in `benchmark/pos
 
 Vendored stylesheets from common CSS sources (see `benchmark/fixtures/manifest.json`):
 
-| Fixture            | Source                         | ~Size  |
-| ------------------ | ------------------------------ | ------ |
-| ModernNormalize    | [modern-normalize](https://github.com/sindresorhus/modern-normalize) | 3 KB   |
-| TailwindPreflight  | [tailwindcss](https://github.com/tailwindlabs/tailwindcss) preflight | 8 KB   |
-| AnimateMin         | [animate.css](https://github.com/animate-css/animate.css) minified | 72 KB  |
-| Bootstrap          | [Bootstrap 5](https://github.com/twbs/bootstrap) formatted | 281 KB |
-| BootstrapMin       | Bootstrap 5 minified           | 233 KB |
+| Fixture           | Source                                                               | ~Size  |
+| ----------------- | -------------------------------------------------------------------- | ------ |
+| ModernNormalize   | [modern-normalize](https://github.com/sindresorhus/modern-normalize) | 3 KB   |
+| TailwindPreflight | [tailwindcss](https://github.com/tailwindlabs/tailwindcss) preflight | 8 KB   |
+| AnimateMin        | [animate.css](https://github.com/animate-css/animate.css) minified   | 72 KB  |
+| Bootstrap         | [Bootstrap 5](https://github.com/twbs/bootstrap) formatted           | 281 KB |
+| BootstrapMin      | Bootstrap 5 minified                                                 | 233 KB |
 
 Refresh fixtures:
 
