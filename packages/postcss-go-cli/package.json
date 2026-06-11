@@ -1,0 +1,49 @@
+{
+  "name": "@postcss-go/cli",
+  "version": "0.0.1",
+  "description": "CLI for postcss-go, ported from postcss-cli",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "postcss-go": "./index.js"
+  },
+  "scripts": {
+    "build": "node -e \"console.log('postcss-go-cli: no build step')\"",
+    "check": "node -e \"console.log('postcss-go-cli: no typecheck step')\"",
+    "test": "ava -v"
+  },
+  "dependencies": {
+    "@postcss-go/core": "workspace:*",
+    "chokidar": "^3.6.0",
+    "dependency-graph": "^1.0.0",
+    "picocolors": "^1.1.1",
+    "postcss-load-config": "^5.1.0",
+    "postcss-reporter": "^7.1.0",
+    "pretty-hrtime": "^1.0.3",
+    "read-cache": "^1.0.0",
+    "slash": "^5.1.0",
+    "tinyglobby": "^0.2.15",
+    "yargs": "^17.7.2"
+  },
+  "peerDependencies": {
+    "postcss": "^8.0.0"
+  },
+  "devDependencies": {
+    "ava": "^6.4.1",
+    "postcss": "^8.5.15"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "!**/*.test.js"
+  ],
+  "keywords": [
+    "cli",
+    "postcss",
+    "postcss-go",
+    "postcss-runner"
+  ],
+  "license": "MIT"
+}
