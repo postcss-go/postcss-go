@@ -3,7 +3,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const bundledBinPath = join(packageRoot, 'dist', 'postcss-go-node-api');
+const bundledBinPath = join(
+  packageRoot,
+  'dist',
+  process.platform === 'win32' ? 'postcss-go-node-api.exe' : 'postcss-go-node-api',
+);
 const monorepoRoot = resolve(packageRoot, '..', '..');
 const monorepoBridgeEntry = join(monorepoRoot, 'cmd', 'postcss-go-node-api', 'main.go');
 

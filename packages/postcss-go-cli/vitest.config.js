@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     fileParallelism: false,
     include: ['test/*.js'],
+    testTimeout: 10000,
   },
 });

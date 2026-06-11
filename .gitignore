@@ -27,4 +27,5 @@ go.work.sum
 # Node / pnpm workspace
 node_modules/
 dist/
-packages/postcss-go-cli/test/fixtures/.tmp/
+.tmp/
+coverage/

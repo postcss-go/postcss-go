@@ -13,7 +13,8 @@
     "build": "node ./scripts/build-test-bridge.mjs",
     "check": "node -e \"console.log('postcss-go-cli: no typecheck step')\"",
     "pretest": "pnpm --filter @postcss-go/core build && node ./scripts/build-test-bridge.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "pnpm --filter @postcss-go/core build && node ./scripts/build-test-bridge.mjs && vitest run --coverage.enabled true --coverage.provider v8 --coverage.reporter=text --coverage.reporter=lcov --coverage.reporter=json-summary"
   },
   "dependencies": {
     "@postcss-go/core": "workspace:*",
@@ -38,7 +39,7 @@
   "files": [
     "index.js",
     "lib",
-    "dist/postcss-go-node-api",
+    "dist",
     "!**/*.test.js"
   ],
   "keywords": [

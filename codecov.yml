@@ -1,0 +1,55 @@
+codecov:
+  require_ci_to_pass: true
+  notify:
+    after_n_builds: 1
+
+coverage:
+  precision: 1
+  round: down
+  range: '50...90'
+
+status:
+  project:
+    default:
+      informational: true
+    go:
+      flags:
+        - go
+      paths:
+        - 'internal/'
+        - 'benchmark/'
+        - 'cmd/'
+      informational: true
+    js:
+      flags:
+        - js
+      paths:
+        - 'packages/'
+      informational: true
+  patch:
+    default:
+      informational: true
+
+flags:
+  go:
+    paths:
+      - 'internal/'
+      - 'benchmark/'
+      - 'cmd/'
+  js:
+    paths:
+      - 'packages/'
+
+ignore:
+  - 'vendor/**'
+  - 'coverage/**'
+  - '**/coverage/**'
+  - 'benchmark/fixtures/**'
+  - 'packages/postcss-go-cli/dist/**'
+  - '**/*.d.ts'
+  - '**/*.d.mts'
+
+comment:
+  layout: 'reach,diff,flags,tree'
+  behavior: default
+  require_changes: false
