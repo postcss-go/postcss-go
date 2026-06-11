@@ -48,6 +48,7 @@ export function createEngine(argv) {
   if (argv.engine === 'go') {
     return {
       name: 'go',
+      queue: Promise.resolve(),
       service: createNodeService(),
       async close() {
         await this.service.close();
@@ -63,26 +64,35 @@ export function createEngine(argv) {
 
 export async function processWithEngine(engine, config, css, options) {
   if (engine.name === 'go') {
-    const result = await engine.service.process(
-      typeof css === 'string' ? css : css.toString('utf8'),
-      {
-        from: options.from,
-      },
-    );
+    const run = async () => {
+      const result = await engine.service.process(
+        typeof css === 'string' ? css : css.toString('utf8'),
+        {
+          from: options.from,
+        },
+      );
 
-    return {
-      css: result.css,
-      map: undefined,
-      warnings() {
-        return (result.messages ?? []).map((warning) => ({
-          ...warning,
-          toString() {
-            return warning.text;
-          },
-        }));
-      },
-      messages: [],
+      return {
+        css: result.css,
+        map: undefined,
+        warnings() {
+          return (result.messages ?? []).map((warning) => ({
+            ...warning,
+            toString() {
+              return warning.text;
+            },
+          }));
+        },
+        messages: [],
+      };
     };
+
+    const next = engine.queue.then(run);
+    engine.queue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 
   return postcss(config.plugins).process(css, options);

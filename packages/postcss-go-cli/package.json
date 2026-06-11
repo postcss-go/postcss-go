@@ -13,7 +13,7 @@
     "build": "node -e \"console.log('postcss-go-cli: no build step')\"",
     "check": "node -e \"console.log('postcss-go-cli: no typecheck step')\"",
     "pretest": "pnpm --filter @postcss-go/core build",
-    "test": "ava -v"
+    "test": "vitest run"
   },
   "dependencies": {
     "@postcss-go/core": "workspace:*",
@@ -32,8 +32,8 @@
     "postcss": "^8.0.0"
   },
   "devDependencies": {
-    "ava": "^6.4.1",
-    "postcss": "^8.5.15"
+    "postcss": "^8.5.15",
+    "vitest": "^3.2.4"
   },
   "files": [
     "index.js",

@@ -23,6 +23,7 @@ import { assertGoEngineCompatible, createEngine, processWithEngine } from './lib
 const reporter = postcssReporter();
 const depGraph = createDependencyGraph();
 const engine = createEngine(argv);
+const explicitConfigPath = argv.config ? path.resolve(argv.config) : null;
 
 let input = argv._;
 const { dir, output } = argv;
@@ -56,10 +57,9 @@ async function buildCliConfig() {
   };
 }
 
-let configFile;
+const configFiles = new Set();
 
 if (argv.env) process.env.NODE_ENV = argv.env;
-if (argv.config) argv.config = path.resolve(argv.config);
 
 let { isTTY } = process.stdin;
 
@@ -127,7 +127,7 @@ buildCliConfig()
         },
       });
 
-      if (configFile) watcher.add(configFile);
+      watcher.add([...configFiles]);
 
       watcher.on('ready', printMessage).on('change', (file) => {
         let recompile = [];
@@ -178,7 +178,7 @@ function rc(ctx, configPath) {
           'Config Error: Can not set from or to options in config file, use CLI arguments instead',
         );
       }
-      configFile = rc.file;
+      if (rc.file) configFiles.add(rc.file);
       return rc;
     })
     .catch((err) => {
@@ -214,19 +214,16 @@ function css(css, file) {
       basename: path.basename(file),
       extname: path.extname(file),
     };
-
-    if (!argv.config) argv.config = path.dirname(file);
   }
 
   const relativePath = file !== 'stdin' ? path.relative(path.resolve(), file) : file;
-
-  if (!argv.config) argv.config = process.cwd();
+  const configSearchPath = explicitConfigPath || (file !== 'stdin' ? path.dirname(file) : process.cwd());
 
   const time = process.hrtime();
 
   printVerbose(pc.cyan(`Processing ${pc.bold(relativePath)}...`));
 
-  return rc(ctx, argv.config)
+  return rc(ctx, configSearchPath)
     .then((config) => {
       config = config || cliConfig;
       assertGoEngineCompatible(argv, config);

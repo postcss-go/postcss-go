@@ -1,11 +1,11 @@
-import test from 'ava';
 import path from 'path';
+import { expect, test } from 'vitest';
 
 import cli from './helpers/cli.js';
 import tmp from './helpers/tmp.js';
 import read from './helpers/read.js';
 
-test('--dir works', async (t) => {
+test('--dir works', async () => {
   const dir = tmp();
 
   const { error, stderr } = await cli([
@@ -16,7 +16,7 @@ test('--dir works', async (t) => {
     '--no-map',
   ]);
 
-  t.falsy(error, stderr);
-  t.is(await read(path.join(dir, 'a.css')), await read('test/fixtures/a.css'));
-  t.is(await read(path.join(dir, 'b.css')), await read('test/fixtures/b.css'));
+  expect(error, stderr).toBeFalsy();
+  expect(await read(path.join(dir, 'a.css'))).toBe(await read('test/fixtures/a.css'));
+  expect(await read(path.join(dir, 'b.css'))).toBe(await read('test/fixtures/b.css'));
 });

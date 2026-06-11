@@ -1,10 +1,11 @@
-import test from 'ava';
+import { expect, test } from 'vitest';
 
 import cli from './helpers/cli.js';
 import tmp from './helpers/tmp.js';
 import read from './helpers/read.js';
+import { processWithEngine } from '../lib/engine.js';
 
-test('--engine go writes output', async (t) => {
+test('--engine go writes output', async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli([
@@ -16,11 +17,11 @@ test('--engine go writes output', async (t) => {
     'go',
   ]);
 
-  t.falsy(error, stderr);
-  t.truthy(await read(output));
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toBeTruthy();
 });
 
-test('--engine go rejects --use plugins', async (t) => {
+test('--engine go rejects --use plugins', async () => {
   const output = tmp('output.css');
 
   const { error } = await cli([
@@ -34,10 +35,10 @@ test('--engine go rejects --use plugins', async (t) => {
     'postcss',
   ]);
 
-  t.truthy(error);
+  expect(error).toBeTruthy();
 });
 
-test('--engine go rejects config plugins', async (t) => {
+test('--engine go rejects config plugins', async () => {
   const fixtureDir = 'test/fixtures/config';
 
   const { error, stderr } = await cli(
@@ -45,15 +46,13 @@ test('--engine go rejects config plugins', async (t) => {
     fixtureDir,
   );
 
-  t.truthy(error);
-  t.true(
-    stderr.includes(
-      'Engine Error: postcss-go does not support postcss.config.js plugins yet; use --engine postcss',
-    ),
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support postcss.config.js plugins yet; use --engine postcss',
   );
 });
 
-test('--engine go rejects config parser overrides', async (t) => {
+test('--engine go rejects config parser overrides', async () => {
   const fixtureDir = 'test/fixtures/config-parser';
 
   const { error, stderr } = await cli(
@@ -61,15 +60,13 @@ test('--engine go rejects config parser overrides', async (t) => {
     fixtureDir,
   );
 
-  t.truthy(error);
-  t.true(
-    stderr.includes(
-      'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet; use --engine postcss',
-    ),
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet; use --engine postcss',
   );
 });
 
-test('--engine go rejects external sourcemaps', async (t) => {
+test('--engine go rejects external sourcemaps', async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli([
@@ -81,10 +78,40 @@ test('--engine go rejects external sourcemaps', async (t) => {
     'go',
   ]);
 
-  t.truthy(error);
-  t.true(
-    stderr.includes(
-      'Engine Error: postcss-go does not support external sourcemaps yet; use --engine postcss',
-    ),
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support external sourcemaps yet; use --engine postcss',
   );
+});
+
+test('processWithEngine serializes go engine requests', async () => {
+  let active = 0;
+  let maxActive = 0;
+
+  const engine = {
+    name: 'go',
+    queue: Promise.resolve(),
+    service: {
+      async process(css) {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        return { css, messages: [] };
+      },
+    },
+  };
+
+  const results = await Promise.all([
+    processWithEngine(engine, {}, '.a { color: red; }', { from: 'a.css' }),
+    processWithEngine(engine, {}, '.b { color: blue; }', { from: 'b.css' }),
+    processWithEngine(engine, {}, '.c { color: green; }', { from: 'c.css' }),
+  ]);
+
+  expect(maxActive).toBe(1);
+  expect(results.map((result) => result.css)).toEqual([
+    '.a { color: red; }',
+    '.b { color: blue; }',
+    '.c { color: green; }',
+  ]);
 });

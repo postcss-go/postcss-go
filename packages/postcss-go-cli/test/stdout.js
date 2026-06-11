@@ -1,10 +1,10 @@
-import test from 'ava';
+import { expect, test } from 'vitest';
 
 import cli from './helpers/cli.js';
 
-test('writes to stdout by default', async (t) => {
+test('writes to stdout by default', async () => {
   const { error, stdout, stderr } = await cli(['test/fixtures/a.css', '--no-map']);
 
-  t.falsy(error, stderr);
-  t.true(stdout.includes('color: red'));
+  expect(error, stderr).toBeFalsy();
+  expect(stdout).toContain('color: red');
 });

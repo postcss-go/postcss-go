@@ -1,32 +1,52 @@
-import test from 'ava';
 import path from 'path';
+import { expect, test } from 'vitest';
 
 import cli from './helpers/cli.js';
+import tmp from './helpers/tmp.js';
+import read from './helpers/read.js';
 
 const fixtureDir = path.resolve('test/fixtures/config');
 
-test('loads postcss.config.cjs from cwd for file input', async (t) => {
+test('loads postcss.config.cjs from cwd for file input', async () => {
   const { error, stdout, stderr } = await cli(['input.css', '--no-map'], fixtureDir);
 
-  t.falsy(error, stderr);
-  t.true(stdout.includes('color: tomato'));
+  expect(error, stderr).toBeFalsy();
+  expect(stdout).toContain('color: tomato');
 });
 
-test('loads postcss.config.cjs from cwd for stdin input', async (t) => {
+test('loads postcss.config.cjs from cwd for stdin input', async () => {
   const { error, stdout, stderr } = await cli([], fixtureDir, {
     stdin: '.stdin { color: red; }\n',
   });
 
-  t.falsy(error, stderr);
-  t.true(stdout.includes('color: tomato'));
+  expect(error, stderr).toBeFalsy();
+  expect(stdout).toContain('color: tomato');
 });
 
-test('--env is available in postcss config context', async (t) => {
+test('--env is available in postcss config context', async () => {
   const { error, stdout, stderr } = await cli(
     ['input.css', '--no-map', '--env', 'production'],
     fixtureDir,
   );
 
-  t.falsy(error, stderr);
-  t.true(stdout.includes('border-color: black'));
+  expect(error, stderr).toBeFalsy();
+  expect(stdout).toContain('border-color: black');
+});
+
+test('loads config relative to each file during multi-file runs', async () => {
+  const outputDir = tmp();
+
+  const { error, stderr } = await cli([
+    'test/fixtures/config-multi/alpha/input.css',
+    'test/fixtures/config-multi/beta/input.css',
+    '--dir',
+    outputDir,
+    '--base',
+    'test/fixtures/config-multi',
+    '--no-map',
+  ]);
+
+  expect(error, stderr).toBeFalsy();
+  expect(await read(path.join(outputDir, 'alpha/input.css'))).toContain('tomato');
+  expect(await read(path.join(outputDir, 'beta/input.css'))).toContain('deepskyblue');
 });
