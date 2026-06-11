@@ -19,6 +19,7 @@ At the current stage, the main pipeline is in place:
 - `internal/result`: results and warnings
 - `internal/stringifier`: CSS output
 - `packages/postcss-go`: Node.js / TypeScript interop entry point
+- `packages/postcss-go-cli`: CLI for processing CSS files (ported from [postcss-cli](https://github.com/postcss/postcss-cli))
 - `packages/postcss-go-wasm`: browser / worker / wasm entry skeleton
 - `docs/architecture.md`: architecture overview
 
@@ -36,6 +37,23 @@ pnpm check:all
 At the moment, `packages/` provides package boundaries and type entry points; the Go bridge / wasm runtime are still to be implemented.
 
 The Go side has been consolidated under `internal/` with no root-level public facade; the repository is organized around an internal Go engine with JS/TS packages as the external interface.
+
+## CLI
+
+Process CSS files from the command line (compatible with [postcss-cli](https://github.com/postcss/postcss-cli) options):
+
+```bash
+pnpm install
+pnpm --filter @postcss-go/cli test
+
+# postcss engine (plugins, source maps)
+node packages/postcss-go-cli/index.js input.css -o output.css
+
+# go engine (parse/stringify via Go bridge)
+node packages/postcss-go-cli/index.js input.css -o output.css --engine go --no-map
+```
+
+See [packages/postcss-go-cli/README.md](packages/postcss-go-cli/README.md) for full usage.
 
 ## Example
 

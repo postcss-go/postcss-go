@@ -102,7 +102,7 @@ export class NodePostcssGoService implements PostcssGoService {
       this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise });
     });
 
-    child.stdin.write(`${JSON.stringify(request)}\n`);
+    child.stdin.write(`${JSON.stringify(request)}\n`, 'utf8');
     return responsePromise;
   }
 
@@ -118,6 +118,10 @@ export class NodePostcssGoService implements PostcssGoService {
     const child = spawn(command, args, {
       cwd,
       stdio: 'pipe',
+      env: {
+        ...process.env,
+        GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
+      },
     });
 
     child.stdout.setEncoding('utf8');
@@ -206,9 +210,11 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   private resolveCommand(): { command: string; args: string[]; cwd: string } {
-    if (this.binPath) {
+    const binPath = this.binPath ?? process.env.POSTCSS_GO_NODE_API_BIN;
+
+    if (binPath) {
       return {
-        command: this.binPath,
+        command: binPath,
         args: this.binArgs ?? [],
         cwd: this.workingDirectory ?? process.cwd(),
       };
@@ -217,7 +223,7 @@ export class NodePostcssGoService implements PostcssGoService {
     const cwd = this.workingDirectory ?? resolve(defaultRepositoryRoot());
     return {
       command: 'go',
-      args: ['run', './cmd/postcss-go-node-api'],
+      args: ['run', '-mod=mod', './cmd/postcss-go-node-api'],
       cwd,
     };
   }
