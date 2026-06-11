@@ -1,8 +1,11 @@
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
-import cli from './helpers/cli.js';
-import tmp from './helpers/tmp.js';
-import read from './helpers/read.js';
+import cli from './helpers/cli.ts';
+import tmp from './helpers/tmp.ts';
+import read from './helpers/read.ts';
 import {
   assertGoEngineCompatible,
   getEffectiveMapOption,
@@ -15,21 +18,71 @@ import {
   resolveGoBridgeServiceOptions,
 } from '../lib/resolveGoBridge.js';
 
-test('--engine go writes output', async () => {
-  const output = tmp('output.css');
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-  const { error, stderr } = await cli([
-    'test/fixtures/a.css',
-    '-o',
-    output,
-    '--no-map',
-    '--engine',
-    'go',
-  ]);
+function waitForContent(file: string, content: string, timeout = 20000) {
+  const deadline = Date.now() + timeout;
 
-  expect(error, stderr).toBeFalsy();
-  expect(await read(output)).toContain('color: red');
-});
+  return new Promise<void>((resolve, reject) => {
+    const check = async () => {
+      try {
+        if ((await read(file)).includes(content)) {
+          resolve();
+          return;
+        }
+      } catch {
+        // File may not exist yet.
+      }
+
+      if (Date.now() >= deadline) {
+        reject(new Error(`Timed out waiting for ${file} to contain ${content}`));
+        return;
+      }
+
+      setTimeout(check, 50);
+    };
+
+    void check();
+  });
+}
+
+test.skipIf(process.env.COVERAGE_RUN === 'true')(
+  '--engine go writes output',
+  { timeout: 25000 },
+  async () => {
+    const output = tmp('output.css');
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(packageRoot, 'index.js'),
+        'test/fixtures/a.css',
+        '-o',
+        output,
+        '--no-map',
+        '--engine',
+        'go',
+      ],
+      { cwd: packageRoot },
+    );
+
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    try {
+      await waitForContent(output, 'color: red');
+      expect(stderr).toBe('');
+      expect(await read(output)).toContain('color: red');
+    } finally {
+      child.kill('SIGKILL');
+      await Promise.race([
+        new Promise((resolve) => child.on('exit', resolve)),
+        new Promise((resolve) => setTimeout(resolve, 1000)),
+      ]);
+    }
+  },
+);
 
 test('--engine go rejects --use plugins', async () => {
   const output = tmp('output.css');

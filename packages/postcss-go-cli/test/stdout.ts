@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import cli from './helpers/cli.js';
+import cli from './helpers/cli.ts';
 
 test('writes to stdout by default', async () => {
   const { error, stdout, stderr } = await cli(['test/fixtures/a.css', '--no-map']);
