@@ -217,7 +217,8 @@ function css(css, file) {
   }
 
   const relativePath = file !== 'stdin' ? path.relative(path.resolve(), file) : file;
-  const configSearchPath = explicitConfigPath || (file !== 'stdin' ? path.dirname(file) : process.cwd());
+  const configSearchPath =
+    explicitConfigPath || (file !== 'stdin' ? path.dirname(file) : process.cwd());
 
   const time = process.hrtime();
 

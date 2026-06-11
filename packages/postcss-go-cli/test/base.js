@@ -19,9 +19,9 @@ test('--base --dir works', async () => {
 
   expect(error, stderr).toBeFalsy();
 
-  expect(
-    await read(path.join(dir, 'level-1/level-2/a.css')),
-  ).toBe(await read('test/fixtures/base/level-1/level-2/a.css'));
+  expect(await read(path.join(dir, 'level-1/level-2/a.css'))).toBe(
+    await read('test/fixtures/base/level-1/level-2/a.css'),
+  );
 
   expect(await read(path.join(dir, 'level-1/b.css'))).toBe(
     await read('test/fixtures/base/level-1/b.css'),
