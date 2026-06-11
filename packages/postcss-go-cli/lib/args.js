@@ -28,8 +28,11 @@ const { argv } = yargs(process.argv.slice(2))
     type: 'boolean',
     conflicts: ['output', 'dir'],
   })
-  .alias('m', 'map')
-  .describe('map', 'Create an external sourcemap')
+  .option('map', {
+    alias: 'm',
+    desc: 'Create an external sourcemap',
+    type: 'boolean',
+  })
   .describe('no-map', 'Disable the default inline sourcemaps')
   .option('w', {
     alias: 'watch',

@@ -48,7 +48,7 @@ async function buildCliConfig() {
               const msg = e.message || `Cannot find module '${plugin}'`;
               let prefix = msg.includes(plugin) ? '' : ` (${plugin})`;
               if (e.name && e.name !== 'Error') prefix += `: ${e.name}`;
-              return error(`Plugin Error${prefix}: ${msg}'`);
+              throw new Error(`Plugin Error${prefix}: ${msg}`, { cause: e });
             }
           }),
         )
@@ -80,8 +80,7 @@ if (parseInt(postcss().version) < 8) {
 buildCliConfig()
   .then(() => {
     if (argv.watch && !(argv.output || argv.replace || argv.dir)) {
-      error('Cannot write to stdout in watch mode');
-      process.exit(1);
+      throw new Error('Cannot write to stdout in watch mode');
     }
 
     if (input && input.length) {
@@ -92,22 +91,22 @@ buildCliConfig()
     }
 
     if (argv.replace || argv.dir) {
-      error('Input Error: Cannot use --dir or --replace when reading from stdin');
+      throw new Error('Input Error: Cannot use --dir or --replace when reading from stdin');
     }
 
     if (argv.watch) {
-      error('Input Error: Cannot run in watch mode when reading from stdin');
+      throw new Error('Input Error: Cannot run in watch mode when reading from stdin');
     }
 
     return ['stdin'];
   })
   .then((i) => {
     if (!i || !i.length) {
-      error('Input Error: You must pass a valid list of files to parse');
+      throw new Error('Input Error: You must pass a valid list of files to parse');
     }
 
     if (i.length > 1 && !argv.dir && !argv.replace) {
-      error('Input Error: Must use --dir or --replace with multiple input files');
+      throw new Error('Input Error: Must use --dir or --replace with multiple input files');
     }
 
     if (i[0] !== 'stdin') i = i.map((i) => path.resolve(i));
@@ -175,7 +174,7 @@ function rc(ctx, configPath) {
   return postcssrc(ctx, configPath)
     .then((rc) => {
       if (rc.options.from || rc.options.to) {
-        error(
+        throw new Error(
           'Config Error: Can not set from or to options in config file, use CLI arguments instead',
         );
       }
@@ -194,7 +193,7 @@ function files(files) {
     files.map((file) => {
       if (file === 'stdin') {
         return text(process.stdin).then((content) => {
-          if (!content) return error('Input Error: Did not receive any STDIN');
+          if (!content) throw new Error('Input Error: Did not receive any STDIN');
           return css(content, 'stdin');
         });
       }
@@ -238,7 +237,7 @@ function css(css, file) {
       options.from = file === 'stdin' ? path.join(process.cwd(), 'stdin') : file;
 
       if (output || dir || argv.replace) {
-        const base = argv.base ? file.replace(path.resolve(argv.base), '') : path.basename(file);
+        const base = argv.base ? path.relative(path.resolve(argv.base), file) : path.basename(file);
         options.to = output || (argv.replace ? file : path.join(dir, base));
 
         if (argv.ext) {
@@ -249,7 +248,7 @@ function css(css, file) {
       }
 
       if (!options.to && config.options.map && !config.options.map.inline) {
-        error('Output Error: Cannot output external sourcemaps when writing to STDOUT');
+        throw new Error('Output Error: Cannot output external sourcemaps when writing to STDOUT');
       }
 
       return processWithEngine(engine, config, css, options).then((result) => {
@@ -299,7 +298,7 @@ function dependencies(results) {
   const messages = [];
 
   results.forEach((result) => {
-    if (result.messages <= 0) return;
+    if (!Array.isArray(result.messages) || result.messages.length <= 0) return;
 
     result.messages
       .filter((msg) => (msg.type === 'dependency' || msg.type === 'dir-dependency' ? msg : ''))

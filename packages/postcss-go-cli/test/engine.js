@@ -53,6 +53,22 @@ test('--engine go rejects config plugins', async (t) => {
   );
 });
 
+test('--engine go rejects config parser overrides', async (t) => {
+  const fixtureDir = 'test/fixtures/config-parser';
+
+  const { error, stderr } = await cli(
+    ['input.css', '-o', tmp('output.css'), '--no-map', '--engine', 'go'],
+    fixtureDir,
+  );
+
+  t.truthy(error);
+  t.true(
+    stderr.includes(
+      'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet; use --engine postcss',
+    ),
+  );
+});
+
 test('--engine go rejects external sourcemaps', async (t) => {
   const output = tmp('output.css');
 

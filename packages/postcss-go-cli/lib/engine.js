@@ -36,6 +36,12 @@ export function assertGoEngineCompatible(argv, config) {
       'Engine Error: postcss-go does not support postcss.config.js plugins yet; use --engine postcss',
     );
   }
+
+  if (config?.options?.parser || config?.options?.syntax || config?.options?.stringifier) {
+    throw new Error(
+      'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet; use --engine postcss',
+    );
+  }
 }
 
 export function createEngine(argv) {
