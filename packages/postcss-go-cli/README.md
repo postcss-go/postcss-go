@@ -22,7 +22,7 @@ npm i -D @postcss-go/cli postcss
 postcss-go input.css -o output.css
 postcss-go src/**/*.css --base src --dir build
 cat input.css | postcss-go -u autoprefixer > output.css
-postcss-go input.css -o output.css --engine go
+postcss-go input.css -o output.css --engine go --no-map
 ```
 
 The CLI mirrors [postcss-cli](https://github.com/postcss/postcss-cli) options: glob inputs, `--dir` / `--replace` / `-o`, watch mode, `postcss.config.js`, and `--use` plugin chains.
@@ -40,7 +40,7 @@ Set `POSTCSS_GO_ENGINE=go` to default to the Go engine.
 
 Supports `postcss.config.js` / `.cjs` / `.mjs` via [postcss-load-config](https://github.com/postcss/postcss-load-config), including function configs with `ctx.file` and `ctx.env`.
 
-When using `--engine go`, config plugins and custom parsers are not supported yet.
+When using `--engine go`, pass `--no-map` and avoid `map` options in config. Plugin chains and custom parsers are not supported yet.
 
 ## Development
 

@@ -10,7 +10,7 @@
     "postcss-go": "./index.js"
   },
   "scripts": {
-    "build": "node -e \"console.log('postcss-go-cli: no build step')\"",
+    "build": "node ./scripts/build-test-bridge.mjs",
     "check": "node -e \"console.log('postcss-go-cli: no typecheck step')\"",
     "pretest": "pnpm --filter @postcss-go/core build && node ./scripts/build-test-bridge.mjs",
     "test": "vitest run"
@@ -38,6 +38,7 @@
   "files": [
     "index.js",
     "lib",
+    "dist/postcss-go-node-api",
     "!**/*.test.js"
   ],
   "keywords": [

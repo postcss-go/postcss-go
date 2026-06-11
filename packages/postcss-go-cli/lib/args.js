@@ -100,7 +100,7 @@ const { argv } = yargs(process.argv.slice(2))
   .example('$0 input.css -o output.css', 'Basic usage')
   .example('$0 src/**/*.css --base src --dir build', 'Glob Pattern & output')
   .example('cat input.css | $0 -u autoprefixer > output.css', 'Piping input & output')
-  .example('$0 input.css -o output.css --engine go', 'Use the postcss-go engine')
+  .example('$0 input.css -o output.css --engine go --no-map', 'Use the postcss-go engine')
   .epilog(
     `If no input files are passed, it reads from stdin. If neither -o, --dir, or --replace is passed, it writes to stdout.
 

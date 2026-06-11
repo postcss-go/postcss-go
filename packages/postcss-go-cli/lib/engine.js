@@ -1,6 +1,20 @@
 import postcss from 'postcss';
 import { createNodeService } from '@postcss-go/core';
 
+import { resolveGoBridgeServiceOptions } from './resolveGoBridge.js';
+
+export function getEffectiveMapOption(config) {
+  if (config?.options?.map !== undefined) {
+    return config.options.map;
+  }
+
+  return config?.map;
+}
+
+export function isSourceMapEnabled(map) {
+  return map !== false && map !== undefined;
+}
+
 export function assertGoEngineCompatible(argv, config) {
   if (argv.engine !== 'go') {
     return;
@@ -18,9 +32,9 @@ export function assertGoEngineCompatible(argv, config) {
     );
   }
 
-  if (argv.map) {
+  if (argv.map || isSourceMapEnabled(getEffectiveMapOption(config))) {
     throw new Error(
-      'Engine Error: postcss-go does not support external sourcemaps yet; use --engine postcss',
+      'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
     );
   }
 
@@ -49,7 +63,7 @@ export function createEngine(argv) {
     return {
       name: 'go',
       queue: Promise.resolve(),
-      service: createNodeService(),
+      service: createNodeService(resolveGoBridgeServiceOptions()),
       async close() {
         await this.service.close();
       },

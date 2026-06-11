@@ -3,7 +3,16 @@ import { expect, test } from 'vitest';
 import cli from './helpers/cli.js';
 import tmp from './helpers/tmp.js';
 import read from './helpers/read.js';
-import { processWithEngine } from '../lib/engine.js';
+import {
+  assertGoEngineCompatible,
+  getEffectiveMapOption,
+  isSourceMapEnabled,
+  processWithEngine,
+} from '../lib/engine.js';
+import {
+  getBundledGoBridgeBinPath,
+  resolveGoBridgeServiceOptions,
+} from '../lib/resolveGoBridge.js';
 
 test('--engine go writes output', async () => {
   const output = tmp('output.css');
@@ -80,8 +89,72 @@ test('--engine go rejects external sourcemaps', async () => {
 
   expect(error).toBeTruthy();
   expect(stderr).toContain(
-    'Engine Error: postcss-go does not support external sourcemaps yet; use --engine postcss',
+    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
   );
+});
+
+test('--engine go rejects default inline sourcemaps', async () => {
+  const output = tmp('output.css');
+
+  const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output, '--engine', 'go']);
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
+  );
+});
+
+test('--engine go rejects postcss.config.js map options', async () => {
+  const fixtureDir = 'test/fixtures/config';
+
+  const { error, stderr } = await cli(
+    ['input.css', '-o', tmp('output.css'), '--engine', 'go'],
+    fixtureDir,
+  );
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
+  );
+});
+
+test('--engine go rejects explicit map: true in postcss.config.js', async () => {
+  const fixtureDir = 'test/fixtures/config-map';
+
+  const { error, stderr } = await cli(
+    ['input.css', '-o', tmp('output.css'), '--no-map', '--engine', 'go'],
+    fixtureDir,
+  );
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
+  );
+});
+
+test('isSourceMapEnabled treats only false and undefined as disabled', () => {
+  expect(isSourceMapEnabled(false)).toBe(false);
+  expect(isSourceMapEnabled(undefined)).toBe(false);
+  expect(isSourceMapEnabled(true)).toBe(true);
+  expect(isSourceMapEnabled({ inline: true })).toBe(true);
+  expect(isSourceMapEnabled({ inline: false })).toBe(true);
+});
+
+test('getEffectiveMapOption prefers config.options.map', () => {
+  expect(getEffectiveMapOption({ options: { map: false }, map: true })).toBe(false);
+  expect(getEffectiveMapOption({ map: { inline: true } })).toEqual({ inline: true });
+});
+
+test('assertGoEngineCompatible rejects enabled map options from config', () => {
+  expect(() =>
+    assertGoEngineCompatible({ engine: 'go' }, { options: { map: { inline: true } }, plugins: [] }),
+  ).toThrow('Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss');
+});
+
+test('resolveGoBridgeServiceOptions prefers bundled binary', () => {
+  expect(resolveGoBridgeServiceOptions()).toEqual({
+    binPath: getBundledGoBridgeBinPath(),
+  });
 });
 
 test('processWithEngine serializes go engine requests', async () => {
