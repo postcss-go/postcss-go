@@ -18,11 +18,7 @@ import postcssReporter from 'postcss-reporter/lib/formatter.js';
 import argv from './lib/args.js';
 import createDependencyGraph from './lib/DependencyGraph.js';
 import getMapfile from './lib/getMapfile.js';
-import {
-  assertGoEngineCompatible,
-  createEngine,
-  processWithEngine,
-} from './lib/engine.js';
+import { assertGoEngineCompatible, createEngine, processWithEngine } from './lib/engine.js';
 
 const reporter = postcssReporter();
 const depGraph = createDependencyGraph();
@@ -41,9 +37,7 @@ async function buildCliConfig() {
       map: argv.map !== undefined ? argv.map : { inline: true },
       parser: argv.parser ? await import(argv.parser) : undefined,
       syntax: argv.syntax ? await import(argv.syntax) : undefined,
-      stringifier: argv.stringifier
-        ? await import(argv.stringifier)
-        : undefined,
+      stringifier: argv.stringifier ? await import(argv.stringifier) : undefined,
     },
     plugins: argv.use
       ? await Promise.all(
@@ -98,9 +92,7 @@ buildCliConfig()
     }
 
     if (argv.replace || argv.dir) {
-      error(
-        'Input Error: Cannot use --dir or --replace when reading from stdin',
-      );
+      error('Input Error: Cannot use --dir or --replace when reading from stdin');
     }
 
     if (argv.watch) {
@@ -115,9 +107,7 @@ buildCliConfig()
     }
 
     if (i.length > 1 && !argv.dir && !argv.replace) {
-      error(
-        'Input Error: Must use --dir or --replace with multiple input files',
-      );
+      error('Input Error: Must use --dir or --replace with multiple input files');
     }
 
     if (i[0] !== 'stdin') i = i.map((i) => path.resolve(i));
@@ -128,8 +118,7 @@ buildCliConfig()
   })
   .then((results) => {
     if (argv.watch) {
-      const printMessage = () =>
-        printVerbose(pc.dim('\nWaiting for file changes...'));
+      const printMessage = () => printVerbose(pc.dim('\nWaiting for file changes...'));
       const watcher = chokidar.watch(input.concat(dependencies(results)), {
         usePolling: argv.poll,
         interval: argv.poll && typeof argv.poll === 'number' ? argv.poll : 100,
@@ -150,9 +139,7 @@ buildCliConfig()
           .dependantsOf(file)
           .concat(getAncestorDirs(file).flatMap(depGraph.dependantsOf));
 
-        recompile = recompile.concat(
-          dependants.filter((file) => input.includes(file)),
-        );
+        recompile = recompile.concat(dependants.filter((file) => input.includes(file)));
 
         if (!recompile.length) recompile = input;
 
@@ -232,8 +219,7 @@ function css(css, file) {
     if (!argv.config) argv.config = path.dirname(file);
   }
 
-  const relativePath =
-    file !== 'stdin' ? path.relative(path.resolve(), file) : file;
+  const relativePath = file !== 'stdin' ? path.relative(path.resolve(), file) : file;
 
   if (!argv.config) argv.config = process.cwd();
 
@@ -252,9 +238,7 @@ function css(css, file) {
       options.from = file === 'stdin' ? path.join(process.cwd(), 'stdin') : file;
 
       if (output || dir || argv.replace) {
-        const base = argv.base
-          ? file.replace(path.resolve(argv.base), '')
-          : path.basename(file);
+        const base = argv.base ? file.replace(path.resolve(argv.base), '') : path.basename(file);
         options.to = output || (argv.replace ? file : path.join(dir, base));
 
         if (argv.ext) {
@@ -265,9 +249,7 @@ function css(css, file) {
       }
 
       if (!options.to && config.options.map && !config.options.map.inline) {
-        error(
-          'Output Error: Cannot output external sourcemaps when writing to STDOUT',
-        );
+        error('Output Error: Cannot output external sourcemaps when writing to STDOUT');
       }
 
       return processWithEngine(engine, config, css, options).then((result) => {
@@ -284,11 +266,7 @@ function css(css, file) {
 
         return Promise.all(tasks).then(() => {
           const prettyTime = prettyHrtime(process.hrtime(time));
-          printVerbose(
-            pc.green(
-              `Finished ${pc.bold(relativePath)} in ${pc.bold(prettyTime)}`,
-            ),
-          );
+          printVerbose(pc.green(`Finished ${pc.bold(relativePath)} in ${pc.bold(prettyTime)}`));
 
           const messages = result.warnings();
           if (messages.length) {
@@ -324,16 +302,12 @@ function dependencies(results) {
     if (result.messages <= 0) return;
 
     result.messages
-      .filter((msg) =>
-        msg.type === 'dependency' || msg.type === 'dir-dependency' ? msg : '',
-      )
+      .filter((msg) => (msg.type === 'dependency' || msg.type === 'dir-dependency' ? msg : ''))
       .map(depGraph.add)
       .forEach((dependency) => {
         if (dependency.type === 'dir-dependency') {
           messages.push(
-            dependency.glob
-              ? path.join(dependency.dir, dependency.glob)
-              : dependency.dir,
+            dependency.glob ? path.join(dependency.dir, dependency.glob) : dependency.dir,
           );
         } else {
           messages.push(dependency.file);

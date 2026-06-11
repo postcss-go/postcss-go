@@ -29,10 +29,10 @@ The CLI mirrors [postcss-cli](https://github.com/postcss/postcss-cli) options: g
 
 ### Engines
 
-| Engine | Flag | When to use |
-| --- | --- | --- |
-| `postcss` (default) | `--engine postcss` | Plugin chains, custom parsers, source maps |
-| `go` | `--engine go` | Parse/stringify through the Go bridge (no plugins yet) |
+| Engine              | Flag               | When to use                                            |
+| ------------------- | ------------------ | ------------------------------------------------------ |
+| `postcss` (default) | `--engine postcss` | Plugin chains, custom parsers, source maps             |
+| `go`                | `--engine go`      | Parse/stringify through the Go bridge (no plugins yet) |
 
 Set `POSTCSS_GO_ENGINE=go` to default to the Go engine.
 

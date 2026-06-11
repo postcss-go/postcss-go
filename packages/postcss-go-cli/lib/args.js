@@ -9,10 +9,7 @@ const { argv } = yargs(process.argv.slice(2))
   $0 <input-glob-pattern> [OPTIONS] --dir <output-directory> [--watch|-w]
   $0 <input.css>... [OPTIONS] --replace`,
   )
-  .group(
-    ['o', 'd', 'r', 'map', 'no-map', 'watch', 'verbose', 'env', 'engine'],
-    'Basic options:',
-  )
+  .group(['o', 'd', 'r', 'map', 'no-map', 'watch', 'verbose', 'env', 'engine'], 'Basic options:')
   .option('o', {
     alias: 'output',
     desc: 'Output file',
@@ -54,10 +51,7 @@ const { argv } = yargs(process.argv.slice(2))
     choices: ['postcss', 'go'],
     default: process.env.POSTCSS_GO_ENGINE === 'go' ? 'go' : 'postcss',
   })
-  .group(
-    ['u', 'parser', 'stringifier', 'syntax'],
-    'Options for use without a config file:',
-  )
+  .group(['u', 'parser', 'stringifier', 'syntax'], 'Options for use without a config file:')
   .option('u', {
     alias: 'use',
     desc: 'List of postcss plugins to use',
@@ -102,10 +96,7 @@ const { argv } = yargs(process.argv.slice(2))
   .alias('h', 'help')
   .example('$0 input.css -o output.css', 'Basic usage')
   .example('$0 src/**/*.css --base src --dir build', 'Glob Pattern & output')
-  .example(
-    'cat input.css | $0 -u autoprefixer > output.css',
-    'Piping input & output',
-  )
+  .example('cat input.css | $0 -u autoprefixer > output.css', 'Piping input & output')
   .example('$0 input.css -o output.css --engine go', 'Use the postcss-go engine')
   .epilog(
     `If no input files are passed, it reads from stdin. If neither -o, --dir, or --replace is passed, it writes to stdout.

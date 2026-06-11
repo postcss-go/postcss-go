@@ -24,8 +24,5 @@ test('--base --dir works', async (t) => {
     await read('test/fixtures/base/level-1/level-2/a.css'),
   );
 
-  t.is(
-    await read(path.join(dir, 'level-1/b.css')),
-    await read('test/fixtures/base/level-1/b.css'),
-  );
+  t.is(await read(path.join(dir, 'level-1/b.css')), await read('test/fixtures/base/level-1/b.css'));
 });

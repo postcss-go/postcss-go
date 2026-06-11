@@ -6,10 +6,7 @@ import cli from './helpers/cli.js';
 const fixtureDir = path.resolve('test/fixtures/config');
 
 test('loads postcss.config.cjs from cwd for file input', async (t) => {
-  const { error, stdout, stderr } = await cli(
-    ['input.css', '--no-map'],
-    fixtureDir,
-  );
+  const { error, stdout, stderr } = await cli(['input.css', '--no-map'], fixtureDir);
 
   t.falsy(error, stderr);
   t.true(stdout.includes('color: tomato'));
