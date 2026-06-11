@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'path';
 import { expect, test } from 'vitest';
 
-import cli from './helpers/cli.js';
-import read from './helpers/read.js';
-import tmp from './helpers/tmp.js';
-import write from './helpers/write.js';
+import cli from './helpers/cli.ts';
+import read from './helpers/read.ts';
+import tmp from './helpers/tmp.ts';
+import write from './helpers/write.ts';
 
 test('--replace overwrites the input file', async () => {
   const file = tmp('replace.css');

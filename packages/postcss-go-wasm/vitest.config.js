@@ -2,21 +2,19 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    fileParallelism: false,
-    include: ['test/*.ts'],
+    include: ['test/**/*.test.ts'],
   },
   coverage: {
     provider: 'v8',
     all: true,
-    include: ['lib/**/*.js'],
-    exclude: ['index.js', 'scripts/**', 'test/**'],
+    include: ['src/**/*.ts'],
     excludeAfterRemap: true,
     reporter: ['text', 'html'],
     thresholds: {
-      statements: 85,
-      branches: 70,
-      functions: 90,
-      lines: 85,
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
     },
   },
 });

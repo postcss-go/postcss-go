@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'url';
 import { expect, test } from 'vitest';
 
-import read from './helpers/read.js';
+import read from './helpers/read.ts';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

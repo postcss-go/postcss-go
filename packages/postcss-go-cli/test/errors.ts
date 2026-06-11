@@ -1,7 +1,7 @@
 import path from 'path';
 import { expect, test } from 'vitest';
 
-import cli from './helpers/cli.js';
+import cli from './helpers/cli.ts';
 
 const fixtureDir = path.resolve('test/fixtures/errors');
 

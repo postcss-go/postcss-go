@@ -1,0 +1,221 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { expect, test } from 'vitest';
+
+import {
+  BrowserPostcssGoService,
+  NodePostcssGoService,
+  UnsupportedServiceError,
+  createNodeService,
+  parse,
+  process as processCss,
+} from '../src/index.ts';
+
+async function createBridgeScript(mode = 'success') {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'postcss-go-core-test-'));
+  const file = path.join(dir, 'bridge.mjs');
+  const code = `
+import readline from 'node:readline';
+
+const mode = ${JSON.stringify(mode)};
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+
+function root(css, options = {}) {
+  return {
+    type: 'root',
+    source: options.from ? { file: options.from } : undefined,
+    nodes: css.includes(':')
+      ? [{ type: 'decl', prop: 'color', value: 'red' }]
+      : [],
+  };
+}
+
+rl.on('line', (line) => {
+  if (!line.trim()) return;
+  const request = JSON.parse(line);
+
+  if (mode === 'invalid-json') {
+    process.stdout.write('not-json\\n');
+    return;
+  }
+
+  if (mode === 'hang') {
+    return;
+  }
+
+  if (mode === 'bridge-error') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: request.id,
+      error: { code: -32000, message: 'bridge failed' },
+    }) + '\\n');
+    return;
+  }
+
+  if (mode === 'missing-root') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: { css: request.params.css ?? '' },
+    }) + '\\n');
+    return;
+  }
+
+  if (mode === 'missing-css') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: { root: root(request.params.css, request.params.options) },
+    }) + '\\n');
+    return;
+  }
+
+  if (request.method === 'parse') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: { root: root(request.params.css, request.params.options) },
+    }) + '\\n');
+    return;
+  }
+
+  if (request.method === 'process') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        css: request.params.css.toUpperCase(),
+        root: root(request.params.css, request.params.options),
+        messages: [{ type: 'warning', text: 'processed' }],
+      },
+    }) + '\\n');
+    return;
+  }
+
+  if (request.method === 'stringify') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: { css: '.from-ast { color: blue; }' },
+    }) + '\\n');
+  }
+});
+`;
+  await fs.writeFile(file, code, 'utf8');
+  return file;
+}
+
+function createService(mode = 'success') {
+  return createBridgeScript(mode).then(
+    (script) =>
+      new NodePostcssGoService({
+        binPath: process.execPath,
+        binArgs: [script],
+      }),
+  );
+}
+
+test('parse and process reuse an explicit service without closing it', async () => {
+  const calls = [];
+  let closed = 0;
+  const service = {
+    async parse(css, options) {
+      calls.push(['parse', css, options]);
+      return { root: { type: 'root', nodes: [] } };
+    },
+    async process(css, options) {
+      calls.push(['process', css, options]);
+      return { css, root: { type: 'root', nodes: [] }, messages: [] };
+    },
+    async stringify() {
+      return '';
+    },
+    async close() {
+      closed += 1;
+    },
+  };
+
+  await parse('a{}', { from: 'a.css' }, service);
+  await processCss('b{}', { from: 'b.css' }, service);
+
+  expect(calls).toEqual([
+    ['parse', 'a{}', { from: 'a.css' }],
+    ['process', 'b{}', { from: 'b.css' }],
+  ]);
+  expect(closed).toBe(0);
+});
+
+test('createNodeService returns a NodePostcssGoService instance', () => {
+  const service = createNodeService({ binPath: process.execPath, binArgs: ['--version'] });
+  expect(service).toBeInstanceOf(NodePostcssGoService);
+});
+
+test('NodePostcssGoService parses, processes, and stringifies through the bridge', async () => {
+  const service = await createService();
+
+  const parsed = await service.parse('.a { color: red; }', { from: 'input.css' });
+  expect(parsed.root.type).toBe('root');
+  expect(parsed.root.source.file).toBe('input.css');
+
+  const processed = await service.process('.a { color: red; }', { from: 'input.css' });
+  expect(processed.css).toBe('.A { COLOR: RED; }');
+  expect(processed.messages).toEqual([{ type: 'warning', text: 'processed' }]);
+
+  const css = await service.stringify({ type: 'root', nodes: [] });
+  expect(css).toBe('.from-ast { color: blue; }');
+
+  await service.close();
+});
+
+test('NodePostcssGoService rejects invalid bridge payloads', async () => {
+  const parseService = await createService('missing-root');
+  await expect(parseService.parse('a{}')).rejects.toThrow(/missing root/);
+  await parseService.close();
+
+  const processService = await createService('missing-css');
+  await expect(processService.process('a{}')).rejects.toThrow(/process response is incomplete/);
+  await processService.close();
+});
+
+test('NodePostcssGoService surfaces bridge errors and invalid JSON', async () => {
+  const errorService = await createService('bridge-error');
+  await expect(errorService.parse('a{}')).rejects.toThrow(/bridge failed/);
+  await errorService.close();
+
+  const invalidJsonService = await createService('invalid-json');
+  await expect(invalidJsonService.parse('a{}')).rejects.toThrow(/invalid JSON-RPC/);
+  await invalidJsonService.close();
+});
+
+test('NodePostcssGoService rejects pending requests when closed', async () => {
+  const service = await createService('hang');
+  const pending = service.parse('a{}');
+
+  await service.close();
+  await expect(pending).rejects.toThrow(/bridge (closed|exited)/);
+});
+
+test('NodePostcssGoService cannot be used after close', async () => {
+  const service = await createService();
+  await service.close();
+
+  await expect(service.parse('a{}')).rejects.toThrow(/service is closed/);
+});
+
+test('BrowserPostcssGoService throws UnsupportedServiceError for unimplemented methods', async () => {
+  const service = new BrowserPostcssGoService({
+    workerUrl: '/worker.js',
+    wasmUrl: '/postcss-go.wasm',
+  });
+
+  expect(service.workerUrl).toBe('/worker.js');
+  expect(service.wasmUrl).toBe('/postcss-go.wasm');
+
+  await expect(service.parse('a{}')).rejects.toThrow(UnsupportedServiceError);
+  await expect(service.process('a{}')).rejects.toThrow(UnsupportedServiceError);
+  await expect(service.stringify({ type: 'root', nodes: [] })).rejects.toThrow(
+    UnsupportedServiceError,
+  );
+  await expect(service.close()).resolves.toBeUndefined();
+});

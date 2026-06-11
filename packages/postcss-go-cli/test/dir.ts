@@ -1,9 +1,9 @@
 import path from 'path';
 import { expect, test } from 'vitest';
 
-import cli from './helpers/cli.js';
-import tmp from './helpers/tmp.js';
-import read from './helpers/read.js';
+import cli from './helpers/cli.ts';
+import tmp from './helpers/tmp.ts';
+import read from './helpers/read.ts';
 
 test('--dir works', async () => {
   const dir = tmp();
