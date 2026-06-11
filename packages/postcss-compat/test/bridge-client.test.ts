@@ -76,7 +76,9 @@ test('bridge-client.cjs sends JSON-RPC requests through the go bridge', async ()
 
 test('bridge-client.cjs wraps bridge errors as CssSyntaxError', async () => {
   await withBridgeClient(
-    [`${JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'syntax boom' } })}\n`],
+    [
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'syntax boom' } })}\n`,
+    ],
     ({ bridge }) => {
       expect(() => bridge.callSync('parse', { css: '.a {' })).toThrowError(
         expect.objectContaining({

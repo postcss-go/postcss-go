@@ -50,29 +50,37 @@ test.skipIf(process.env.COVERAGE_RUN === 'true')(
   '--engine go writes output',
   { timeout: 25000 },
   async () => {
-  const output = tmp('output.css');
-  const child = spawn(
-    process.execPath,
-    [path.join(packageRoot, 'index.js'), 'test/fixtures/a.css', '-o', output, '--no-map', '--engine', 'go'],
-    { cwd: packageRoot },
-  );
+    const output = tmp('output.css');
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(packageRoot, 'index.js'),
+        'test/fixtures/a.css',
+        '-o',
+        output,
+        '--no-map',
+        '--engine',
+        'go',
+      ],
+      { cwd: packageRoot },
+    );
 
-  let stderr = '';
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk.toString();
-  });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
 
-  try {
-    await waitForContent(output, 'color: red');
-    expect(stderr).toBe('');
-    expect(await read(output)).toContain('color: red');
-  } finally {
-    child.kill('SIGKILL');
-    await Promise.race([
-      new Promise((resolve) => child.on('exit', resolve)),
-      new Promise((resolve) => setTimeout(resolve, 1000)),
-    ]);
-  }
+    try {
+      await waitForContent(output, 'color: red');
+      expect(stderr).toBe('');
+      expect(await read(output)).toContain('color: red');
+    } finally {
+      child.kill('SIGKILL');
+      await Promise.race([
+        new Promise((resolve) => child.on('exit', resolve)),
+        new Promise((resolve) => setTimeout(resolve, 1000)),
+      ]);
+    }
   },
 );
 

@@ -1,11 +1,7 @@
 import postcss from 'postcss';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import {
-  assertGoEngineCompatible,
-  createEngine,
-  processWithEngine,
-} from '../lib/engine.js';
+import { assertGoEngineCompatible, createEngine, processWithEngine } from '../lib/engine.js';
 import {
   getBundledGoBridgeBinPath,
   resolveGoBridgeServiceOptions,
@@ -114,19 +110,13 @@ test('processWithEngine converts buffer input and warning objects for the go eng
 
 test('assertGoEngineCompatible rejects custom parser flags and object-style plugins', () => {
   expect(() =>
-    assertGoEngineCompatible(
-      { engine: 'go', parser: './parser.js' },
-      { plugins: {}, options: {} },
-    ),
+    assertGoEngineCompatible({ engine: 'go', parser: './parser.js' }, { plugins: {}, options: {} }),
   ).toThrow(
     'Engine Error: postcss-go does not support custom parser/syntax/stringifier yet; use --engine postcss',
   );
 
   expect(() =>
-    assertGoEngineCompatible(
-      { engine: 'go' },
-      { plugins: { autoprefixer: {} }, options: {} },
-    ),
+    assertGoEngineCompatible({ engine: 'go' }, { plugins: { autoprefixer: {} }, options: {} }),
   ).toThrow(
     'Engine Error: postcss-go does not support postcss.config.js plugins yet; use --engine postcss',
   );

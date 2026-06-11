@@ -1,9 +1,6 @@
 import { expect, test } from 'vitest';
 
-import {
-  BrowserPostcssGoService,
-  UnsupportedServiceError,
-} from '../src/index.ts';
+import { BrowserPostcssGoService, UnsupportedServiceError } from '../src/index.ts';
 
 test('wasm package re-exports the browser service surface', async () => {
   const service = new BrowserPostcssGoService({

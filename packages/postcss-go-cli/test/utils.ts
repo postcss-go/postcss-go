@@ -24,8 +24,6 @@ test('dependency graph tracks both file and directory dependencies', () => {
   expect(graph.dependantsOf('src/partial.css')).toEqual([
     expect.stringMatching(/src\/input\.css$/),
   ]);
-  expect(graph.dependantsOf('src/components')).toEqual([
-    expect.stringMatching(/src\/input\.css$/),
-  ]);
+  expect(graph.dependantsOf('src/components')).toEqual([expect.stringMatching(/src\/input\.css$/)]);
   expect(graph.dependantsOf('src/missing.css')).toEqual([]);
 });
