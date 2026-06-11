@@ -40,7 +40,7 @@
     "index.js",
     "lib",
     "dist",
-    "!**/*.test.js"
+    "!**/*.test.ts"
   ],
   "keywords": [
     "cli",
