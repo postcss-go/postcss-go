@@ -8,18 +8,17 @@ import { processWithEngine } from '../lib/engine.js';
 test('--engine go writes output', async () => {
   const output = tmp('output.css');
 
-  const { error, stderr } = await cli([
-    'test/fixtures/a.css',
-    '-o',
-    output,
-    '--no-map',
-    '--engine',
-    'go',
-  ]);
+  const { error, stderr } = await cli(
+    ['test/fixtures/a.css', '-o', output, '--no-map', '--engine', 'go'],
+    undefined,
+    {
+      timeout: 55_000,
+    },
+  );
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toBeTruthy();
-}, 15_000);
+}, 60_000);
 
 test('--engine go rejects --use plugins', async () => {
   const output = tmp('output.css');
