@@ -18,7 +18,14 @@ import postcssReporter from 'postcss-reporter/lib/formatter.js';
 import argv from './lib/args.js';
 import createDependencyGraph from './lib/DependencyGraph.js';
 import getMapfile from './lib/getMapfile.js';
-import { assertGoEngineCompatible, createEngine, processWithEngine } from './lib/engine.js';
+import {
+  assertGoEngineCompatible,
+  createEngine,
+  getEffectiveMapOption,
+  isExternalSourceMap,
+  processWithEngine,
+} from './lib/engine.js';
+import { getPollInterval, usePolling } from './lib/poll.js';
 
 const reporter = postcssReporter();
 const depGraph = createDependencyGraph();
@@ -124,8 +131,8 @@ buildCliConfig()
     if (argv.watch) {
       const printMessage = () => printVerbose(pc.dim('\nWaiting for file changes...'));
       const watcher = chokidar.watch(input.concat(dependencies(results)), {
-        usePolling: argv.poll,
-        interval: argv.poll && typeof argv.poll === 'number' ? argv.poll : 100,
+        usePolling: usePolling(argv.poll),
+        interval: getPollInterval(argv.poll),
         awaitWriteFinish: {
           stabilityThreshold: 50,
           pollInterval: 10,
@@ -237,12 +244,13 @@ function css(css, file) {
       assertGoEngineCompatible(argv, config);
       const options = { ...config.options };
 
-      if (file === 'stdin' && output) file = output;
-
       options.from = file === 'stdin' ? path.join(process.cwd(), 'stdin') : file;
 
       if (output || dir || argv.replace) {
-        const base = argv.base ? path.relative(path.resolve(argv.base), file) : path.basename(file);
+        const toBase = file === 'stdin' && output ? output : file;
+        const base = argv.base
+          ? path.relative(path.resolve(argv.base), toBase)
+          : path.basename(toBase);
         options.to = output || (argv.replace ? file : path.join(dir, base));
 
         if (argv.ext) {
@@ -252,7 +260,7 @@ function css(css, file) {
         options.to = path.resolve(options.to);
       }
 
-      if (!options.to && config.options.map && !config.options.map.inline) {
+      if (!options.to && isExternalSourceMap(getEffectiveMapOption(config))) {
         throw new Error('Output Error: Cannot output external sourcemaps when writing to STDOUT');
       }
 

@@ -38,6 +38,17 @@ test('--ext changes the output extension when using --dir', async () => {
   expect(await read(path.join(outputDir, 'a.min.css'))).toBe(await read('test/fixtures/a.css'));
 });
 
+test('rejects external sourcemaps from config.map when writing to stdout', async () => {
+  const fixtureDir = path.resolve('test/fixtures/config-external-map');
+
+  const { error, stderr } = await cli(['input.css', '--no-map'], fixtureDir);
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Output Error: Cannot output external sourcemaps when writing to STDOUT',
+  );
+});
+
 test('--map writes an external sourcemap with the postcss engine', async () => {
   const output = tmp('mapped.css');
 

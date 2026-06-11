@@ -6,6 +6,7 @@ import read from './helpers/read.js';
 import {
   assertGoEngineCompatible,
   getEffectiveMapOption,
+  isExternalSourceMap,
   isSourceMapEnabled,
   processWithEngine,
 } from '../lib/engine.js';
@@ -130,6 +131,13 @@ test('--engine go rejects explicit map: true in postcss.config.js', async () => 
   expect(stderr).toContain(
     'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
   );
+});
+
+test('isExternalSourceMap detects external map configurations', () => {
+  expect(isExternalSourceMap(false)).toBe(false);
+  expect(isExternalSourceMap({ inline: true })).toBe(false);
+  expect(isExternalSourceMap(true)).toBe(true);
+  expect(isExternalSourceMap({ inline: false })).toBe(true);
 });
 
 test('isSourceMapEnabled treats only false and undefined as disabled', () => {

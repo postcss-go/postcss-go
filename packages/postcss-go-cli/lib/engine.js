@@ -15,6 +15,12 @@ export function isSourceMapEnabled(map) {
   return map !== false && map !== undefined;
 }
 
+export function isExternalSourceMap(map) {
+  if (!isSourceMapEnabled(map)) return false;
+  if (map === true) return true;
+  return map.inline !== true;
+}
+
 export function assertGoEngineCompatible(argv, config) {
   if (argv.engine !== 'go') {
     return;
