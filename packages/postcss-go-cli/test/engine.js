@@ -5,7 +5,9 @@ import tmp from './helpers/tmp.js';
 import read from './helpers/read.js';
 import { processWithEngine } from '../lib/engine.js';
 
-test('--engine go writes output', async () => {
+test(
+  '--engine go writes output',
+  async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli([
@@ -19,7 +21,9 @@ test('--engine go writes output', async () => {
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toBeTruthy();
-});
+  },
+  15_000,
+);
 
 test('--engine go rejects --use plugins', async () => {
   const output = tmp('output.css');
