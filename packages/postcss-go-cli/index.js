@@ -36,9 +36,9 @@ async function buildCliConfig() {
   cliConfig = {
     options: {
       map: argv.map !== undefined ? argv.map : { inline: true },
-      parser: argv.parser ? await import(argv.parser) : undefined,
-      syntax: argv.syntax ? await import(argv.syntax) : undefined,
-      stringifier: argv.stringifier ? await import(argv.stringifier) : undefined,
+      parser: argv.parser ? await importDefault(argv.parser) : undefined,
+      syntax: argv.syntax ? await importDefault(argv.syntax) : undefined,
+      stringifier: argv.stringifier ? await importDefault(argv.stringifier) : undefined,
     },
     plugins: argv.use
       ? await Promise.all(
@@ -55,6 +55,11 @@ async function buildCliConfig() {
         )
       : [],
   };
+}
+
+async function importDefault(moduleId) {
+  const imported = await import(moduleId);
+  return imported.default ?? imported;
 }
 
 const configFiles = new Set();
