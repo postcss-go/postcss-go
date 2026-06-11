@@ -210,9 +210,11 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   private resolveCommand(): { command: string; args: string[]; cwd: string } {
-    if (this.binPath) {
+    const binPath = this.binPath ?? process.env.POSTCSS_GO_NODE_API_BIN;
+
+    if (binPath) {
       return {
-        command: this.binPath,
+        command: binPath,
         args: this.binArgs ?? [],
         cwd: this.workingDirectory ?? process.cwd(),
       };

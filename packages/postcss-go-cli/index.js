@@ -135,6 +135,8 @@ buildCliConfig()
       watcher.add([...configFiles]);
 
       watcher.on('ready', printMessage).on('change', (file) => {
+        read.clear();
+
         let recompile = [];
 
         if (input.includes(file)) recompile.push(file);

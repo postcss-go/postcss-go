@@ -12,7 +12,7 @@
   "scripts": {
     "build": "node -e \"console.log('postcss-go-cli: no build step')\"",
     "check": "node -e \"console.log('postcss-go-cli: no typecheck step')\"",
-    "pretest": "pnpm --filter @postcss-go/core build",
+    "pretest": "pnpm --filter @postcss-go/core build && node ./scripts/build-test-bridge.mjs",
     "test": "vitest run"
   },
   "dependencies": {
