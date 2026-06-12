@@ -141,9 +141,10 @@ pnpm bench
 
 Benchmarks cover synthetic scaling workloads and real-world CSS fixtures (modern-normalize, Tailwind preflight, animate.css, Bootstrap). See [docs/benchmark.md](docs/benchmark.md) for workload details and individual commands.
 
-GitHub Actions CI runs four lanes:
+GitHub Actions CI runs five lanes:
 
 - Upstream snapshot: verify `vendor/postcss/` matches `postcss/postcss@main`
+- Benchmark comparison: run `pnpm bench` and publish the benchmark report as a CI summary/artifact
 - Upstream tests: full vendored PostCSS unit suite plus Go compat tokenizer subset
 - Node / TypeScript: `prettier --check`, `eslint`, workspace typecheck/tests, and `pnpm build`
 - Go: `gofmt` verification, `go vet ./...`, and `go test ./...`

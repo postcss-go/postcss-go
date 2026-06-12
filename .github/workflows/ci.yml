@@ -29,9 +29,144 @@ jobs:
       - name: Check vendored upstream tests are current
         run: ./scripts/check-upstream-postcss-sync.sh
 
-  node:
-    name: Node / TypeScript Checks
+  coverage:
+    name: Coverage Upload
     runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Go coverage
+        run: pnpm coverage:go
+
+      - name: Generate JS coverage
+        run: pnpm coverage:js
+
+      - name: Upload Go coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: |
+            coverage/go.out
+            coverage/go.txt
+
+      - name: Upload JS coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-coverage
+          path: |
+            packages/postcss-go-cli/coverage/lcov.info
+            packages/postcss-go-cli/coverage/coverage-summary.json
+
+      - name: Upload Go coverage to Codecov
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/go.out
+          flags: go
+          name: codecov-go
+          disable_search: true
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
+      - name: Upload JS coverage to Codecov
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./packages/postcss-go-cli/coverage/lcov.info
+          flags: js
+          name: codecov-js
+          disable_search: true
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
+  benchmark:
+    name: Benchmark Comparison
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify benchmark fixtures parse successfully
+        run: go test -mod=mod ./benchmark/ -run TestRealWorldFixturesParse
+
+      - name: Run benchmark comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm bench | tee benchmark.txt
+          {
+            echo "## Benchmark comparison"
+            echo ""
+            echo '```text'
+            cat benchmark.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: benchmark.txt
+
+  node:
+    name: Node / TypeScript Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
 
     steps:
       - name: Checkout
@@ -100,10 +235,17 @@ jobs:
         run: pnpm test:upstream:go
 
   go:
-    name: Go Checks
-    runs-on: ubuntu-latest
+    name: Go Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     env:
       GOFLAGS: -mod=mod
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
 
     steps:
       - name: Checkout
@@ -116,6 +258,7 @@ jobs:
           cache: true
 
       - name: Verify gofmt
+        shell: bash
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then

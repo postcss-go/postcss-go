@@ -7,7 +7,8 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const packageDir = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(packageDir, '..', '..');
 const outputDir = path.join(packageDir, 'dist');
-const outputPath = path.join(outputDir, 'postcss-go-node-api');
+const outputName = process.platform === 'win32' ? 'postcss-go-node-api.exe' : 'postcss-go-node-api';
+const outputPath = path.join(outputDir, outputName);
 
 fs.mkdirSync(outputDir, { recursive: true });
 
