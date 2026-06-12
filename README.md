@@ -1,42 +1,33 @@
 # postcss-go
 
-The goal of `postcss-go` is to port the core architecture of [eryue0220/postcss](https://github.com/eryue0220/postcss) to Go, and organize the repository with the same clear layering as [eryue0220/rslint](https://github.com/eryue0220/rslint).
+`postcss-go` is a Go port of the core [PostCSS](https://github.com/postcss/postcss) architecture.
 
-At the current stage, the main pipeline is in place:
+The repository mirrors the same high-level pipeline as upstream PostCSS:
 
-1. `tokenizer` turns CSS into a token stream
-2. `parser` turns the token stream into an AST
-3. `processor` walks and mutates the AST with visitor-style plugins
-4. `stringifier` outputs the AST back to CSS
+1. `tokenizer` turns CSS into tokens
+2. `parser` turns tokens into an AST
+3. `processor` runs visitor-style plugins on the AST
+4. `stringifier` turns the AST back into CSS
 
-## Repository layout
+Today the Go engine is already usable for parsing, AST mutation, walking, and stringifying CSS. The surrounding Node.js workspace provides a compatible CLI, upstream compatibility harnesses, and the in-progress bridge layers for future JS and browser runtimes.
 
-- `internal/postcss`: Go-side facade that aggregates AST / parser / processor / stringifier
-- `internal/ast`: nodes, containers, traversal
-- `internal/tokenizer`: tokenizer
-- `internal/parser`: parser
-- `internal/processor`: plugin visitor pipeline
-- `internal/result`: results and warnings
-- `internal/stringifier`: CSS output
-- `packages/postcss-go`: Node.js / TypeScript interop entry point
-- `packages/postcss-go-cli`: CLI for processing CSS files (ported from [postcss-cli](https://github.com/postcss/postcss-cli))
-- `packages/postcss-go-wasm`: browser / worker / wasm entry skeleton
-- `docs/architecture.md`: architecture overview
+## Status
 
-## Workspace
+Implemented today:
 
-The repository uses `pnpm` to manage the frontend package workspace:
+- Go tokenizer, parser, AST, processor, and stringifier
+- Visitor-style plugin execution with enter/exit hooks
+- Root Go API for parsing, processing, and walking nodes
+- A Node.js CLI aligned with [postcss-cli](https://github.com/postcss/postcss-cli)
+- Upstream compatibility checks against a vendored copy of `postcss/postcss`
+- Benchmark tooling for comparing the Go engine with upstream PostCSS
 
-```bash
-pnpm install
-pnpm build
-pnpm check
-pnpm check:all
-```
+Still in progress:
 
-At the moment, `packages/` provides package boundaries and type entry points; the Go bridge / wasm runtime are still to be implemented.
-
-The Go side has been consolidated under `internal/` with no root-level public facade; the repository is organized around an internal Go engine with JS/TS packages as the external interface.
+- Full `lazy-result` / async plugin behavior
+- `raws`, source maps, and formatting fidelity comparable to upstream PostCSS
+- A production-ready JS bridge and wasm/browser runtime
+- Closer tokenizer/parser edge-case parity with upstream
 
 ## CLI
 
@@ -54,6 +45,10 @@ node packages/postcss-go-cli/index.js input.css -o output.css --engine go --no-m
 ```
 
 See [packages/postcss-go-cli/README.md](packages/postcss-go-cli/README.md) for full usage.
+
+## Go API
+
+Use the Go processor directly when you want to parse CSS, mutate the AST, and stringify the result in-process:
 
 ## Example
 
@@ -90,6 +85,13 @@ func main() {
 }
 ```
 
+The root package also exposes lower-level helpers such as:
+
+- `Parse` / `ParseWithOptions`
+- `Stringify`
+- `NewRoot`, `NewRule`, `NewAtRule`, `NewDeclaration`, `NewComment`
+- `Walk`, `WalkRules`, `WalkAtRules`, `WalkDecls`, `WalkComments`
+
 ## Visitor Hooks
 
 Currently supported hooks:
@@ -102,14 +104,35 @@ Currently supported hooks:
 - `Declaration` / `DeclarationExit`
 - `Comment` / `CommentExit`
 
+`Plugin.Prepare` is also supported, which lets a plugin create a per-run visitor from the current `Result`.
+
 ## Current limitations
 
 This version is closer to the upstream architecture than the initial simplified implementation, but the port is not complete:
 
 - No `lazy-result` or async plugins yet
 - No `raws`, source maps, or faithful formatting output yet
-- JS/TS `packages/` are still interop skeletons and do not yet bridge to the Go binary or wasm runtime
+- The `go` CLI engine is currently focused on parse/stringify and does not run PostCSS plugin chains
+- JS/TS `packages/` are still bridge layers in progress rather than a finished runtime surface
 - parser / tokenizer still need to be aligned further with upstream behavior
+
+## Development
+
+Install workspace dependencies:
+
+```bash
+pnpm install
+```
+
+Common local workflows:
+
+```bash
+go test ./...
+pnpm test
+pnpm check
+pnpm check:all
+pnpm bench
+```
 
 ## Verification
 
@@ -150,3 +173,15 @@ GitHub Actions CI runs five lanes:
 - Go: `gofmt` verification, `go vet ./...`, and `go test ./...`
 
 A scheduled workflow (`.github/workflows/upstream-postcss-sync.yml`) opens a PR when upstream tests change.
+
+## Acknowledgements
+
+[PostCSS](https://github.com/postcss/postcss) by [Andrey Sitnik](https://github.com/ai) is the upstream project this repository ports to Go. The Go engine follows PostCSS's core pipeline (`tokenizer` → `parser` → `AST` → `processor` → `stringifier`), and `vendor/postcss/` contains a vendored copy of the upstream test suite used for compatibility checks.
+
+Related PostCSS projects used by the Node.js packages:
+
+- [postcss-cli](https://github.com/postcss/postcss-cli) — CLI interface and options in `packages/postcss-go-cli/`
+- [postcss-load-config](https://github.com/postcss/postcss-load-config) — `postcss.config.js` loading
+- [postcss-reporter](https://github.com/postcss/postcss-reporter) — CLI warning output formatting
+
+PostCSS is released under the [MIT License](https://github.com/postcss/postcss/blob/main/LICENSE). This project is an independent port and is not affiliated with or endorsed by the PostCSS project.
