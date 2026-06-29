@@ -81,8 +81,60 @@ jobs:
           name: benchmark-report
           path: benchmark.txt
 
-  node:
-    name: Node / TypeScript Checks (${{ matrix.os }})
+  checks:
+    name: Format, Lint, and Build
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check JS formatting
+        run: pnpm format:check
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Lint JS
+        run: pnpm lint
+
+      - name: Vet Go
+        run: go vet ./...
+
+      - name: Build packages
+        run: pnpm build
+
+  node-tests:
+    name: Node / TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -110,17 +162,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check formatting
-        run: pnpm format:check
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck and tests
+      - name: Test
         run: pnpm test
-
-      - name: Build packages
-        run: pnpm build
 
   upstream-tests:
     name: Upstream PostCSS Test Suite
@@ -158,8 +201,8 @@ jobs:
       - name: Run Go compat tokenizer suite
         run: pnpm test:upstream:go
 
-  go:
-    name: Go Checks (${{ matrix.os }})
+  go-tests:
+    name: Go Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       GOFLAGS: -mod=mod
@@ -180,19 +223,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Verify gofmt
-        shell: bash
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "These files need gofmt:"
-            echo "$unformatted"
-            exit 1
-          fi
-
-      - name: Vet
-        run: go vet ./...
 
       - name: Test
         run: go test ./...
