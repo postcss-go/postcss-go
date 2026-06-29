@@ -75,7 +75,7 @@ test.skipIf(process.env.COVERAGE_RUN === 'true')(
       expect(stderr).toBe('');
       expect(await read(output)).toContain('color: red');
     } finally {
-      child.kill('SIGKILL');
+      child.kill();
       await Promise.race([
         new Promise((resolve) => child.on('exit', resolve)),
         new Promise((resolve) => setTimeout(resolve, 1000)),

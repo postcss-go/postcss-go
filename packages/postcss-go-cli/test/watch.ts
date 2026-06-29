@@ -65,7 +65,7 @@ test('watch mode recompiles when input changes', async () => {
     await waitForContent(output, 'color: blue');
     expect(await read(output)).not.toContain('color: red');
   } finally {
-    child.kill('SIGKILL');
+    child.kill();
     await Promise.race([
       new Promise((resolve) => child.on('exit', resolve)),
       new Promise((resolve) => setTimeout(resolve, 1000)),
@@ -97,7 +97,7 @@ test('watch mode recompiles when input changes without updating mtime', async ()
     await waitForContent(output, 'color: blue');
     expect(await read(output)).not.toContain('color: red');
   } finally {
-    child.kill('SIGKILL');
+    child.kill();
     await Promise.race([
       new Promise((resolve) => child.on('exit', resolve)),
       new Promise((resolve) => setTimeout(resolve, 1000)),
