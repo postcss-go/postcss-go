@@ -148,6 +148,39 @@ func TestInputAndSyntaxError(t *testing.T) {
 	}
 }
 
+func TestNodeErrorSupportsIndexAndWord(t *testing.T) {
+	root, err := ParseWithOptions("a { color: x red }", ParseOptions{From: "fixtures/error.css"})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule := root.Children()[0].(*Rule)
+	decl := rule.Children()[0].(*Declaration)
+
+	indexErr := decl.Error("Bad value", ErrorOptions{Index: 7})
+	if indexErr.Line != 1 || indexErr.Column != 12 {
+		t.Fatalf("unexpected index error position: %#v", indexErr)
+	}
+	if got := indexErr.ShowSourceCode(); !strings.Contains(got, "^") {
+		t.Fatalf("expected caret in source code, got %q", got)
+	}
+
+	wordErr := decl.Error("Wrong color", ErrorOptions{Word: "x"})
+	if wordErr.Line != 1 || wordErr.Column != 12 {
+		t.Fatalf("unexpected word error position: %#v", wordErr)
+	}
+	if !strings.Contains(wordErr.Error(), "error.css:1:12") {
+		t.Fatalf("expected file and location in message, got %q", wordErr.Error())
+	}
+}
+
+func TestNodeErrorWithoutSourceFallsBackToCssInput(t *testing.T) {
+	rule := NewRule("a")
+	err := rule.Error("Test")
+	if got := err.Error(); got != "<css input>: Test" {
+		t.Fatalf("unexpected error message: %q", got)
+	}
+}
+
 func TestNodeMutationAPI(t *testing.T) {
 	root, err := Parse(".a, .b { color: red; }")
 	if err != nil {
@@ -167,8 +200,22 @@ func TestNodeMutationAPI(t *testing.T) {
 	if err := decl.ReplaceWith(clone, decl); err != nil {
 		t.Fatalf("replace failed: %v", err)
 	}
+	after, err := decl.CloneAfter(NewDeclaration("border-color", "red"))
+	if err != nil {
+		t.Fatalf("clone after failed: %v", err)
+	}
+	before, err := decl.CloneBefore(NewDeclaration("-webkit-color", "red"))
+	if err != nil {
+		t.Fatalf("clone before failed: %v", err)
+	}
+	if after.Prev() != decl || before.Next() != decl {
+		t.Fatal("clone helpers should preserve sibling order")
+	}
 	got := Stringify(root)
-	if !strings.Contains(got, ".x, .y") || !strings.Contains(got, "background: red;") {
+	if !strings.Contains(got, ".x, .y") ||
+		!strings.Contains(got, "background: red;") ||
+		!strings.Contains(got, "-webkit-color: red;") ||
+		!strings.Contains(got, "border-color: red;") {
 		t.Fatalf("unexpected css after mutation: %q", got)
 	}
 }

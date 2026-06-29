@@ -13,18 +13,22 @@ type Options struct {
 }
 
 type Visitor struct {
-	Once            func(*ast.Root, *result.Result) error
-	OnceExit        func(*ast.Root, *result.Result) error
-	Root            func(*ast.Root, *result.Result) error
-	RootExit        func(*ast.Root, *result.Result) error
-	Rule            func(*ast.Rule, *result.Result) error
-	RuleExit        func(*ast.Rule, *result.Result) error
-	AtRule          func(*ast.AtRule, *result.Result) error
-	AtRuleExit      func(*ast.AtRule, *result.Result) error
-	Declaration     func(*ast.Declaration, *result.Result) error
-	DeclarationExit func(*ast.Declaration, *result.Result) error
-	Comment         func(*ast.Comment, *result.Result) error
-	CommentExit     func(*ast.Comment, *result.Result) error
+	Once                func(*ast.Root, *result.Result) error
+	OnceExit            func(*ast.Root, *result.Result) error
+	Root                func(*ast.Root, *result.Result) error
+	RootExit            func(*ast.Root, *result.Result) error
+	Rule                func(*ast.Rule, *result.Result) error
+	RuleExit            func(*ast.Rule, *result.Result) error
+	AtRule              func(*ast.AtRule, *result.Result) error
+	AtRuleNamed         map[string]func(*ast.AtRule, *result.Result) error
+	AtRuleExit          func(*ast.AtRule, *result.Result) error
+	AtRuleExitNamed     map[string]func(*ast.AtRule, *result.Result) error
+	Declaration         func(*ast.Declaration, *result.Result) error
+	DeclarationProp     map[string]func(*ast.Declaration, *result.Result) error
+	DeclarationExit     func(*ast.Declaration, *result.Result) error
+	DeclarationExitProp map[string]func(*ast.Declaration, *result.Result) error
+	Comment             func(*ast.Comment, *result.Result) error
+	CommentExit         func(*ast.Comment, *result.Result) error
 }
 
 type Plugin struct {
@@ -102,11 +106,10 @@ func walk(node ast.Node, res *result.Result, plugins []Plugin) error {
 
 	container, ok := node.(ast.Container)
 	if ok {
-		children := append([]ast.Node(nil), container.Children()...)
-		for _, child := range children {
-			if err := walk(child, res, plugins); err != nil {
-				return err
-			}
+		if err := ast.Each(container, func(child ast.Node, _ int) error {
+			return walk(child, res, plugins)
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -132,11 +135,25 @@ func dispatchEnter(plugin Plugin, node ast.Node, res *result.Result) error {
 		}
 	case *ast.AtRule:
 		if plugin.AtRule != nil {
-			return plugin.AtRule(current, res)
+			if err := plugin.AtRule(current, res); err != nil {
+				return err
+			}
+		}
+		if plugin.AtRuleNamed != nil {
+			if handler := plugin.AtRuleNamed[current.Name]; handler != nil {
+				return handler(current, res)
+			}
 		}
 	case *ast.Declaration:
 		if plugin.Declaration != nil {
-			return plugin.Declaration(current, res)
+			if err := plugin.Declaration(current, res); err != nil {
+				return err
+			}
+		}
+		if plugin.DeclarationProp != nil {
+			if handler := plugin.DeclarationProp[current.Prop]; handler != nil {
+				return handler(current, res)
+			}
 		}
 	case *ast.Comment:
 		if plugin.Comment != nil {
@@ -158,11 +175,25 @@ func dispatchExit(plugin Plugin, node ast.Node, res *result.Result) error {
 		}
 	case *ast.AtRule:
 		if plugin.AtRuleExit != nil {
-			return plugin.AtRuleExit(current, res)
+			if err := plugin.AtRuleExit(current, res); err != nil {
+				return err
+			}
+		}
+		if plugin.AtRuleExitNamed != nil {
+			if handler := plugin.AtRuleExitNamed[current.Name]; handler != nil {
+				return handler(current, res)
+			}
 		}
 	case *ast.Declaration:
 		if plugin.DeclarationExit != nil {
-			return plugin.DeclarationExit(current, res)
+			if err := plugin.DeclarationExit(current, res); err != nil {
+				return err
+			}
+		}
+		if plugin.DeclarationExitProp != nil {
+			if handler := plugin.DeclarationExitProp[current.Prop]; handler != nil {
+				return handler(current, res)
+			}
 		}
 	case *ast.Comment:
 		if plugin.CommentExit != nil {

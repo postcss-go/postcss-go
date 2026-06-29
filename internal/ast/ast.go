@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	csserrors "postcss-go/internal/csserrors"
 	"postcss-go/internal/source"
 )
 
@@ -36,6 +37,11 @@ type Node interface {
 	Remove() Node
 	ReplaceWith(...Node) error
 	Clone() Node
+	CloneBefore(...Node) (Node, error)
+	CloneAfter(...Node) (Node, error)
+	Before(...Node) error
+	After(...Node) error
+	Error(string, ...ErrorOptions) *csserrors.SyntaxError
 }
 
 type Container interface {
@@ -47,12 +53,28 @@ type Container interface {
 	InsertAfter(Node, ...Node) error
 	RemoveChild(Node) error
 	Index(Node) int
+	First() Node
+	Last() Node
+	RemoveAll()
+	Some(func(Node) bool) bool
+	Every(func(Node) bool) bool
 }
 
 type BaseNode struct {
-	parent Container
-	rng    SourceRange
-	src    *source.Location
+	parent       Container
+	rng          SourceRange
+	src          *source.Location
+	lastIterator int
+	iterators    map[int]int
+}
+
+type ErrorOptions struct {
+	Plugin   string
+	Index    int
+	EndIndex int
+	Word     string
+	Start    *source.Position
+	End      *source.Position
 }
 
 func (n *BaseNode) Parent() Container {
@@ -77,6 +99,69 @@ func (n *BaseNode) Source() *source.Location {
 
 func (n *BaseNode) SetSource(src *source.Location) {
 	n.src = src
+}
+
+func (n *BaseNode) nextIterator() int {
+	n.lastIterator++
+	if n.iterators == nil {
+		n.iterators = map[int]int{}
+	}
+	n.iterators[n.lastIterator] = 0
+	return n.lastIterator
+}
+
+func (n *BaseNode) iteratorIndex(id int) int {
+	if n.iterators == nil {
+		return 0
+	}
+	return n.iterators[id]
+}
+
+func (n *BaseNode) advanceIterator(id int) {
+	if n.iterators == nil {
+		return
+	}
+	n.iterators[id]++
+}
+
+func (n *BaseNode) dropIterator(id int) {
+	if n.iterators == nil {
+		return
+	}
+	delete(n.iterators, id)
+}
+
+func (n *BaseNode) resetIterators() {
+	n.iterators = nil
+	n.lastIterator = 0
+}
+
+func (n *BaseNode) shiftIteratorsOnInsert(index, count int, before bool) {
+	if n.iterators == nil || count == 0 {
+		return
+	}
+	for id, current := range n.iterators {
+		if before {
+			if index <= current {
+				n.iterators[id] = current + count
+			}
+			continue
+		}
+		if index < current {
+			n.iterators[id] = current + count
+		}
+	}
+}
+
+func (n *BaseNode) shiftIteratorsOnRemove(index int) {
+	if n.iterators == nil {
+		return
+	}
+	for id, current := range n.iterators {
+		if current >= index {
+			n.iterators[id] = current - 1
+		}
+	}
 }
 
 type Root struct {
@@ -105,11 +190,20 @@ func (r *Root) InsertAfter(target Node, nodes ...Node) error {
 }
 
 func (r *Root) RemoveChild(target Node) error {
-	return removeChild(&r.Nodes, target)
+	return removeChildFrom(r, &r.Nodes, target)
 }
 
 func (r *Root) Index(target Node) int {
 	return indexNode(r.Nodes, target)
+}
+func (r *Root) First() Node { return firstNode(r.Nodes) }
+func (r *Root) Last() Node  { return lastNode(r.Nodes) }
+func (r *Root) RemoveAll()  { removeAllChildren(r, &r.Nodes) }
+func (r *Root) Some(fn func(Node) bool) bool {
+	return someNodes(r.Nodes, fn)
+}
+func (r *Root) Every(fn func(Node) bool) bool {
+	return everyNodes(r.Nodes, fn)
 }
 
 func (r *Root) Root() *Root                     { return r }
@@ -118,6 +212,17 @@ func (r *Root) Prev() Node                      { return prevNode(r) }
 func (r *Root) Remove() Node                    { return removeNode(r) }
 func (r *Root) ReplaceWith(nodes ...Node) error { return replaceNode(r, nodes...) }
 func (r *Root) Clone() Node                     { return cloneNode(r) }
+func (r *Root) Before(nodes ...Node) error      { return beforeNode(r, nodes...) }
+func (r *Root) After(nodes ...Node) error       { return afterNode(r, nodes...) }
+func (r *Root) Error(message string, opts ...ErrorOptions) *csserrors.SyntaxError {
+	return errorNode(r, message, opts...)
+}
+func (r *Root) CloneBefore(overrides ...Node) (Node, error) {
+	return cloneBefore(r, overrides...)
+}
+func (r *Root) CloneAfter(overrides ...Node) (Node, error) {
+	return cloneAfter(r, overrides...)
+}
 
 func (r *Root) String() string {
 	var builder strings.Builder
@@ -155,11 +260,20 @@ func (r *Rule) InsertAfter(target Node, nodes ...Node) error {
 }
 
 func (r *Rule) RemoveChild(target Node) error {
-	return removeChild(&r.Nodes, target)
+	return removeChildFrom(r, &r.Nodes, target)
 }
 
 func (r *Rule) Index(target Node) int {
 	return indexNode(r.Nodes, target)
+}
+func (r *Rule) First() Node { return firstNode(r.Nodes) }
+func (r *Rule) Last() Node  { return lastNode(r.Nodes) }
+func (r *Rule) RemoveAll()  { removeAllChildren(r, &r.Nodes) }
+func (r *Rule) Some(fn func(Node) bool) bool {
+	return someNodes(r.Nodes, fn)
+}
+func (r *Rule) Every(fn func(Node) bool) bool {
+	return everyNodes(r.Nodes, fn)
 }
 
 func (r *Rule) Root() *Root                     { return rootOf(r) }
@@ -168,6 +282,17 @@ func (r *Rule) Prev() Node                      { return prevNode(r) }
 func (r *Rule) Remove() Node                    { return removeNode(r) }
 func (r *Rule) ReplaceWith(nodes ...Node) error { return replaceNode(r, nodes...) }
 func (r *Rule) Clone() Node                     { return cloneNode(r) }
+func (r *Rule) Before(nodes ...Node) error      { return beforeNode(r, nodes...) }
+func (r *Rule) After(nodes ...Node) error       { return afterNode(r, nodes...) }
+func (r *Rule) Error(message string, opts ...ErrorOptions) *csserrors.SyntaxError {
+	return errorNode(r, message, opts...)
+}
+func (r *Rule) CloneBefore(overrides ...Node) (Node, error) {
+	return cloneBefore(r, overrides...)
+}
+func (r *Rule) CloneAfter(overrides ...Node) (Node, error) {
+	return cloneAfter(r, overrides...)
+}
 
 func (r *Rule) Selectors() []string {
 	parts := strings.Split(r.Selector, ",")
@@ -209,11 +334,20 @@ func (r *AtRule) InsertAfter(target Node, nodes ...Node) error {
 }
 
 func (r *AtRule) RemoveChild(target Node) error {
-	return removeChild(&r.Nodes, target)
+	return removeChildFrom(r, &r.Nodes, target)
 }
 
 func (r *AtRule) Index(target Node) int {
 	return indexNode(r.Nodes, target)
+}
+func (r *AtRule) First() Node { return firstNode(r.Nodes) }
+func (r *AtRule) Last() Node  { return lastNode(r.Nodes) }
+func (r *AtRule) RemoveAll()  { removeAllChildren(r, &r.Nodes) }
+func (r *AtRule) Some(fn func(Node) bool) bool {
+	return someNodes(r.Nodes, fn)
+}
+func (r *AtRule) Every(fn func(Node) bool) bool {
+	return everyNodes(r.Nodes, fn)
 }
 
 func (r *AtRule) Root() *Root                     { return rootOf(r) }
@@ -222,6 +356,17 @@ func (r *AtRule) Prev() Node                      { return prevNode(r) }
 func (r *AtRule) Remove() Node                    { return removeNode(r) }
 func (r *AtRule) ReplaceWith(nodes ...Node) error { return replaceNode(r, nodes...) }
 func (r *AtRule) Clone() Node                     { return cloneNode(r) }
+func (r *AtRule) Before(nodes ...Node) error      { return beforeNode(r, nodes...) }
+func (r *AtRule) After(nodes ...Node) error       { return afterNode(r, nodes...) }
+func (r *AtRule) Error(message string, opts ...ErrorOptions) *csserrors.SyntaxError {
+	return errorNode(r, message, opts...)
+}
+func (r *AtRule) CloneBefore(overrides ...Node) (Node, error) {
+	return cloneBefore(r, overrides...)
+}
+func (r *AtRule) CloneAfter(overrides ...Node) (Node, error) {
+	return cloneAfter(r, overrides...)
+}
 
 func (r *AtRule) HasBlock() bool {
 	return r.Block
@@ -245,6 +390,17 @@ func (d *Declaration) Prev() Node                      { return prevNode(d) }
 func (d *Declaration) Remove() Node                    { return removeNode(d) }
 func (d *Declaration) ReplaceWith(nodes ...Node) error { return replaceNode(d, nodes...) }
 func (d *Declaration) Clone() Node                     { return cloneNode(d) }
+func (d *Declaration) Before(nodes ...Node) error      { return beforeNode(d, nodes...) }
+func (d *Declaration) After(nodes ...Node) error       { return afterNode(d, nodes...) }
+func (d *Declaration) Error(message string, opts ...ErrorOptions) *csserrors.SyntaxError {
+	return errorNode(d, message, opts...)
+}
+func (d *Declaration) CloneBefore(overrides ...Node) (Node, error) {
+	return cloneBefore(d, overrides...)
+}
+func (d *Declaration) CloneAfter(overrides ...Node) (Node, error) {
+	return cloneAfter(d, overrides...)
+}
 
 func (d *Declaration) Variable() bool {
 	return strings.HasPrefix(d.Prop, "--") || strings.HasPrefix(d.Prop, "$")
@@ -264,6 +420,28 @@ func (c *Comment) Prev() Node                      { return prevNode(c) }
 func (c *Comment) Remove() Node                    { return removeNode(c) }
 func (c *Comment) ReplaceWith(nodes ...Node) error { return replaceNode(c, nodes...) }
 func (c *Comment) Clone() Node                     { return cloneNode(c) }
+func (c *Comment) Before(nodes ...Node) error      { return beforeNode(c, nodes...) }
+func (c *Comment) After(nodes ...Node) error       { return afterNode(c, nodes...) }
+func (c *Comment) Error(message string, opts ...ErrorOptions) *csserrors.SyntaxError {
+	return errorNode(c, message, opts...)
+}
+func (c *Comment) CloneBefore(overrides ...Node) (Node, error) {
+	return cloneBefore(c, overrides...)
+}
+func (c *Comment) CloneAfter(overrides ...Node) (Node, error) {
+	return cloneAfter(c, overrides...)
+}
+
+type iteratorContainer interface {
+	Container
+	nextIterator() int
+	iteratorIndex(int) int
+	advanceIterator(int)
+	dropIterator(int)
+	resetIterators()
+	shiftIteratorsOnInsert(int, int, bool)
+	shiftIteratorsOnRemove(int)
+}
 
 func cloneNode(node Node) Node {
 	switch current := node.(type) {
@@ -365,37 +543,109 @@ func removeNode(node Node) Node {
 	return node
 }
 
+func beforeNode(node Node, nodes ...Node) error {
+	if node == nil || node.Parent() == nil {
+		return nil
+	}
+	return node.Parent().InsertBefore(node, nodes...)
+}
+
+func afterNode(node Node, nodes ...Node) error {
+	if node == nil || node.Parent() == nil {
+		return nil
+	}
+	return node.Parent().InsertAfter(node, nodes...)
+}
+
+func errorNode(node Node, message string, optsList ...ErrorOptions) *csserrors.SyntaxError {
+	var opts ErrorOptions
+	if len(optsList) > 0 {
+		opts = optsList[0]
+	}
+	location := node.Source()
+	if location == nil || location.Input == nil {
+		return csserrors.New(message, 0, 0, "", "", opts.Plugin)
+	}
+
+	start := location.Start
+	end := location.End
+	if opts.Start != nil {
+		start = *opts.Start
+	}
+	if opts.End != nil {
+		end = *opts.End
+	}
+	if opts.Word != "" {
+		if wordStart, wordEnd, ok := locateWord(node, opts.Word); ok {
+			start = wordStart
+			end = wordEnd
+		}
+	} else if opts.Index > 0 || opts.EndIndex > 0 {
+		if indexStart, indexEnd, ok := locateIndex(node, opts.Index, opts.EndIndex); ok {
+			start = indexStart
+			end = indexEnd
+		}
+	}
+
+	err := csserrors.New(message, start.Line, start.Column, location.Input.CSS, location.Input.File, opts.Plugin)
+	err.EndLine = end.Line
+	err.EndColumn = end.Column
+	return err
+}
+
 func replaceNode(node Node, nodes ...Node) error {
 	if node == nil || node.Parent() == nil {
 		return nil
 	}
 	parent := node.Parent()
-	if err := parent.InsertBefore(node, nodes...); err != nil {
+	index := parent.Index(node)
+	if index < 0 {
+		return nil
+	}
+	if err := parent.RemoveChild(node); err != nil {
 		return err
 	}
-	return parent.RemoveChild(node)
+	children := parent.Children()
+	if index >= len(children) {
+		parent.Append(nodes...)
+		return nil
+	}
+	return parent.InsertBefore(children[index], nodes...)
+}
+
+func cloneBefore(node Node, overrides ...Node) (Node, error) {
+	clone := node.Clone()
+	if len(overrides) > 0 && overrides[0] != nil {
+		clone = overrides[0]
+	}
+	if node.Parent() == nil {
+		return clone, nil
+	}
+	return clone, node.Parent().InsertBefore(node, clone)
+}
+
+func cloneAfter(node Node, overrides ...Node) (Node, error) {
+	clone := node.Clone()
+	if len(overrides) > 0 && overrides[0] != nil {
+		clone = overrides[0]
+	}
+	if node.Parent() == nil {
+		return clone, nil
+	}
+	return clone, node.Parent().InsertAfter(node, clone)
 }
 
 func appendNodes(parent Container, dst *[]Node, nodes ...Node) {
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		node.SetParent(parent)
-		*dst = append(*dst, node)
-	}
+	prepared := prepareNodes(parent, nodes...)
+	*dst = append(*dst, prepared...)
 }
 
 func prependNodes(parent Container, dst *[]Node, nodes ...Node) {
-	prepared := make([]Node, 0, len(nodes))
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		node.SetParent(parent)
-		prepared = append(prepared, node)
-	}
+	prepared := prepareNodes(parent, nodes...)
 	*dst = append(prepared, *dst...)
+	if tracked, ok := parent.(iteratorContainer); ok {
+		tracked.shiftIteratorsOnInsert(0, len(prepared), true)
+	}
 }
 
 func insertBefore(parent Container, dst *[]Node, target Node, nodes ...Node) error {
@@ -403,15 +653,11 @@ func insertBefore(parent Container, dst *[]Node, target Node, nodes ...Node) err
 	if index < 0 {
 		return fmt.Errorf("target node not found")
 	}
-	prepared := make([]Node, 0, len(nodes))
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		node.SetParent(parent)
-		prepared = append(prepared, node)
-	}
+	prepared := prepareNodes(parent, nodes...)
 	*dst = append((*dst)[:index], append(prepared, (*dst)[index:]...)...)
+	if tracked, ok := parent.(iteratorContainer); ok {
+		tracked.shiftIteratorsOnInsert(index, len(prepared), true)
+	}
 	return nil
 }
 
@@ -420,16 +666,12 @@ func insertAfter(parent Container, dst *[]Node, target Node, nodes ...Node) erro
 	if index < 0 {
 		return fmt.Errorf("target node not found")
 	}
-	prepared := make([]Node, 0, len(nodes))
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		node.SetParent(parent)
-		prepared = append(prepared, node)
-	}
+	prepared := prepareNodes(parent, nodes...)
 	pos := index + 1
 	*dst = append((*dst)[:pos], append(prepared, (*dst)[pos:]...)...)
+	if tracked, ok := parent.(iteratorContainer); ok {
+		tracked.shiftIteratorsOnInsert(index, len(prepared), false)
+	}
 	return nil
 }
 
@@ -441,6 +683,120 @@ func removeChild(dst *[]Node, target Node) error {
 	(*dst)[index].SetParent(nil)
 	*dst = append((*dst)[:index], (*dst)[index+1:]...)
 	return nil
+}
+
+func removeChildFrom(parent Container, dst *[]Node, target Node) error {
+	index := indexNode(*dst, target)
+	if index < 0 {
+		return fmt.Errorf("target node not found")
+	}
+	(*dst)[index].SetParent(nil)
+	*dst = append((*dst)[:index], (*dst)[index+1:]...)
+	if tracked, ok := parent.(iteratorContainer); ok {
+		tracked.shiftIteratorsOnRemove(index)
+	}
+	return nil
+}
+
+func prepareNodes(parent Container, nodes ...Node) []Node {
+	prepared := make([]Node, 0, len(nodes))
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		if currentParent := node.Parent(); currentParent != nil {
+			_ = currentParent.RemoveChild(node)
+		}
+		node.SetParent(parent)
+		prepared = append(prepared, node)
+	}
+	return prepared
+}
+
+func firstNode(nodes []Node) Node {
+	if len(nodes) == 0 {
+		return nil
+	}
+	return nodes[0]
+}
+
+func lastNode(nodes []Node) Node {
+	if len(nodes) == 0 {
+		return nil
+	}
+	return nodes[len(nodes)-1]
+}
+
+func removeAllChildren(parent Container, dst *[]Node) {
+	for _, child := range *dst {
+		child.SetParent(nil)
+	}
+	*dst = nil
+	if tracked, ok := parent.(iteratorContainer); ok {
+		tracked.resetIterators()
+	}
+}
+
+func someNodes(nodes []Node, fn func(Node) bool) bool {
+	for _, node := range nodes {
+		if fn(node) {
+			return true
+		}
+	}
+	return false
+}
+
+func everyNodes(nodes []Node, fn func(Node) bool) bool {
+	for _, node := range nodes {
+		if !fn(node) {
+			return false
+		}
+	}
+	return true
+}
+
+func locateWord(node Node, word string) (source.Position, source.Position, bool) {
+	location := node.Source()
+	if location == nil || location.Input == nil || word == "" {
+		return source.Position{}, source.Position{}, false
+	}
+	nodeRange := node.Range()
+	if nodeRange.End < nodeRange.Start || nodeRange.Start < 0 || nodeRange.End > len(location.Input.CSS) {
+		return source.Position{}, source.Position{}, false
+	}
+	text := location.Input.CSS[nodeRange.Start:nodeRange.End]
+	index := strings.Index(text, word)
+	if index < 0 {
+		return source.Position{}, source.Position{}, false
+	}
+	start := location.Input.FromOffset(nodeRange.Start + index)
+	end := location.Input.FromOffset(nodeRange.Start + index + len(word))
+	return start, end, true
+}
+
+func locateIndex(node Node, index, endIndex int) (source.Position, source.Position, bool) {
+	location := node.Source()
+	if location == nil || location.Input == nil {
+		return source.Position{}, source.Position{}, false
+	}
+	nodeRange := node.Range()
+	if index < 0 {
+		index = 0
+	}
+	if endIndex < index {
+		endIndex = index
+	}
+	startOffset := nodeRange.Start + index
+	endOffset := nodeRange.Start + endIndex + 1
+	if startOffset > nodeRange.End {
+		startOffset = nodeRange.End
+	}
+	if endOffset > nodeRange.End {
+		endOffset = nodeRange.End
+	}
+	start := location.Input.FromOffset(startOffset)
+	end := location.Input.FromOffset(endOffset)
+	return start, end, true
 }
 
 func indexNode(nodes []Node, target Node) int {

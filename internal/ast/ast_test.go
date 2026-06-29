@@ -90,3 +90,66 @@ func TestRuleSelectorsRootStringVariableAndClone(t *testing.T) {
 		t.Fatal("expected clone to deep copy children")
 	}
 }
+
+func TestContainerCollectionHelpers(t *testing.T) {
+	rule := NewRule(".a")
+	decl1 := NewDeclaration("color", "red")
+	decl2 := NewDeclaration("background", "blue")
+	rule.Append(decl1, decl2)
+
+	if rule.First() != decl1 {
+		t.Fatal("expected first child")
+	}
+	if rule.Last() != decl2 {
+		t.Fatal("expected last child")
+	}
+	if !rule.Some(func(node Node) bool { return node.(*Declaration).Prop == "color" }) {
+		t.Fatal("expected Some to find matching child")
+	}
+	if rule.Some(func(node Node) bool { return node.(*Declaration).Prop == "missing" }) {
+		t.Fatal("did not expect Some to match")
+	}
+	if !rule.Every(func(node Node) bool { return node.Type() == NodeDecl }) {
+		t.Fatal("expected Every to pass")
+	}
+	if rule.Every(func(node Node) bool { return node.(*Declaration).Prop == "color" }) {
+		t.Fatal("did not expect Every to pass")
+	}
+
+	rule.RemoveAll()
+	if len(rule.Children()) != 0 {
+		t.Fatalf("expected children to be removed, got %d", len(rule.Children()))
+	}
+	if decl1.Parent() != nil || decl2.Parent() != nil {
+		t.Fatal("expected removed children to clear parents")
+	}
+}
+
+func TestBeforeAndAfterInsertSiblings(t *testing.T) {
+	root := NewRoot()
+	rule := NewRule(".a")
+	decl := NewDeclaration("color", "red")
+	rule.Append(decl)
+	root.Append(rule)
+
+	if err := decl.Before(NewDeclaration("-webkit-color", "red")); err != nil {
+		t.Fatalf("before failed: %v", err)
+	}
+	if err := decl.After(NewDeclaration("background", "blue")); err != nil {
+		t.Fatalf("after failed: %v", err)
+	}
+	if err := rule.After(NewRule(".b")); err != nil {
+		t.Fatalf("rule after failed: %v", err)
+	}
+
+	got := []string{
+		rule.Children()[0].(*Declaration).Prop,
+		rule.Children()[1].(*Declaration).Prop,
+		rule.Children()[2].(*Declaration).Prop,
+		root.Children()[1].(*Rule).Selector,
+	}
+	want := []string{"-webkit-color", "color", "background", ".b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected sibling order: %#v", got)
+	}
+}

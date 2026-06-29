@@ -33,6 +33,7 @@ type Comment = ast.Comment
 
 type ProcessOptions = processor.Options
 type ParseOptions = source.Options
+type ErrorOptions = ast.ErrorOptions
 type Processor = processor.Processor
 type Plugin = processor.Plugin
 type Visitor = processor.Visitor
@@ -85,16 +86,16 @@ func Walk(node Node, fn func(Node) error) error {
 	return ast.Walk(node, fn)
 }
 
-func WalkRules(node Node, fn func(*Rule) error) error {
-	return ast.WalkRules(node, fn)
+func WalkRules(node Node, filtersAndFn ...any) error {
+	return ast.WalkRules(node, filtersAndFn...)
 }
 
-func WalkAtRules(node Node, fn func(*AtRule) error) error {
-	return ast.WalkAtRules(node, fn)
+func WalkAtRules(node Node, filtersAndFn ...any) error {
+	return ast.WalkAtRules(node, filtersAndFn...)
 }
 
-func WalkDecls(node Node, fn func(*Declaration) error) error {
-	return ast.WalkDecls(node, fn)
+func WalkDecls(node Node, filtersAndFn ...any) error {
+	return ast.WalkDecls(node, filtersAndFn...)
 }
 
 func WalkComments(node Node, fn func(*Comment) error) error {
