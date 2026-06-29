@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED_DIR="$ROOT_DIR/vendor/postcss"
+UPSTREAM_REPO="${UPSTREAM_REPO:-https://github.com/postcss/postcss}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -18,7 +19,30 @@ if [ ! -d "$EXPECTED_DIR/test" ] || [ ! -d "$EXPECTED_DIR/lib" ]; then
   exit 1
 fi
 
-SKIP_PREPARE_COMPAT=1 TARGET_DIR="$TMP_DIR/postcss" "$ROOT_DIR/scripts/sync-upstream-postcss-tests.sh" "${1:-main}" >/dev/null
+if [ "$#" -gt 0 ]; then
+  UPSTREAM_REF="$1"
+  PRESERVE_SOURCE_JSON=0
+else
+  if [ ! -f "$EXPECTED_DIR/SOURCE.json" ]; then
+    echo "Missing vendored upstream PostCSS source metadata at $EXPECTED_DIR/SOURCE.json"
+    echo "Run ./scripts/sync-upstream-postcss-tests.sh first."
+    exit 1
+  fi
+  UPSTREAM_REPO="$(jq -r '.repo // empty' "$EXPECTED_DIR/SOURCE.json")"
+  UPSTREAM_REF="$(jq -r '.commit // .ref // empty' "$EXPECTED_DIR/SOURCE.json")"
+  PRESERVE_SOURCE_JSON=1
+fi
+
+if [ -z "${UPSTREAM_REPO:-}" ] || [ -z "$UPSTREAM_REF" ]; then
+  echo "Unable to determine upstream PostCSS source."
+  exit 1
+fi
+
+SKIP_PREPARE_COMPAT=1 UPSTREAM_REPO="$UPSTREAM_REPO" TARGET_DIR="$TMP_DIR/postcss" "$ROOT_DIR/scripts/sync-upstream-postcss-tests.sh" "$UPSTREAM_REF" >/dev/null
+
+if [ "$PRESERVE_SOURCE_JSON" = "1" ]; then
+  cp "$EXPECTED_DIR/SOURCE.json" "$TMP_DIR/postcss/SOURCE.json"
+fi
 
 if ! diff -qr "$EXPECTED_DIR" "$TMP_DIR/postcss" >/dev/null; then
   echo "Vendored upstream PostCSS snapshot is out of date."

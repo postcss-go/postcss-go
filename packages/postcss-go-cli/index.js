@@ -2,6 +2,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'path';
+import { pathToFileURL } from 'node:url';
 
 import prettyHrtime from 'pretty-hrtime';
 import { text } from 'stream/consumers';
@@ -51,7 +52,7 @@ async function buildCliConfig() {
       ? await Promise.all(
           argv.use.map(async (plugin) => {
             try {
-              return (await import(plugin)).default();
+              return (await import(toImportSpecifier(plugin))).default();
             } catch (e) {
               const msg = e.message || `Cannot find module '${plugin}'`;
               let prefix = msg.includes(plugin) ? '' : ` (${plugin})`;
@@ -65,8 +66,17 @@ async function buildCliConfig() {
 }
 
 async function importDefault(moduleId) {
-  const imported = await import(moduleId);
+  const imported = await import(toImportSpecifier(moduleId));
   return imported.default ?? imported;
+}
+
+function toImportSpecifier(moduleId) {
+  if (!isPathSpecifier(moduleId)) return moduleId;
+  return pathToFileURL(path.resolve(moduleId)).href;
+}
+
+function isPathSpecifier(moduleId) {
+  return moduleId.startsWith('.') || moduleId.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(moduleId);
 }
 
 const configFiles = new Set();
