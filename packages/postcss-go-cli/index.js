@@ -76,11 +76,7 @@ function toImportSpecifier(moduleId) {
 }
 
 function isPathSpecifier(moduleId) {
-  return (
-    moduleId.startsWith('.') ||
-    moduleId.startsWith('/') ||
-    /^[a-zA-Z]:[\\/]/.test(moduleId)
-  );
+  return moduleId.startsWith('.') || moduleId.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(moduleId);
 }
 
 const configFiles = new Set();
