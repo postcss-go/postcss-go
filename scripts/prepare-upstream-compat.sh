@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_LIB="$ROOT_DIR/vendor/postcss/lib"
+TARGET_LIB="${POSTCSS_COMPAT_TARGET_LIB:-$ROOT_DIR/vendor/postcss/lib}"
 OVERRIDES_DIR="$ROOT_DIR/packages/postcss-compat/overrides"
 MODE="${POSTCSS_COMPAT_MODE:-upstream}"
 

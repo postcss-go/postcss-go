@@ -14,7 +14,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-ARCHIVE_URL="${UPSTREAM_REPO%/}/archive/refs/heads/$UPSTREAM_REF.tar.gz"
+ARCHIVE_URL="${UPSTREAM_REPO%/}/archive/$UPSTREAM_REF.tar.gz"
 
 curl -fsSL "$ARCHIVE_URL" -o "$TMP_DIR/postcss.tar.gz"
 tar -xzf "$TMP_DIR/postcss.tar.gz" -C "$TMP_DIR"
@@ -22,7 +22,12 @@ tar -xzf "$TMP_DIR/postcss.tar.gz" -C "$TMP_DIR"
 mkdir -p "$TARGET_DIR"
 rm -rf "$TARGET_DIR/test" "$TARGET_DIR/lib"
 
-SOURCE_DIR="$TMP_DIR/postcss-$UPSTREAM_REF"
+SOURCE_DIR="$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+
+if [ -z "$SOURCE_DIR" ]; then
+  echo "Unable to find extracted PostCSS archive directory."
+  exit 1
+fi
 
 cp -R "$SOURCE_DIR/test" "$TARGET_DIR/test"
 cp -R "$SOURCE_DIR/lib" "$TARGET_DIR/lib"

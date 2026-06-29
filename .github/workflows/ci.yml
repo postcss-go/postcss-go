@@ -136,6 +136,8 @@ jobs:
   node-tests:
     name: Node / TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      GOFLAGS: -mod=mod
     strategy:
       fail-fast: false
       matrix:
@@ -158,6 +160,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
