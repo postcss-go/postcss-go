@@ -70,7 +70,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 		input.Document = opts.Document
 	}
 	if opts.From != "" {
-		if isSourceURI(opts.From) || filepath.IsAbs(opts.From) {
+		if isSourceURI(opts.From) || isAbsoluteSourcePath(opts.From) {
 			input.File = opts.From
 		} else {
 			abs, err := filepath.Abs(opts.From)

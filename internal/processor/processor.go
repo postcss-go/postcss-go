@@ -219,7 +219,7 @@ func sourceMapFile(annotation, from string) (string, bool) {
 		}
 		from = filepath.FromSlash(fromURL.Path)
 	}
-	if filepath.IsAbs(annotation) || strings.HasPrefix(annotation, "/") {
+	if isAbsoluteSourcePath(annotation) {
 		return annotation, true
 	}
 	if from == "" {
@@ -232,6 +232,10 @@ func isWindowsDrivePath(value string) bool {
 	return len(value) >= 3 &&
 		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
 		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+}
+
+func isAbsoluteSourcePath(value string) bool {
+	return filepath.IsAbs(value) || strings.HasPrefix(value, "/") || isWindowsDrivePath(value)
 }
 
 func walk(node ast.Node, res *result.Result, plugins []Plugin) error {

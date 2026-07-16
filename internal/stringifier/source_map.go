@@ -96,7 +96,11 @@ func (w *sourceMapWriter) AddMapping(node ast.Node) {
 		source = noSource
 	}
 	if source != noSource && !isURI(source) {
-		source = filepath.Clean(source)
+		if strings.HasPrefix(source, "/") {
+			source = path.Clean(source)
+		} else {
+			source = filepath.Clean(source)
+		}
 	}
 	content := location.Input.CSS
 	var sourceContent *string

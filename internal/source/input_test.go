@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestNewInputPreservesWindowsDrivePaths(t *testing.T) {
+	input, err := NewInput("x", Options{From: "C:\\repo\\input.css"})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+	if input.File != "C:\\repo\\input.css" {
+		t.Fatalf("expected Windows drive path to be preserved, got %q", input.File)
+	}
+}
+
 func TestWindowsDrivePathsAreNotSourceURIs(t *testing.T) {
 	if isSourceURI(`C:\repo\input.css`) {
 		t.Fatal("Windows drive-letter paths must not be treated as URIs")
