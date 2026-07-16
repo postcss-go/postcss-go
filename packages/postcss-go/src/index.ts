@@ -13,10 +13,12 @@ export type {
   ParseResult,
   ProcessOptions,
   ProcessResult,
+  PreviousSourceMap,
   RootNode,
   RuleNode,
   SourceLocation,
   SourcePosition,
+  SourceMapOptions,
   Warning,
 } from './types.js';
 

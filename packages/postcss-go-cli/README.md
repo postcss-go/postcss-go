@@ -29,10 +29,10 @@ The CLI mirrors [postcss-cli](https://github.com/postcss/postcss-cli) options: g
 
 ### Engines
 
-| Engine              | Flag               | When to use                                            |
-| ------------------- | ------------------ | ------------------------------------------------------ |
-| `postcss` (default) | `--engine postcss` | Plugin chains, custom parsers, source maps             |
-| `go`                | `--engine go`      | Parse/stringify through the Go bridge (no plugins yet) |
+| Engine              | Flag               | When to use                                           |
+| ------------------- | ------------------ | ----------------------------------------------------- |
+| `postcss` (default) | `--engine postcss` | Plugin chains, custom parsers, source maps            |
+| `go`                | `--engine go`      | JS plugin chains, source maps, and Go parse/stringify |
 
 Set `POSTCSS_GO_ENGINE=go` to default to the Go engine.
 
@@ -40,7 +40,7 @@ Set `POSTCSS_GO_ENGINE=go` to default to the Go engine.
 
 Supports `postcss.config.js` / `.cjs` / `.mjs` via [postcss-load-config](https://github.com/postcss/postcss-load-config), including function configs with `ctx.file` and `ctx.env`.
 
-When using `--engine go`, pass `--no-map` and avoid `map` options in config. Plugin chains and custom parsers are not supported yet.
+When using `--engine go`, plugin chains are supported through the JS PostCSS runtime before the Go bridge. Source maps are generated from Go AST locations; custom parsers, syntaxes, and stringifiers still require `--engine postcss`.
 
 ## Development
 

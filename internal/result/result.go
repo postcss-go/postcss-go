@@ -35,6 +35,7 @@ type WarnOptions struct {
 type Result struct {
 	Root       *ast.Root
 	CSS        string
+	Map        string
 	Messages   []Warning
 	LastPlugin string
 }

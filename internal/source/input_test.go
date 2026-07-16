@@ -52,6 +52,35 @@ func TestNewInputWithoutFile(t *testing.T) {
 	}
 }
 
+func TestNewInputPreservesSourceURI(t *testing.T) {
+	input, err := NewInput("x", Options{From: "https://example.com/styles.css"})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+	if got := input.From(); got != "https://example.com/styles.css" {
+		t.Fatalf("expected source URI to be preserved, got %q", got)
+	}
+}
+
+func TestInputColumnsUseUTF16CodeUnits(t *testing.T) {
+	input, err := NewInput("中🔥x", Options{})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+
+	pos := input.FromOffset(len("中🔥"))
+	if pos.Column != 4 {
+		t.Fatalf("expected UTF-16 column 4, got %#v", pos)
+	}
+	offset, err := input.FromLineAndColumn(1, 4)
+	if err != nil || offset != len("中🔥") {
+		t.Fatalf("unexpected UTF-16 column mapping: offset=%d err=%v", offset, err)
+	}
+	if _, err := input.FromLineAndColumn(1, 3); err == nil {
+		t.Fatal("expected a column inside a surrogate pair to be rejected")
+	}
+}
+
 func TestNewInputWithSourceMap(t *testing.T) {
 	const sourceMap = `{
 		"version": 3,
@@ -86,5 +115,46 @@ func TestNewInputWithSourceMap(t *testing.T) {
 	loc := input.Location(Position{Line: 1, Column: 1, Offset: 0}, Position{Line: 1, Column: 2, Offset: 1})
 	if loc.Input == nil || loc.Input.File != "/src/original.css" {
 		t.Fatalf("expected mapped location input file, got %#v", loc.Input)
+	}
+	if loc.Start.Offset != 0 {
+		t.Fatalf("expected mapped start offset 0, got %d", loc.Start.Offset)
+	}
+}
+
+func TestLocationOffsetRemappedThroughSourceMap(t *testing.T) {
+	const sourceMap = `{
+		"version": 3,
+		"file": "generated.css",
+		"sources": ["original.css"],
+		"sourcesContent": [".a {\n  color: red;\n}"],
+		"names": [],
+		"mappings": "AAAA;EACE"
+	}`
+
+	input, err := NewInput(".a {\n  color: blue;\n}", Options{
+		From:         "generated.css",
+		SourceMapURL: "generated.css.map",
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+
+	startOffset := strings.Index(input.CSS, "color")
+	loc := input.Location(
+		input.FromOffset(startOffset),
+		input.FromOffset(startOffset+5),
+	)
+	if loc.Input == nil || !strings.HasSuffix(loc.Input.File, "original.css") {
+		t.Fatalf("expected original.css, got %q", loc.Input.File)
+	}
+	if loc.Start.Line != 2 || loc.Start.Column != 3 {
+		t.Fatalf("expected mapped start 2:3, got %d:%d", loc.Start.Line, loc.Start.Column)
+	}
+
+	originalCSS := ".a {\n  color: red;\n}"
+	wantStartOffset := strings.Index(originalCSS, "color")
+	if loc.Start.Offset != wantStartOffset {
+		t.Fatalf("expected start offset %d in original source, got %d", wantStartOffset, loc.Start.Offset)
 	}
 }

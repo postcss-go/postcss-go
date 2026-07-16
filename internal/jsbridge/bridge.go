@@ -18,12 +18,23 @@ type Request struct {
 }
 
 type RequestOpts struct {
-	From string `json:"from,omitempty"`
+	From                string `json:"from,omitempty"`
+	To                  string `json:"to,omitempty"`
+	Map                 bool   `json:"map,omitempty"`
+	MapFile             string `json:"mapFile,omitempty"`
+	PreviousMap         string `json:"previousMap,omitempty"`
+	PreviousMapURL      string `json:"previousMapUrl,omitempty"`
+	PreviousMapDisabled bool   `json:"previousMapDisabled,omitempty"`
+	SourceMapFrom       string `json:"sourceMapFrom,omitempty"`
+	SourcesContent      *bool  `json:"sourcesContent,omitempty"`
+	Absolute            bool   `json:"absolute,omitempty"`
+	PreserveAnnotation  bool   `json:"preserveAnnotation,omitempty"`
 }
 
 type Response struct {
 	OK       bool         `json:"ok"`
 	CSS      string       `json:"css,omitempty"`
+	Map      string       `json:"map,omitempty"`
 	Root     *NodeDTO     `json:"root,omitempty"`
 	Messages []WarningDTO `json:"messages,omitempty"`
 	Error    *ErrorDTO    `json:"error,omitempty"`
@@ -81,6 +92,7 @@ type ProcessParams struct {
 
 type ProcessResult struct {
 	CSS      string       `json:"css"`
+	Map      string       `json:"map,omitempty"`
 	Root     *NodeDTO     `json:"root"`
 	Messages []WarningDTO `json:"messages,omitempty"`
 }
@@ -118,7 +130,7 @@ func Execute(req Request) Response {
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, CSS: result.CSS, Root: result.Root, Messages: result.Messages}
+		return Response{OK: true, CSS: result.CSS, Map: result.Map, Root: result.Root, Messages: result.Messages}
 	case "stringify":
 		result, err := StringifyRPC(context.Background(), StringifyParams{AST: req.AST})
 		if err != nil {
@@ -143,7 +155,19 @@ func ParseRPC(_ context.Context, params ParseParams) (*ParseResult, error) {
 }
 
 func ProcessRPC(_ context.Context, params ProcessParams) (*ProcessResult, error) {
-	result, err := postcss.New().Process(params.CSS, postcss.ProcessOptions{From: params.Options.From})
+	result, err := postcss.New().Process(params.CSS, postcss.ProcessOptions{
+		From:                params.Options.From,
+		To:                  params.Options.To,
+		Map:                 params.Options.Map,
+		MapFile:             params.Options.MapFile,
+		PreviousMap:         params.Options.PreviousMap,
+		PreviousMapURL:      params.Options.PreviousMapURL,
+		PreviousMapDisabled: params.Options.PreviousMapDisabled,
+		SourceMapFrom:       params.Options.SourceMapFrom,
+		SourcesContent:      params.Options.SourcesContent,
+		Absolute:            params.Options.Absolute,
+		PreserveAnnotation:  params.Options.PreserveAnnotation,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +177,7 @@ func ProcessRPC(_ context.Context, params ProcessParams) (*ProcessResult, error)
 	}
 	return &ProcessResult{
 		CSS:      result.CSS,
+		Map:      result.Map,
 		Root:     dto,
 		Messages: warningsToDTO(result.Messages),
 	}, nil

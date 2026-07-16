@@ -1,6 +1,15 @@
 package processor
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
 	"postcss-go/internal/ast"
 	"postcss-go/internal/parser"
 	"postcss-go/internal/result"
@@ -9,8 +18,20 @@ import (
 )
 
 type Options struct {
-	From string
+	From                string
+	To                  string
+	Map                 bool
+	MapFile             string
+	PreviousMap         string
+	PreviousMapURL      string
+	PreviousMapDisabled bool
+	SourceMapFrom       string
+	SourcesContent      *bool
+	Absolute            bool
+	PreserveAnnotation  bool
 }
+
+var sourceMapAnnotationPattern = regexp.MustCompile(`(?s)/\*\s*# sourceMappingURL=(.*?)\*/`)
 
 type Visitor struct {
 	Once                func(*ast.Root, *result.Result) error
@@ -55,7 +76,16 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 	if len(optsList) > 0 {
 		opts = optsList[0]
 	}
-	root, err := parser.Parse(css, source.Options{From: opts.From})
+	previousMap, previousMapURL, err := previousSourceMap(css, opts)
+	if err != nil {
+		return nil, err
+	}
+	root, err := parser.Parse(css, source.Options{
+		From:         opts.From,
+		SourceMap:    []byte(previousMap),
+		SourceMapURL: previousMapURL,
+		TrackSource:  opts.Map,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +122,110 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 		}
 	}
 
+	if opts.Map {
+		stringified, err := stringifier.StringifyWithSourceMap(root, stringifier.SourceMapOptions{
+			From:               opts.From,
+			To:                 opts.To,
+			MapFile:            opts.MapFile,
+			SourceMapFrom:      opts.SourceMapFrom,
+			SourcesContent:     opts.SourcesContent,
+			Absolute:           opts.Absolute,
+			PreserveAnnotation: opts.PreserveAnnotation,
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.CSS = stringified.CSS
+		res.Map = stringified.Map
+		return res, nil
+	}
+
 	res.CSS = stringifier.Stringify(root)
 	return res, nil
+}
+
+func previousSourceMap(css string, opts Options) (string, string, error) {
+	if opts.PreviousMap != "" || opts.PreviousMapDisabled {
+		return opts.PreviousMap, opts.PreviousMapURL, nil
+	}
+	matches := sourceMapAnnotationPattern.FindAllStringSubmatch(css, -1)
+	if len(matches) == 0 {
+		return "", "", nil
+	}
+	annotation := strings.TrimSpace(matches[len(matches)-1][1])
+	if strings.HasPrefix(annotation, "data:") {
+		decoded, err := decodeInlineSourceMap(annotation)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid inline source map: %w", err)
+		}
+		return decoded, opts.From, nil
+	}
+
+	mapFile, ok := sourceMapFile(annotation, opts.From)
+	if !ok || !strings.EqualFold(filepath.Ext(mapFile), ".map") {
+		return "", "", nil
+	}
+	raw, err := os.ReadFile(mapFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("read previous source map: %w", err)
+	}
+	raw = []byte(strings.TrimSpace(string(raw)))
+	if !json.Valid(raw) {
+		return "", "", nil
+	}
+	return string(raw), mapFile, nil
+}
+
+func decodeInlineSourceMap(annotation string) (string, error) {
+	comma := strings.IndexByte(annotation, ',')
+	if comma < 0 {
+		return "", fmt.Errorf("missing data URI payload")
+	}
+	metadata, payload := annotation[:comma], annotation[comma+1:]
+	if !strings.HasPrefix(strings.ToLower(metadata), "data:application/json") {
+		return "", fmt.Errorf("unsupported media type")
+	}
+	if strings.HasSuffix(strings.ToLower(metadata), ";base64") {
+		decoded, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return "", err
+		}
+		return string(decoded), nil
+	}
+	decoded, err := url.PathUnescape(payload)
+	if err != nil {
+		return "", err
+	}
+	return decoded, nil
+}
+
+func sourceMapFile(annotation, from string) (string, bool) {
+	parsed, err := url.Parse(annotation)
+	if err != nil {
+		return "", false
+	}
+	if parsed.Scheme != "" {
+		if parsed.Scheme != "file" {
+			return "", false
+		}
+		return filepath.FromSlash(parsed.Path), true
+	}
+	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" {
+		if fromURL.Scheme != "file" {
+			return "", false
+		}
+		from = filepath.FromSlash(fromURL.Path)
+	}
+	if filepath.IsAbs(annotation) {
+		return annotation, true
+	}
+	if from == "" {
+		return annotation, true
+	}
+	return filepath.Join(filepath.Dir(from), filepath.FromSlash(annotation)), true
 }
 
 func walk(node ast.Node, res *result.Result, plugins []Plugin) error {

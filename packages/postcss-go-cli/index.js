@@ -253,6 +253,9 @@ function css(css, file) {
       config = config || cliConfig;
       assertGoEngineCompatible(argv, config);
       const options = { ...config.options };
+      if (options.map === undefined) {
+        options.map = getEffectiveMapOption(config);
+      }
 
       options.from = file === 'stdin' ? path.join(process.cwd(), 'stdin') : file;
 
@@ -281,7 +284,7 @@ function css(css, file) {
           tasks.push(outputFile(options.to, result.css));
 
           if (result.map) {
-            const mapfile = getMapfile(options);
+            const mapfile = result.mapFile || getMapfile(options);
             tasks.push(outputFile(mapfile, result.map.toString()));
           }
         } else process.stdout.write(result.css, 'utf8');

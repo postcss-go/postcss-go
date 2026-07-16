@@ -104,21 +104,165 @@ test('processWithEngine converts buffer input and warning objects for the go eng
 
   expect(processSpy).toHaveBeenCalledWith('.a { color: red; }', { from: 'buffer.css' });
   expect(result.map).toBeUndefined();
-  expect(result.messages).toEqual([]);
+  expect(result.messages).toEqual([{ type: 'warning', text: 'be careful' }]);
   expect(result.warnings()[0].toString()).toBe('be careful');
 });
 
-test('assertGoEngineCompatible rejects custom parser flags and object-style plugins', () => {
+test('processWithEngine runs plugins before the go bridge', async () => {
+  const processSpy = vi.fn().mockImplementation(async (css) => ({
+    css,
+    messages: [],
+  }));
+  const plugin = {
+    postcssPlugin: 'to-blue',
+    Declaration(decl: postcss.Declaration) {
+      decl.value = 'blue';
+    },
+  };
+
+  const result = await processWithEngine(
+    {
+      name: 'go',
+      queue: Promise.resolve(),
+      service: {
+        process: processSpy,
+      },
+    },
+    { plugins: [plugin] },
+    '.a { color: red; }',
+    { from: 'a.css', map: false },
+  );
+
+  expect(processSpy).toHaveBeenCalledWith(expect.stringContaining('blue'), { from: 'a.css' });
+  expect(result.css).toContain('blue');
+});
+
+test('processWithEngine passes the plugin map to the go bridge for composition', async () => {
+  const processSpy = vi.fn().mockImplementation(async (css) => ({
+    css,
+    map: '{"version":3,"sources":[],"names":[],"mappings":""}',
+    messages: [],
+  }));
+  const plugin = {
+    postcssPlugin: 'to-blue',
+    Declaration(decl: postcss.Declaration) {
+      decl.value = 'blue';
+    },
+  };
+
+  await processWithEngine(
+    {
+      name: 'go',
+      queue: Promise.resolve(),
+      service: { process: processSpy },
+    },
+    { plugins: [plugin] },
+    '.a { color: red; }',
+    { from: '/src/a.css', to: '/dist/a.css', map: { inline: false } },
+  );
+
+  expect(processSpy).toHaveBeenCalledWith(
+    expect.stringContaining('blue'),
+    expect.objectContaining({
+      map: true,
+      mapFile: '/dist/a.css.map',
+      previousMap: expect.stringContaining('"version":3'),
+      previousMapUrl: '/dist/a.css.map',
+    }),
+  );
+});
+
+test('processWithEngine keeps inline maps when annotation is false', async () => {
+  const processSpy = vi.fn().mockResolvedValue({
+    css: '.a {}',
+    map: '{"version":3,"sources":[],"names":[],"mappings":""}',
+    messages: [],
+  });
+
+  const result = await processWithEngine(
+    {
+      name: 'go',
+      queue: Promise.resolve(),
+      service: { process: processSpy },
+    },
+    { plugins: [] },
+    '.a {}',
+    { from: 'a.css', map: { inline: true, annotation: false } },
+  );
+
+  expect(result.css).toContain('sourceMappingURL=data:application/json;base64,');
+  expect(result.map).toBeUndefined();
+});
+
+test('processWithEngine resolves dynamic source map annotations before the Go bridge', async () => {
+  const processSpy = vi.fn().mockResolvedValue({
+    css: '.a {}',
+    map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
+    messages: [],
+  });
+  const annotation = vi.fn((_to, root) => {
+    expect(root.type).toBe('root');
+    return 'maps/custom.map';
+  });
+
+  const result = await processWithEngine(
+    {
+      name: 'go',
+      queue: Promise.resolve(),
+      service: { process: processSpy },
+    },
+    { plugins: [] },
+    '.a {}',
+    {
+      from: '/src/a.css',
+      to: '/dist/a.css',
+      map: { inline: false, annotation },
+    },
+  );
+
+  expect(annotation).toHaveBeenCalledWith('/dist/a.css', expect.anything());
+  expect(processSpy).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ mapFile: '/dist/maps/custom.map' }),
+  );
+  expect(result.css).toContain('sourceMappingURL=maps/custom.map');
+  expect(result.mapFile).toBe('/dist/maps/custom.map');
+});
+
+test('processWithEngine preserves existing annotations when annotation is false', async () => {
+  const processSpy = vi.fn().mockResolvedValue({
+    css: '.a {}/*# sourceMappingURL=old.css.map */',
+    map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
+    messages: [],
+  });
+
+  const result = await processWithEngine(
+    {
+      name: 'go',
+      queue: Promise.resolve(),
+      service: { process: processSpy },
+    },
+    { plugins: [] },
+    '.a {}/*# sourceMappingURL=old.css.map */',
+    {
+      from: '/src/a.css',
+      to: '/dist/a.css',
+      map: { inline: false, annotation: false },
+    },
+  );
+
+  expect(processSpy).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ preserveAnnotation: true }),
+  );
+  expect(result.css).toContain('sourceMappingURL=old.css.map');
+});
+
+test('assertGoEngineCompatible rejects custom parser flags', () => {
   expect(() =>
     assertGoEngineCompatible({ engine: 'go', parser: './parser.js' }, { plugins: {}, options: {} }),
   ).toThrow(
     'Engine Error: postcss-go does not support custom parser/syntax/stringifier yet; use --engine postcss',
-  );
-
-  expect(() =>
-    assertGoEngineCompatible({ engine: 'go' }, { plugins: { autoprefixer: {} }, options: {} }),
-  ).toThrow(
-    'Engine Error: postcss-go does not support postcss.config.js plugins yet; use --engine postcss',
   );
 });
 

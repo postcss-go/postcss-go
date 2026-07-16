@@ -84,10 +84,10 @@ test.skipIf(process.env.COVERAGE_RUN === 'true')(
   },
 );
 
-test('--engine go rejects --use plugins', async () => {
+test('--engine go runs --use plugins', async () => {
   const output = tmp('output.css');
 
-  const { error } = await cli([
+  const { error, stderr } = await cli([
     'test/fixtures/a.css',
     '-o',
     output,
@@ -95,24 +95,24 @@ test('--engine go rejects --use plugins', async () => {
     '--engine',
     'go',
     '-u',
-    'postcss',
+    path.resolve('test/fixtures/plugins/to-blue.mjs'),
   ]);
 
-  expect(error).toBeTruthy();
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toContain('color: blue');
 });
 
-test('--engine go rejects config plugins', async () => {
+test('--engine go runs config plugins', async () => {
   const fixtureDir = 'test/fixtures/config';
+  const output = path.resolve(tmp('output.css'));
 
   const { error, stderr } = await cli(
-    ['input.css', '-o', tmp('output.css'), '--no-map', '--engine', 'go'],
+    ['input.css', '-o', output, '--no-map', '--engine', 'go'],
     fixtureDir,
   );
 
-  expect(error).toBeTruthy();
-  expect(stderr).toContain(
-    'Engine Error: postcss-go does not support postcss.config.js plugins yet; use --engine postcss',
-  );
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toContain('color: tomato');
 });
 
 test('--engine go rejects config parser overrides', async () => {
@@ -129,7 +129,7 @@ test('--engine go rejects config parser overrides', async () => {
   );
 });
 
-test('--engine go rejects external sourcemaps', async () => {
+test('--engine go writes external sourcemaps', async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli([
@@ -141,55 +141,72 @@ test('--engine go rejects external sourcemaps', async () => {
     'go',
   ]);
 
-  expect(error).toBeTruthy();
-  expect(stderr).toContain(
-    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
-  );
+  expect(error, stderr).toBeFalsy();
+  const css = await read(output);
+  const map = JSON.parse(await read(`${output}.map`));
+  expect(css).toContain('sourceMappingURL=output.css.map');
+  expect(map.version).toBe(3);
+  expect(map.sources[0]).toContain('a.css');
+  expect(map.mappings).toBeTruthy();
 });
 
-test('--engine go rejects default inline sourcemaps', async () => {
+test('--engine go composes plugin sourcemaps back to the original CSS', async () => {
+  const output = tmp('output.css');
+
+  const { error, stderr } = await cli([
+    'test/fixtures/a.css',
+    '-o',
+    output,
+    '--map',
+    '--engine',
+    'go',
+    '-u',
+    path.resolve('test/fixtures/plugins/to-blue.mjs'),
+  ]);
+
+  expect(error, stderr).toBeFalsy();
+  const map = JSON.parse(await read(`${output}.map`));
+  expect(await read(output)).toContain('color: blue');
+  expect(map.sourcesContent).toEqual([expect.stringContaining('color: red')]);
+  expect(map.sources[0]).not.toMatch(/^[/\\]/);
+});
+
+test('--engine go writes default inline sourcemaps', async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output, '--engine', 'go']);
 
-  expect(error).toBeTruthy();
-  expect(stderr).toContain(
-    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
-  );
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
 });
 
-test('--engine go rejects postcss.config.js map options', async () => {
+test('--engine go supports postcss.config.js map options', async () => {
   const fixtureDir = 'test/fixtures/config';
+  const output = path.resolve(tmp('output.css'));
 
-  const { error, stderr } = await cli(
-    ['input.css', '-o', tmp('output.css'), '--engine', 'go'],
-    fixtureDir,
-  );
+  const { error, stderr } = await cli(['input.css', '-o', output, '--engine', 'go'], fixtureDir);
 
-  expect(error).toBeTruthy();
-  expect(stderr).toContain(
-    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
-  );
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
 });
 
-test('--engine go rejects explicit map: true in postcss.config.js', async () => {
+test('--engine go supports explicit map: true in postcss.config.js', async () => {
   const fixtureDir = 'test/fixtures/config-map';
+  const output = path.resolve(tmp('output.css'));
 
   const { error, stderr } = await cli(
-    ['input.css', '-o', tmp('output.css'), '--no-map', '--engine', 'go'],
+    ['input.css', '-o', output, '--no-map', '--engine', 'go'],
     fixtureDir,
   );
 
-  expect(error).toBeTruthy();
-  expect(stderr).toContain(
-    'Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss',
-  );
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
 });
 
 test('isExternalSourceMap detects external map configurations', () => {
   expect(isExternalSourceMap(false)).toBe(false);
   expect(isExternalSourceMap({ inline: true })).toBe(false);
-  expect(isExternalSourceMap(true)).toBe(true);
+  expect(isExternalSourceMap(true)).toBe(false);
   expect(isExternalSourceMap({ inline: false })).toBe(true);
 });
 
@@ -206,10 +223,10 @@ test('getEffectiveMapOption prefers config.options.map', () => {
   expect(getEffectiveMapOption({ map: { inline: true } })).toEqual({ inline: true });
 });
 
-test('assertGoEngineCompatible rejects enabled map options from config', () => {
+test('assertGoEngineCompatible allows enabled map options for the go engine', () => {
   expect(() =>
     assertGoEngineCompatible({ engine: 'go' }, { options: { map: { inline: true } }, plugins: [] }),
-  ).toThrow('Engine Error: postcss-go does not support sourcemaps yet; use --engine postcss');
+  ).not.toThrow();
 });
 
 test('resolveGoBridgeServiceOptions prefers bundled binary', () => {

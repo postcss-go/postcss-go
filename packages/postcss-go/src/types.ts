@@ -54,12 +54,38 @@ export interface RootNode {
 
 export type AstNode = RootNode | RuleNode | AtRuleNode | DeclarationNode | CommentNode;
 
+export type PreviousSourceMap =
+  | false
+  | string
+  | Record<string, unknown>
+  | ((file?: string) => false | string | Record<string, unknown> | undefined);
+
+export interface SourceMapOptions {
+  absolute?: boolean;
+  annotation?: boolean | string | ((file: string | undefined, root: RootNode) => string);
+  from?: string;
+  inline?: boolean;
+  prev?: PreviousSourceMap;
+  sourcesContent?: boolean;
+}
+
 export interface ProcessOptions {
   from?: string;
+  to?: string;
+  map?: boolean | SourceMapOptions;
+  mapFile?: string;
+  previousMap?: string;
+  previousMapUrl?: string;
+  previousMapDisabled?: boolean;
+  sourceMapFrom?: string;
+  sourcesContent?: boolean;
+  absolute?: boolean;
+  preserveAnnotation?: boolean;
 }
 
 export interface ProcessResult {
   css: string;
+  map?: string;
   root: RootNode;
   messages: Warning[];
 }

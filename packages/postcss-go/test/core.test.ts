@@ -86,6 +86,7 @@ rl.on('line', (line) => {
       id: request.id,
       result: {
         css: request.params.css.toUpperCase(),
+        map: request.params.options?.map ? '{"version":3,"sources":[],"names":[],"mappings":""}' : undefined,
         root: root(request.params.css, request.params.options),
         messages: [{ type: 'warning', text: 'processed' }],
       },
@@ -158,12 +159,45 @@ test('NodePostcssGoService parses, processes, and stringifies through the bridge
   expect(parsed.root.type).toBe('root');
   expect(parsed.root.source.file).toBe('input.css');
 
-  const processed = await service.process('.a { color: red; }', { from: 'input.css' });
+  const processed = await service.process('.a { color: red; }', {
+    from: 'input.css',
+    to: 'output.css',
+    map: true,
+  });
   expect(processed.css).toBe('.A { COLOR: RED; }');
+  expect(processed.map).toContain('"version":3');
   expect(processed.messages).toEqual([{ type: 'warning', text: 'processed' }]);
 
   const css = await service.stringify({ type: 'root', nodes: [] });
   expect(css).toBe('.from-ast { color: blue; }');
+
+  await service.close();
+});
+
+test('NodePostcssGoService supports object source map options', async () => {
+  const service = await createService();
+  const inline = await service.process('.a { color: red; }', {
+    from: 'input.css',
+    map: { inline: true, sourcesContent: false },
+  });
+  expect(inline.css).toContain('sourceMappingURL=data:application/json;base64,');
+  expect(inline.map).toBeUndefined();
+
+  const annotated = await service.process('.a { color: red; }', {
+    from: 'input.css',
+    to: 'output.css',
+    map: {
+      annotation(file, root) {
+        expect(file).toBe('output.css');
+        expect(root.type).toBe('root');
+        return 'maps/custom.map';
+      },
+      inline: false,
+      prev: false,
+    },
+  });
+  expect(annotated.css).toContain('sourceMappingURL=maps/custom.map');
+  expect(annotated.map).toContain('"version":3');
 
   await service.close();
 });
