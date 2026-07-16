@@ -51,6 +51,15 @@ func TestWindowsDrivePathsAreNotSourceURIs(t *testing.T) {
 	}
 }
 
+func TestWindowsSourcePathKeysNormalizeSeparatorsAndCase(t *testing.T) {
+	input := &Input{originContent: map[string]bool{
+		sourcePathKey(`d:\repo\src\input.css`): true,
+	}}
+	if !input.originContentAvailable(`D:/repo/src/input.css`) {
+		t.Fatal("Windows source paths with different separators or drive case must match")
+	}
+}
+
 func TestNewInputFromOffsetsAndErrors(t *testing.T) {
 	input, err := NewInput("\uFEFFa\nbc", Options{From: "fixtures/a.css", Document: "doc"})
 	if err != nil {

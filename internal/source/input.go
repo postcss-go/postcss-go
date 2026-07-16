@@ -285,13 +285,11 @@ func (i *Input) originContentAvailable(file string) bool {
 	if i.originContent == nil {
 		return false
 	}
-	for _, candidate := range []string{file, normalizeSourcePath(file)} {
-		if i.originContent[candidate] {
-			return true
-		}
+	if i.originContent[sourcePathKey(file)] {
+		return true
 	}
 	resolved := i.resolveOriginFile(file)
-	return i.originContent[resolved] || i.originContent[normalizeSourcePath(resolved)]
+	return i.originContent[sourcePathKey(resolved)]
 }
 
 func (i *Input) resolveOriginFile(file string) string {
@@ -330,7 +328,7 @@ func sourceMapContentAvailability(raw []byte, mapURL, inputFile string) map[stri
 	}
 	for index, source := range metadata.Sources {
 		if index < len(metadata.SourcesContent) && string(metadata.SourcesContent[index]) != "null" {
-			result[resolveMapSource(source, metadata.SourceRoot, mapURL, inputFile)] = true
+			result[sourcePathKey(resolveMapSource(source, metadata.SourceRoot, mapURL, inputFile))] = true
 		}
 	}
 	for _, section := range metadata.Sections {
@@ -383,7 +381,15 @@ func isAbsoluteSourcePath(value string) bool {
 
 func normalizeSourcePath(value string) string {
 	if isWindowsDrivePath(value) {
-		return filepath.FromSlash(value)
+		return filepath.FromSlash(strings.ReplaceAll(value, `\`, "/"))
 	}
 	return value
+}
+
+func sourcePathKey(value string) string {
+	normalized := normalizeSourcePath(value)
+	if isWindowsDrivePath(normalized) {
+		return strings.ToLower(filepath.Clean(normalized))
+	}
+	return normalized
 }
