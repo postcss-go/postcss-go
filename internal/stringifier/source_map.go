@@ -1,0 +1,308 @@
+package stringifier
+
+import (
+	"encoding/json"
+	"net/url"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"unicode/utf16"
+
+	"postcss-go/internal/ast"
+)
+
+const vlqChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+const noSource = "<no source>"
+
+type sourceMapWriter struct {
+	builder            strings.Builder
+	line               int
+	column             int
+	mappings           []sourceMapping
+	sourceIndexes      map[string]int
+	sources            []string
+	sourcesContent     map[string]*string
+	sourceOverride     string
+	preserveAnnotation bool
+}
+
+type sourceMapping struct {
+	genLine    int
+	genColumn  int
+	source     int
+	sourceLine int
+	sourceCol  int
+}
+
+type sourceMapPayload struct {
+	Version        int       `json:"version"`
+	File           string    `json:"file,omitempty"`
+	Sources        []string  `json:"sources"`
+	SourcesContent []*string `json:"sourcesContent,omitempty"`
+	Names          []string  `json:"names"`
+	Mappings       string    `json:"mappings"`
+}
+
+func newSourceMapWriter(sourceOverride ...string) *sourceMapWriter {
+	override := ""
+	if len(sourceOverride) > 0 {
+		override = sourceOverride[0]
+	}
+	return &sourceMapWriter{
+		sourceIndexes:  map[string]int{},
+		sourcesContent: map[string]*string{},
+		sourceOverride: override,
+	}
+}
+
+func (w *sourceMapWriter) String() string {
+	return w.builder.String()
+}
+
+func (w *sourceMapWriter) writeByte(ch byte) {
+	w.builder.WriteByte(ch)
+	if ch == '\n' {
+		w.line++
+		w.column = 0
+		return
+	}
+	w.column++
+}
+
+func (w *sourceMapWriter) writeString(text string) {
+	w.builder.WriteString(text)
+	for _, ch := range text {
+		if ch == '\n' {
+			w.line++
+			w.column = 0
+			continue
+		}
+		w.column += utf16.RuneLen(ch)
+	}
+}
+
+func (w *sourceMapWriter) AddMapping(node ast.Node) {
+	location := node.Source()
+	if location == nil || location.Input == nil {
+		w.addMapping(noSource, nil, 0, 0)
+		return
+	}
+	source := location.Input.From()
+	if w.sourceOverride != "" {
+		source = w.sourceOverride
+	}
+	if source == "" || source == "<css input>" {
+		source = noSource
+	}
+	if source != noSource && !isURI(source) {
+		if strings.HasPrefix(source, "/") {
+			source = path.Clean(source)
+		} else {
+			source = filepath.Clean(source)
+		}
+	}
+	content := location.Input.CSS
+	var sourceContent *string
+	if location.Input.SourceContentAvailable() {
+		sourceContent = &content
+	}
+	w.addMapping(source, sourceContent, max(location.Start.Line-1, 0), max(location.Start.Column-1, 0))
+}
+
+func (w *sourceMapWriter) addMapping(source string, content *string, sourceLine, sourceCol int) {
+	sourceIndex, ok := w.sourceIndexes[source]
+	if !ok {
+		sourceIndex = len(w.sources)
+		w.sourceIndexes[source] = sourceIndex
+		w.sources = append(w.sources, source)
+		w.sourcesContent[source] = content
+	} else if w.sourcesContent[source] == nil && content != nil {
+		w.sourcesContent[source] = content
+	}
+	w.mappings = append(w.mappings, sourceMapping{
+		genLine:    w.line,
+		genColumn:  w.column,
+		source:     sourceIndex,
+		sourceLine: sourceLine,
+		sourceCol:  sourceCol,
+	})
+}
+
+func (w *sourceMapWriter) sourceMap(opts SourceMapOptions) (string, error) {
+	mapFile := opts.MapFile
+	outputFile := opts.To
+	if outputFile == "" {
+		outputFile = opts.From
+		if outputFile == "" {
+			outputFile = "to.css"
+		}
+	}
+	if mapFile == "" {
+		mapFile = outputFile + ".map"
+	}
+	mapDir := pathDirectory(mapFile)
+
+	sources := make([]string, len(w.sources))
+	var sourcesContent []*string
+	if opts.SourcesContent == nil || *opts.SourcesContent {
+		sourcesContent = make([]*string, len(w.sources))
+	}
+	for index, source := range w.sources {
+		sources[index] = sourcePath(source, mapDir, opts.Absolute && source != w.sourceOverride)
+		if sourcesContent != nil {
+			sourcesContent[index] = w.sourcesContent[source]
+		}
+	}
+	payload := sourceMapPayload{
+		Version:        3,
+		File:           outputPath(outputFile, mapDir),
+		Sources:        sources,
+		SourcesContent: sourcesContent,
+		Names:          []string{},
+		Mappings:       encodeMappings(w.mappings),
+	}
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func sourcePath(source, mapDir string, absolute bool) string {
+	if source == noSource || isURI(source) {
+		return source
+	}
+	if absolute {
+		return fileURL(source)
+	}
+	if isURI(mapDir) {
+		return (&url.URL{Path: filepath.ToSlash(source)}).EscapedPath()
+	}
+	return relativePath(mapDir, source)
+}
+
+func outputPath(outputFile, mapDir string) string {
+	if isURI(outputFile) {
+		return outputFile
+	}
+	if isURI(mapDir) {
+		return (&url.URL{Path: filepath.ToSlash(outputFile)}).EscapedPath()
+	}
+	return relativePath(mapDir, outputFile)
+}
+
+func pathDirectory(value string) string {
+	if strings.HasPrefix(value, "/") {
+		return path.Dir(value)
+	}
+	if u, err := url.Parse(value); err == nil && u.Scheme != "" && !isWindowsDrivePath(value) {
+		u.Path = filepath.ToSlash(filepath.Dir(filepath.FromSlash(u.Path)))
+		return u.String()
+	}
+	return filepath.Dir(value)
+}
+
+func fileURL(path string) string {
+	absolute := path
+	if !filepath.IsAbs(absolute) && !strings.HasPrefix(absolute, "/") {
+		if resolved, err := filepath.Abs(absolute); err == nil {
+			absolute = resolved
+		}
+	}
+	slashPath := filepath.ToSlash(absolute)
+	if runtime.GOOS == "windows" && !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	return (&url.URL{Scheme: "file", Path: slashPath}).String()
+}
+
+func isURI(value string) bool {
+	if filepath.IsAbs(value) {
+		return false
+	}
+	if isWindowsDrivePath(value) {
+		return false
+	}
+	u, err := url.Parse(value)
+	return err == nil && u.Scheme != ""
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 3 &&
+		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
+		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+}
+
+func relativePath(baseDir, target string) string {
+	if filepath.IsAbs(target) && !filepath.IsAbs(baseDir) {
+		if absoluteBase, err := filepath.Abs(baseDir); err == nil {
+			baseDir = absoluteBase
+		}
+	} else if filepath.IsAbs(baseDir) && !filepath.IsAbs(target) {
+		if absoluteTarget, err := filepath.Abs(target); err == nil {
+			target = absoluteTarget
+		}
+	}
+	relative, err := filepath.Rel(baseDir, target)
+	if err != nil {
+		relative = target
+	}
+	path := filepath.ToSlash(relative)
+	return (&url.URL{Path: path}).EscapedPath()
+}
+
+func encodeMappings(mappings []sourceMapping) string {
+	var builder strings.Builder
+	currentLine := 0
+	lastGenColumn := 0
+	lastSource := 0
+	lastSourceLine := 0
+	lastSourceCol := 0
+	needComma := false
+
+	for _, mapping := range mappings {
+		for currentLine < mapping.genLine {
+			builder.WriteByte(';')
+			currentLine++
+			lastGenColumn = 0
+			needComma = false
+		}
+		if needComma {
+			builder.WriteByte(',')
+		}
+		builder.WriteString(encodeVLQ(mapping.genColumn - lastGenColumn))
+		builder.WriteString(encodeVLQ(mapping.source - lastSource))
+		builder.WriteString(encodeVLQ(mapping.sourceLine - lastSourceLine))
+		builder.WriteString(encodeVLQ(mapping.sourceCol - lastSourceCol))
+
+		lastGenColumn = mapping.genColumn
+		lastSource = mapping.source
+		lastSourceLine = mapping.sourceLine
+		lastSourceCol = mapping.sourceCol
+		needComma = true
+	}
+	return builder.String()
+}
+
+func encodeVLQ(value int) string {
+	vlq := value << 1
+	if value < 0 {
+		vlq = ((-value) << 1) | 1
+	}
+
+	var builder strings.Builder
+	for {
+		digit := vlq & 31
+		vlq >>= 5
+		if vlq > 0 {
+			digit |= 32
+		}
+		builder.WriteByte(vlqChars[digit])
+		if vlq == 0 {
+			break
+		}
+	}
+	return builder.String()
+}

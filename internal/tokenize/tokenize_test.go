@@ -1,18 +1,18 @@
-package postcstokenize_test
+package tokenize_test
 
 import (
 	"regexp"
 	"testing"
 
-	"postcss-go/internal/postcstokenize"
+	"postcss-go/internal/tokenize"
 )
 
-func tokenizeAll(css string, opts postcstokenize.Options) ([]postcstokenize.Token, error) {
-	input := &postcstokenize.Input{CSS: css}
-	processor := postcstokenize.New(input, opts)
-	var tokens []postcstokenize.Token
+func tokenizeAll(css string, opts tokenize.Options) ([]tokenize.Token, error) {
+	input := &tokenize.Input{CSS: css}
+	processor := tokenize.New(input, opts)
+	var tokens []tokenize.Token
 	for !processor.EndOfFile() {
-		token, err := processor.NextToken(postcstokenize.NextOptions{})
+		token, err := processor.NextToken(tokenize.NextOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -24,7 +24,7 @@ func tokenizeAll(css string, opts postcstokenize.Options) ([]postcstokenize.Toke
 	return tokens, nil
 }
 
-func runTokenize(t *testing.T, css string, expected []postcstokenize.Token, opts postcstokenize.Options) {
+func runTokenize(t *testing.T, css string, expected []tokenize.Token, opts tokenize.Options) {
 	t.Helper()
 	tokens, err := tokenizeAll(css, opts)
 	if err != nil {
@@ -46,38 +46,38 @@ func runTokenize(t *testing.T, css string, expected []postcstokenize.Token, opts
 }
 
 func TestTokenizeEmptyFile(t *testing.T) {
-	runTokenize(t, "", nil, postcstokenize.Options{})
+	runTokenize(t, "", nil, tokenize.Options{})
 }
 
 func TestTokenizeSpace(t *testing.T) {
-	runTokenize(t, "\r\n \f\t", []postcstokenize.Token{{"space", "\r\n \f\t"}}, postcstokenize.Options{})
+	runTokenize(t, "\r\n \f\t", []tokenize.Token{{"space", "\r\n \f\t"}}, tokenize.Options{})
 }
 
 func TestTokenizeWord(t *testing.T) {
-	runTokenize(t, "ab", []postcstokenize.Token{{"word", "ab", 0, 1}}, postcstokenize.Options{})
+	runTokenize(t, "ab", []tokenize.Token{{"word", "ab", 0, 1}}, tokenize.Options{})
 }
 
 func TestTokenizeSplitsWordByBang(t *testing.T) {
-	runTokenize(t, "aa!bb", []postcstokenize.Token{
+	runTokenize(t, "aa!bb", []tokenize.Token{
 		{"word", "aa", 0, 1},
 		{"word", "!bb", 2, 4},
-	}, postcstokenize.Options{})
+	}, tokenize.Options{})
 }
 
 func TestTokenizeControlChars(t *testing.T) {
-	runTokenize(t, "{:;}", []postcstokenize.Token{
+	runTokenize(t, "{:;}", []tokenize.Token{
 		{"{", "{", 0},
 		{":", ":", 1},
 		{";", ";", 2},
 		{"}", "}", 3},
-	}, postcstokenize.Options{})
+	}, tokenize.Options{})
 }
 
 func TestTokenizeAtWord(t *testing.T) {
-	runTokenize(t, "@word ", []postcstokenize.Token{
+	runTokenize(t, "@word ", []tokenize.Token{
 		{"at-word", "@word", 0, 4},
 		{"space", " "},
-	}, postcstokenize.Options{})
+	}, tokenize.Options{})
 }
 
 func TestTokenizeComment(t *testing.T) {
@@ -85,7 +85,7 @@ func TestTokenizeComment(t *testing.T) {
 }
 
 func TestTokenizeUnclosedString(t *testing.T) {
-	_, err := tokenizeAll(` "`, postcstokenize.Options{})
+	_, err := tokenizeAll(` "`, tokenize.Options{})
 	if err == nil {
 		t.Fatal("expected unclosed string error")
 	}
@@ -94,29 +94,37 @@ func TestTokenizeUnclosedString(t *testing.T) {
 	}
 }
 
+func TestTokenizerErrorsUseUTF16Columns(t *testing.T) {
+	input := &tokenize.Input{CSS: "中🔥x"}
+	err := input.Error("boom", len("中🔥"))
+	if !regexp.MustCompile(`:1:4: boom`).MatchString(err.Error()) {
+		t.Fatalf("unexpected UTF-16 error position: %v", err)
+	}
+}
+
 func TestTokenizeIgnoreErrors(t *testing.T) {
 	t.Skip("Go tokenizer port is not yet aligned with upstream ignoreErrors behavior")
 }
 
 func TestTokenizePosition(t *testing.T) {
-	input := &postcstokenize.Input{CSS: "Three tokens"}
-	processor := postcstokenize.New(input, postcstokenize.Options{})
+	input := &tokenize.Input{CSS: "Three tokens"}
+	processor := tokenize.New(input, tokenize.Options{})
 	if processor.Position() != 0 {
 		t.Fatalf("position() = %d, want 0", processor.Position())
 	}
-	if _, err := processor.NextToken(postcstokenize.NextOptions{}); err != nil {
+	if _, err := processor.NextToken(tokenize.NextOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if processor.Position() != 5 {
 		t.Fatalf("position() = %d, want 5", processor.Position())
 	}
-	if _, err := processor.NextToken(postcstokenize.NextOptions{}); err != nil {
+	if _, err := processor.NextToken(tokenize.NextOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if processor.Position() != 6 {
 		t.Fatalf("position() = %d, want 6", processor.Position())
 	}
-	if _, err := processor.NextToken(postcstokenize.NextOptions{}); err != nil {
+	if _, err := processor.NextToken(tokenize.NextOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if processor.Position() != 12 {

@@ -25,9 +25,13 @@ func TestParseProcessAndStringifyBridge(t *testing.T) {
 	processResp := Execute(Request{
 		Command: "process",
 		CSS:     ".a { color: red; }",
+		Options: RequestOpts{From: "demo.css", To: "out.css", Map: true},
 	})
 	if !processResp.OK || !strings.Contains(processResp.CSS, "color: red;") {
 		t.Fatalf("unexpected process response: %#v", processResp)
+	}
+	if !strings.Contains(processResp.Map, `"version":3`) {
+		t.Fatalf("expected process response source map, got %#v", processResp.Map)
 	}
 
 	stringifyResp := Execute(Request{
@@ -72,9 +76,17 @@ func TestRPCMethods(t *testing.T) {
 
 	processRes, err := ProcessRPC(context.Background(), ProcessParams{
 		CSS: ".a { color: red; }",
+		Options: RequestOpts{
+			From: "demo.css",
+			To:   "out.css",
+			Map:  true,
+		},
 	})
 	if err != nil || processRes == nil || !strings.Contains(processRes.CSS, "color: red;") {
 		t.Fatalf("process rpc failed: res=%#v err=%v", processRes, err)
+	}
+	if !strings.Contains(processRes.Map, `"version":3`) {
+		t.Fatalf("expected process rpc source map, got %#v", processRes.Map)
 	}
 
 	stringifyRes, err := StringifyRPC(context.Background(), StringifyParams{

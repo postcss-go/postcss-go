@@ -1,9 +1,13 @@
 package source
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/csserrors"
@@ -26,23 +30,36 @@ type Options struct {
 	Document     string
 	SourceMapURL string
 	SourceMap    []byte
+	TrackSource  bool
 }
 
 type Input struct {
-	CSS         string
-	Document    string
-	File        string
-	HasBOM      bool
-	lineIdx     []int
-	consumer    *sourcemap.Consumer
-	originCache map[string]*Input
+	CSS           string
+	Document      string
+	File          string
+	HasBOM        bool
+	lineIdx       []int
+	consumer      *sourcemap.Consumer
+	originCache   map[string]*Input
+	originContent map[string]bool
+	contentKnown  bool
+	trackSource   bool
+}
+
+type sourceMapMetadata struct {
+	SourceRoot     string            `json:"sourceRoot"`
+	Sources        []string          `json:"sources"`
+	SourcesContent []json.RawMessage `json:"sourcesContent"`
+	Sections       []struct {
+		Map json.RawMessage `json:"map"`
+	} `json:"sections"`
 }
 
 func NewInput(css string, opts Options) (*Input, error) {
 	if css == "" {
 		css = ""
 	}
-	input := &Input{CSS: css, Document: css}
+	input := &Input{CSS: css, Document: css, trackSource: opts.TrackSource}
 	if strings.HasPrefix(css, "\uFEFF") || strings.HasPrefix(css, "\uFFFE") {
 		runes := []rune(css)
 		input.HasBOM = true
@@ -53,7 +70,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 		input.Document = opts.Document
 	}
 	if opts.From != "" {
-		if filepath.IsAbs(opts.From) {
+		if isSourceURI(opts.From) || isAbsoluteSourcePath(opts.From) {
 			input.File = opts.From
 		} else {
 			abs, err := filepath.Abs(opts.From)
@@ -69,12 +86,21 @@ func NewInput(css string, opts Options) (*Input, error) {
 			return nil, err
 		}
 		input.consumer = consumer
+		input.originContent = sourceMapContentAvailability(opts.SourceMap, opts.SourceMapURL, input.File)
 	}
 	return input, nil
 }
 
+func isSourceURI(value string) bool {
+	if isAbsoluteSourcePath(value) {
+		return false
+	}
+	u, err := url.Parse(value)
+	return err == nil && u.Scheme != ""
+}
+
 func (i *Input) TracksSource() bool {
-	return i.File != "" || i.consumer != nil
+	return i.File != "" || i.consumer != nil || i.trackSource
 }
 
 func (i *Input) From() string {
@@ -82,6 +108,10 @@ func (i *Input) From() string {
 		return i.File
 	}
 	return "<css input>"
+}
+
+func (i *Input) SourceContentAvailable() bool {
+	return i.contentKnown || i.originContent == nil
 }
 
 func (i *Input) Error(message string, line, column int, plugin string) *csserrors.SyntaxError {
@@ -117,7 +147,7 @@ func (i *Input) FromOffset(offset int) Position {
 	}
 	return Position{
 		Line:   line + 1,
-		Column: offset - i.lineIdx[line] + 1,
+		Column: utf16Column(i.CSS[i.lineIdx[line]:offset]) + 1,
 		Offset: offset,
 	}
 }
@@ -127,7 +157,16 @@ func (i *Input) FromLineAndColumn(line, column int) (int, error) {
 	if line <= 0 || line > len(i.lineIdx) {
 		return 0, fmt.Errorf("line out of range: %d", line)
 	}
-	return i.lineIdx[line-1] + column - 1, nil
+	lineStart := i.lineIdx[line-1]
+	lineEnd := len(i.CSS)
+	if line < len(i.lineIdx) {
+		lineEnd = i.lineIdx[line] - 1
+	}
+	offset, ok := byteOffsetForUTF16Column(i.CSS[lineStart:lineEnd], column-1)
+	if !ok {
+		return 0, fmt.Errorf("column out of range: %d", column)
+	}
+	return lineStart + offset, nil
 }
 
 func (i *Input) buildLineIndex() {
@@ -161,11 +200,11 @@ func (i *Input) Location(start, end Position) *Location {
 
 	if _, mappedInput, line, column, ok := i.origin(start.Line, start.Column); ok {
 		startInput = mappedInput
-		startPos = Position{Line: line, Column: column, Offset: start.Offset}
+		startPos = Position{Line: line, Column: column, Offset: resolveOffset(mappedInput, line, column, start.Offset)}
 	}
 	if _, mappedInput, line, column, ok := i.origin(end.Line, end.Column); ok {
 		endInput = mappedInput
-		endPos = Position{Line: line, Column: column, Offset: end.Offset}
+		endPos = Position{Line: line, Column: column, Offset: resolveOffset(mappedInput, line, column, end.Offset)}
 	}
 	if startInput == endInput {
 		return &Location{Start: startPos, End: endPos, Input: startInput}
@@ -173,19 +212,56 @@ func (i *Input) Location(start, end Position) *Location {
 	return &Location{Start: start, End: end, Input: i}
 }
 
+func resolveOffset(input *Input, line, column, fallback int) int {
+	if input.CSS == "" {
+		return fallback
+	}
+	if offset, err := input.FromLineAndColumn(line, column); err == nil {
+		return offset
+	}
+	return fallback
+}
+
 func (i *Input) origin(line, column int) (string, *Input, int, int, bool) {
 	if i.consumer == nil {
 		return "", nil, 0, 0, false
 	}
-	file, _, originalLine, originalColumn, ok := i.consumer.Source(line, column)
+	file, _, originalLine, originalColumn, ok := i.consumer.Source(line, max(column-1, 0))
 	if !ok {
 		return "", nil, 0, 0, false
 	}
+	contentKnown := i.originContentAvailable(file)
 	content := i.consumer.SourceContent(file)
-	return content, i.cachedOriginInput(file, content), originalLine, originalColumn + 1, true
+	resolvedFile := i.resolveOriginFile(file)
+	return content, i.cachedOriginInput(resolvedFile, content, contentKnown), originalLine, originalColumn + 1, true
 }
 
-func (i *Input) cachedOriginInput(file, content string) *Input {
+func utf16Column(text string) int {
+	column := 0
+	for _, r := range text {
+		column += utf16.RuneLen(r)
+	}
+	return column
+}
+
+func byteOffsetForUTF16Column(text string, target int) (int, bool) {
+	if target < 0 {
+		return 0, false
+	}
+	column := 0
+	for offset, r := range text {
+		if column == target {
+			return offset, true
+		}
+		column += utf16.RuneLen(r)
+		if column > target {
+			return 0, false
+		}
+	}
+	return len(text), column == target
+}
+
+func (i *Input) cachedOriginInput(file, content string, contentKnown bool) *Input {
 	if i.originCache == nil {
 		i.originCache = map[string]*Input{}
 	}
@@ -194,11 +270,126 @@ func (i *Input) cachedOriginInput(file, content string) *Input {
 		return input
 	}
 	input := &Input{
-		CSS:      content,
-		Document: content,
-		File:     file,
+		CSS:           content,
+		Document:      content,
+		File:          file,
+		originContent: map[string]bool{},
+		contentKnown:  contentKnown,
 	}
 	input.buildLineIndex()
 	i.originCache[key] = input
 	return input
+}
+
+func (i *Input) originContentAvailable(file string) bool {
+	if i.originContent == nil {
+		return false
+	}
+	if i.originContent[sourcePathKey(file)] {
+		return true
+	}
+	resolved := i.resolveOriginFile(file)
+	return i.originContent[sourcePathKey(resolved)]
+}
+
+func (i *Input) resolveOriginFile(file string) string {
+	if u, err := url.Parse(file); err == nil && u.Scheme != "" && !isWindowsDrivePath(file) {
+		if u.Scheme == "file" {
+			return filepath.FromSlash(u.Path)
+		}
+		return file
+	}
+	if isAbsoluteSourcePath(file) {
+		return normalizeSourcePath(file)
+	}
+	mapURL := i.consumer.SourcemapURL()
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !isWindowsDrivePath(mapURL) {
+		if u.Scheme != "file" {
+			return file
+		}
+		mapURL = filepath.FromSlash(u.Path)
+	}
+	base := filepath.Dir(mapURL)
+	if mapURL == "" && i.File != "" {
+		base = filepath.Dir(i.File)
+	}
+	resolved, err := filepath.Abs(filepath.Join(base, file))
+	if err != nil {
+		return filepath.Clean(filepath.Join(base, file))
+	}
+	return resolved
+}
+
+func sourceMapContentAvailability(raw []byte, mapURL, inputFile string) map[string]bool {
+	result := map[string]bool{}
+	var metadata sourceMapMetadata
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return result
+	}
+	for index, source := range metadata.Sources {
+		if index < len(metadata.SourcesContent) && string(metadata.SourcesContent[index]) != "null" {
+			result[sourcePathKey(resolveMapSource(source, metadata.SourceRoot, mapURL, inputFile))] = true
+		}
+	}
+	for _, section := range metadata.Sections {
+		for source, available := range sourceMapContentAvailability(section.Map, mapURL, inputFile) {
+			result[source] = available
+		}
+	}
+	return result
+}
+
+func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
+	if u, err := url.Parse(source); err == nil && u.Scheme != "" && !isWindowsDrivePath(source) {
+		return source
+	}
+	if sourceRoot != "" {
+		if root, err := url.Parse(sourceRoot); err == nil && root.Scheme != "" {
+			return root.ResolveReference(&url.URL{Path: source}).String()
+		}
+		if strings.HasPrefix(sourceRoot, "/") {
+			source = path.Join(sourceRoot, source)
+		} else {
+			source = filepath.Join(sourceRoot, source)
+		}
+	}
+	if isAbsoluteSourcePath(source) {
+		return normalizeSourcePath(source)
+	}
+	base := filepath.Dir(mapURL)
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !isWindowsDrivePath(mapURL) {
+		base = filepath.Dir(filepath.FromSlash(u.Path))
+	} else if mapURL == "" && inputFile != "" {
+		base = filepath.Dir(inputFile)
+	}
+	resolved, err := filepath.Abs(filepath.Join(base, source))
+	if err != nil {
+		return filepath.Clean(filepath.Join(base, source))
+	}
+	return resolved
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 3 &&
+		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
+		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+}
+
+func isAbsoluteSourcePath(value string) bool {
+	return filepath.IsAbs(value) || strings.HasPrefix(value, "/") || isWindowsDrivePath(value)
+}
+
+func normalizeSourcePath(value string) string {
+	if isWindowsDrivePath(value) {
+		return filepath.FromSlash(strings.ReplaceAll(value, `\`, "/"))
+	}
+	return value
+}
+
+func sourcePathKey(value string) string {
+	normalized := normalizeSourcePath(value)
+	if isWindowsDrivePath(normalized) {
+		return strings.ToLower(filepath.Clean(normalized))
+	}
+	return normalized
 }

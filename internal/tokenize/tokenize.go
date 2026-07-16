@@ -1,9 +1,10 @@
-package postcstokenize
+package tokenize
 
 import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"postcss-go/internal/csserrors"
@@ -327,12 +328,15 @@ func offsetToLineColumn(css string, offset int) (int, int) {
 	}
 	line := 1
 	column := 1
-	for i := 0; i < offset && i < len(css); i++ {
-		if css[i] == '\n' {
+	for index, r := range css {
+		if index >= offset {
+			break
+		}
+		if r == '\n' {
 			line++
 			column = 1
 		} else {
-			column++
+			column += utf16.RuneLen(r)
 		}
 	}
 	return line, column

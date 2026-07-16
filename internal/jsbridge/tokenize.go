@@ -6,19 +6,19 @@ import (
 	"sync/atomic"
 
 	"github.com/creachadair/jrpc2/handler"
-	"postcss-go/internal/postcstokenize"
+	"postcss-go/internal/tokenize"
 )
 
 var nextTokenizeSessionID int64
 
 type tokenizeSession struct {
-	processor *postcstokenize.Processor
+	processor *tokenize.Processor
 }
 
 type TokenizeOpenParams struct {
-	CSS     string                 `json:"css"`
-	File    string                 `json:"file,omitempty"`
-	Options postcstokenize.Options `json:"options,omitempty"`
+	CSS     string           `json:"css"`
+	File    string           `json:"file,omitempty"`
+	Options tokenize.Options `json:"options,omitempty"`
 }
 
 type TokenizeOpenResult struct {
@@ -30,8 +30,8 @@ type TokenizeSessionParams struct {
 }
 
 type TokenizeNextParams struct {
-	ID      int64                      `json:"id"`
-	Options postcstokenize.NextOptions `json:"options,omitempty"`
+	ID      int64                `json:"id"`
+	Options tokenize.NextOptions `json:"options,omitempty"`
 }
 
 type TokenizeNextResult struct {
@@ -66,9 +66,9 @@ func tokenizeAssigner() handler.Map {
 
 func TokenizeOpenRPC(_ context.Context, params TokenizeOpenParams) (*TokenizeOpenResult, error) {
 	id := atomic.AddInt64(&nextTokenizeSessionID, 1)
-	input := &postcstokenize.Input{CSS: params.CSS, File: params.File}
+	input := &tokenize.Input{CSS: params.CSS, File: params.File}
 	tokenizeSessions[id] = &tokenizeSession{
-		processor: postcstokenize.New(input, params.Options),
+		processor: tokenize.New(input, params.Options),
 	}
 	return &TokenizeOpenResult{ID: id}, nil
 }

@@ -25,7 +25,7 @@ Implemented today:
 Still in progress:
 
 - Full `lazy-result` / async plugin behavior
-- `raws`, source maps, and formatting fidelity comparable to upstream PostCSS
+- `raws`, source map composition, and formatting fidelity comparable to upstream PostCSS
 - A production-ready JS bridge and wasm/browser runtime
 - Closer tokenizer/parser edge-case parity with upstream
 
@@ -110,9 +110,9 @@ Currently supported hooks:
 
 This version is closer to the upstream architecture than the initial simplified implementation, but the port is not complete:
 
-- No `lazy-result` or async plugins yet
-- No `raws`, source maps, or faithful formatting output yet
-- The `go` CLI engine is currently focused on parse/stringify and does not run PostCSS plugin chains
+- No Go-native `lazy-result` plugin pipeline yet
+- No `raws`, source map composition, or faithful formatting output yet
+- The `go` CLI engine runs JS PostCSS plugin chains before parse/stringify through the Go bridge
 - JS/TS `packages/` are still bridge layers in progress rather than a finished runtime surface
 - parser / tokenizer still need to be aligned further with upstream behavior
 

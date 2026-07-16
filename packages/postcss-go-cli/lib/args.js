@@ -108,7 +108,7 @@ If there are multiple input files, the --dir or --replace option must be passed.
 
 Input files may contain globs (e.g. src/**/*.css). If you pass an input directory, it will process all files in the directory and any subdirectories, respecting the glob pattern.
 
-The postcss-go engine (--engine go) runs parse/stringify through the Go bridge. Plugin chains, custom parsers, and source maps require --engine postcss.
+The postcss-go engine (--engine go) runs JS plugin chains and source map generation before parse/stringify through the Go bridge. Custom parsers require --engine postcss.
 
 For more details, please see https://github.com/eryue0220/postcss-go`,
   );
