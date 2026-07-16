@@ -214,8 +214,17 @@ func isURI(value string) bool {
 	if filepath.IsAbs(value) {
 		return false
 	}
+	if isWindowsDrivePath(value) {
+		return false
+	}
 	u, err := url.Parse(value)
 	return err == nil && u.Scheme != ""
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 3 &&
+		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
+		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
 }
 
 func relativePath(baseDir, target string) string {
