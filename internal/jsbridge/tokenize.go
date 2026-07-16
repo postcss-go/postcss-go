@@ -6,19 +6,21 @@ import (
 	"sync/atomic"
 
 	"github.com/creachadair/jrpc2/handler"
-	"postcss-go/internal/tokenize"
+	"postcss-go/internal/tokenizer"
 )
 
 var nextTokenizeSessionID int64
 
 type tokenizeSession struct {
-	processor *tokenize.Processor
+	input     string
+	processor *tokenizer.Tokenizer
+	returned  [][]any
 }
 
 type TokenizeOpenParams struct {
-	CSS     string           `json:"css"`
-	File    string           `json:"file,omitempty"`
-	Options tokenize.Options `json:"options,omitempty"`
+	CSS     string            `json:"css"`
+	File    string            `json:"file,omitempty"`
+	Options tokenizer.Options `json:"options,omitempty"`
 }
 
 type TokenizeOpenResult struct {
@@ -30,8 +32,8 @@ type TokenizeSessionParams struct {
 }
 
 type TokenizeNextParams struct {
-	ID      int64                `json:"id"`
-	Options tokenize.NextOptions `json:"options,omitempty"`
+	ID      int64                 `json:"id"`
+	Options tokenizer.NextOptions `json:"options,omitempty"`
 }
 
 type TokenizeNextResult struct {
@@ -66,9 +68,12 @@ func tokenizeAssigner() handler.Map {
 
 func TokenizeOpenRPC(_ context.Context, params TokenizeOpenParams) (*TokenizeOpenResult, error) {
 	id := atomic.AddInt64(&nextTokenizeSessionID, 1)
-	input := &tokenize.Input{CSS: params.CSS, File: params.File}
+	options := params.Options
+	options.File = params.File
 	tokenizeSessions[id] = &tokenizeSession{
-		processor: tokenize.New(input, params.Options),
+		input:     params.CSS,
+		processor: tokenizer.New(params.CSS, options),
+		returned:  make([][]any, 0),
 	}
 	return &TokenizeOpenResult{ID: id}, nil
 }
@@ -78,11 +83,19 @@ func TokenizeNextRPC(_ context.Context, params TokenizeNextParams) (*TokenizeNex
 	if err != nil {
 		return nil, err
 	}
-	token, err := session.processor.NextToken(params.Options)
+	if len(session.returned) > 0 {
+		last := session.returned[len(session.returned)-1]
+		session.returned = session.returned[:len(session.returned)-1]
+		return &TokenizeNextResult{Token: last}, nil
+	}
+	token, err := session.processor.Next(params.Options)
 	if err != nil {
 		return nil, err
 	}
-	return &TokenizeNextResult{Token: token}, nil
+	if token.Kind == "" {
+		return &TokenizeNextResult{}, nil
+	}
+	return &TokenizeNextResult{Token: legacyToken(session.input, token)}, nil
 }
 
 func TokenizeBackRPC(_ context.Context, params TokenizeBackParams) (struct{}, error) {
@@ -90,7 +103,7 @@ func TokenizeBackRPC(_ context.Context, params TokenizeBackParams) (struct{}, er
 	if err != nil {
 		return struct{}{}, err
 	}
-	session.processor.Back(params.Token)
+	session.returned = append(session.returned, params.Token)
 	return struct{}{}, nil
 }
 
@@ -107,7 +120,19 @@ func TokenizeEOFRPC(_ context.Context, params TokenizeSessionParams) (*TokenizeB
 	if err != nil {
 		return nil, err
 	}
-	return &TokenizeBoolResult{Value: session.processor.EndOfFile()}, nil
+	return &TokenizeBoolResult{Value: len(session.returned) == 0 && session.processor.EOF()}, nil
+}
+
+func legacyToken(input string, token tokenizer.Token) []any {
+	text := token.Text(input)
+	switch token.Kind {
+	case "space":
+		return []any{"space", text}
+	case "word", "at-word", "comment", "brackets", "string":
+		return []any{token.Kind, text, token.Start, token.End}
+	default:
+		return []any{token.Kind, text, token.Start}
+	}
 }
 
 func TokenizeCloseRPC(_ context.Context, params TokenizeSessionParams) (struct{}, error) {

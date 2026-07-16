@@ -44,6 +44,44 @@ function waitForContent(file, content, timeout = 10000) {
   });
 }
 
+function waitForStreamContent(stream, content, timeout = 10000) {
+  const deadline = Date.now() + timeout;
+  let output = '';
+
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      if (output.includes(content)) {
+        cleanup();
+        resolve();
+        return;
+      }
+
+      if (Date.now() >= deadline) {
+        cleanup();
+        reject(new Error(`Timed out waiting for stream to contain ${content}`));
+      }
+    };
+    const onData = (chunk) => {
+      output += chunk.toString();
+      check();
+    };
+    const onEnd = () => {
+      cleanup();
+      reject(new Error(`Stream ended before containing ${content}`));
+    };
+    const timer = setInterval(check, 50);
+    const cleanup = () => {
+      clearInterval(timer);
+      stream.off('data', onData);
+      stream.off('end', onEnd);
+    };
+
+    stream.on('data', onData);
+    stream.on('end', onEnd);
+    check();
+  });
+}
+
 test('watch mode recompiles when input changes', async () => {
   const { input, output } = createWatchFixture();
   await fs.mkdir(path.dirname(input), { recursive: true });
@@ -51,7 +89,16 @@ test('watch mode recompiles when input changes', async () => {
 
   const child = spawn(
     'node',
-    [path.join(packageRoot, 'index.js'), input, '-o', output, '--watch', '--no-map'],
+    [
+      path.join(packageRoot, 'index.js'),
+      input,
+      '-o',
+      output,
+      '--watch',
+      '--poll',
+      '--verbose',
+      '--no-map',
+    ],
     {
       cwd: packageRoot,
       env: { ...process.env, FORCE_IS_TTY: 'true' },
@@ -60,6 +107,7 @@ test('watch mode recompiles when input changes', async () => {
 
   try {
     await waitForContent(output, 'color: red');
+    await waitForStreamContent(child.stderr, 'Waiting for file changes...');
 
     await fs.writeFile(input, '.a { color: blue; }');
     await waitForContent(output, 'color: blue');
@@ -80,7 +128,16 @@ test('watch mode recompiles when input changes without updating mtime', async ()
 
   const child = spawn(
     'node',
-    [path.join(packageRoot, 'index.js'), input, '-o', output, '--watch', '--no-map'],
+    [
+      path.join(packageRoot, 'index.js'),
+      input,
+      '-o',
+      output,
+      '--watch',
+      '--poll',
+      '--verbose',
+      '--no-map',
+    ],
     {
       cwd: packageRoot,
       env: { ...process.env, FORCE_IS_TTY: 'true' },
@@ -89,6 +146,7 @@ test('watch mode recompiles when input changes without updating mtime', async ()
 
   try {
     await waitForContent(output, 'color: red');
+    await waitForStreamContent(child.stderr, 'Waiting for file changes...');
 
     const { atime, mtime } = await fs.stat(input);
     await fs.writeFile(input, '.a { color: blue; }');

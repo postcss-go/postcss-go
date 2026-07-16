@@ -25,7 +25,7 @@ func Parse(css string, opts source.Options) (*ast.Root, error) {
 	}
 	p := &Parser{
 		input:       css,
-		tok:         tokenizer.New(css),
+		tok:         tokenizer.New(css, tokenizer.Options{}),
 		root:        ast.NewRoot(),
 		src:         input,
 		stmtBuf:     make([]tokenizer.Token, 0, 32),
@@ -71,9 +71,9 @@ func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, er
 	depth := 0
 
 	for !p.tok.EOF() {
-		token, err := p.tok.Next()
+		token, err := p.tok.Next(tokenizer.NextOptions{})
 		if err != nil {
-			break
+			return nil, false, err
 		}
 
 		switch token.Kind {
