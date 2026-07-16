@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
@@ -91,7 +92,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 }
 
 func isSourceURI(value string) bool {
-	if filepath.IsAbs(value) || isWindowsDrivePath(value) {
+	if isAbsoluteSourcePath(value) {
 		return false
 	}
 	u, err := url.Parse(value)
@@ -297,7 +298,7 @@ func (i *Input) resolveOriginFile(file string) string {
 		}
 		return file
 	}
-	if filepath.IsAbs(file) {
+	if isAbsoluteSourcePath(file) {
 		return file
 	}
 	mapURL := i.consumer.SourcemapURL()
@@ -345,9 +346,13 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 		if root, err := url.Parse(sourceRoot); err == nil && root.Scheme != "" {
 			return root.ResolveReference(&url.URL{Path: source}).String()
 		}
-		source = filepath.Join(sourceRoot, source)
+		if strings.HasPrefix(sourceRoot, "/") {
+			source = path.Join(sourceRoot, source)
+		} else {
+			source = filepath.Join(sourceRoot, source)
+		}
 	}
-	if filepath.IsAbs(source) {
+	if isAbsoluteSourcePath(source) {
 		return source
 	}
 	base := filepath.Dir(mapURL)
@@ -367,4 +372,8 @@ func isWindowsDrivePath(value string) bool {
 	return len(value) >= 3 &&
 		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
 		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+}
+
+func isAbsoluteSourcePath(value string) bool {
+	return filepath.IsAbs(value) || strings.HasPrefix(value, "/") || isWindowsDrivePath(value)
 }

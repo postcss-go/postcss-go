@@ -3,6 +3,7 @@ package stringifier
 import (
 	"encoding/json"
 	"net/url"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -189,7 +190,10 @@ func outputPath(outputFile, mapDir string) string {
 }
 
 func pathDirectory(value string) string {
-	if u, err := url.Parse(value); err == nil && u.Scheme != "" {
+	if strings.HasPrefix(value, "/") {
+		return path.Dir(value)
+	}
+	if u, err := url.Parse(value); err == nil && u.Scheme != "" && !isWindowsDrivePath(value) {
 		u.Path = filepath.ToSlash(filepath.Dir(filepath.FromSlash(u.Path)))
 		return u.String()
 	}
@@ -198,7 +202,7 @@ func pathDirectory(value string) string {
 
 func fileURL(path string) string {
 	absolute := path
-	if !filepath.IsAbs(absolute) {
+	if !filepath.IsAbs(absolute) && !strings.HasPrefix(absolute, "/") {
 		if resolved, err := filepath.Abs(absolute); err == nil {
 			absolute = resolved
 		}

@@ -176,7 +176,7 @@ func previousSourceMap(css string, opts Options) (string, string, error) {
 	if !json.Valid(raw) {
 		return "", "", nil
 	}
-	return string(raw), mapFile, nil
+	return string(raw), filepath.ToSlash(mapFile), nil
 }
 
 func decodeInlineSourceMap(annotation string) (string, error) {
@@ -219,7 +219,7 @@ func sourceMapFile(annotation, from string) (string, bool) {
 		}
 		from = filepath.FromSlash(fromURL.Path)
 	}
-	if filepath.IsAbs(annotation) {
+	if filepath.IsAbs(annotation) || strings.HasPrefix(annotation, "/") {
 		return annotation, true
 	}
 	if from == "" {

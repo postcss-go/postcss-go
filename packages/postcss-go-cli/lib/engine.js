@@ -94,7 +94,9 @@ export async function processWithEngine(engine, config, css, options) {
         }
         if (pluginResult?.map) {
           processOptions.previousMap = pluginResult.map.toString();
-          processOptions.previousMapUrl = `${options.to || options.from || 'to.css'}.map`;
+          processOptions.previousMapUrl = toSourceMapPath(
+            `${options.to || options.from || 'to.css'}.map`,
+          );
         }
       }
       const result = await engine.service.process(pluginResult?.css ?? inputCss, processOptions);
@@ -184,4 +186,8 @@ function getSourceMapFile(options, resolvedAnnotation) {
     return path.resolve(path.dirname(options.to), resolvedAnnotation);
   }
   return getMapfile(options);
+}
+
+function toSourceMapPath(value) {
+  return value.replaceAll('\\', '/');
 }

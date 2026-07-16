@@ -1,3 +1,4 @@
+import path from 'node:path';
 import postcss from 'postcss';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -221,12 +222,13 @@ test('processWithEngine resolves dynamic source map annotations before the Go br
   );
 
   expect(annotation).toHaveBeenCalledWith('/dist/a.css', expect.anything());
+  const expectedMapFile = path.resolve('/dist/maps/custom.map');
   expect(processSpy).toHaveBeenCalledWith(
     expect.any(String),
-    expect.objectContaining({ mapFile: '/dist/maps/custom.map' }),
+    expect.objectContaining({ mapFile: expectedMapFile }),
   );
   expect(result.css).toContain('sourceMappingURL=maps/custom.map');
-  expect(result.mapFile).toBe('/dist/maps/custom.map');
+  expect(result.mapFile).toBe(expectedMapFile);
 });
 
 test('processWithEngine preserves existing annotations when annotation is false', async () => {
