@@ -73,7 +73,7 @@ func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, er
 	for !p.tok.EOF() {
 		token, err := p.tok.Next(tokenizer.NextOptions{})
 		if err != nil {
-			break
+			return nil, false, err
 		}
 
 		switch token.Kind {

@@ -51,7 +51,7 @@ test('watch mode recompiles when input changes', async () => {
 
   const child = spawn(
     'node',
-    [path.join(packageRoot, 'index.js'), input, '-o', output, '--watch', '--no-map'],
+    [path.join(packageRoot, 'index.js'), input, '-o', output, '--watch', '--poll', '--no-map'],
     {
       cwd: packageRoot,
       env: { ...process.env, FORCE_IS_TTY: 'true' },
@@ -80,7 +80,7 @@ test('watch mode recompiles when input changes without updating mtime', async ()
 
   const child = spawn(
     'node',
-    [path.join(packageRoot, 'index.js'), input, '-o', output, '--watch', '--no-map'],
+    [path.join(packageRoot, 'index.js'), input, '-o', output, '--watch', '--poll', '--no-map'],
     {
       cwd: packageRoot,
       env: { ...process.env, FORCE_IS_TTY: 'true' },

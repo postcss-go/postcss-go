@@ -58,6 +58,9 @@ func TestParseErrors(t *testing.T) {
 	if _, err := Parse("color red;", source.Options{}); err == nil || !strings.Contains(err.Error(), "expected declaration") {
 		t.Fatalf("expected declaration parse error, got %v", err)
 	}
+	if _, err := Parse(`color: "unterminated`, source.Options{}); err == nil || !strings.Contains(err.Error(), "Unclosed string") {
+		t.Fatalf("expected tokenizer error to propagate, got %v", err)
+	}
 }
 
 func TestParseWithSourceMapMapsLocations(t *testing.T) {
