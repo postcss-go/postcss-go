@@ -15,7 +15,7 @@ This repository is not a "PostCSS-inspired simplified implementation." It is a G
 - `internal/ast`
   - Node definitions, container operations, traversal
 - `internal/tokenizer`
-  - Tokenizer that turns CSS text into a token stream
+  - The single tokenizer that turns CSS text into a structured token stream
 - `internal/parser`
   - Parser that turns a token stream into an AST
 - `internal/processor`
