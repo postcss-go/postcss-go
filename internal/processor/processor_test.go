@@ -21,6 +21,13 @@ type testSourceMap struct {
 	Mappings       string    `json:"mappings"`
 }
 
+func TestSourceMapFileAcceptsWindowsDrivePaths(t *testing.T) {
+	got, ok := sourceMapFile(`C:\repo\generated.css.map`, "")
+	if !ok || got != `C:\repo\generated.css.map` {
+		t.Fatalf("unexpected Windows source map path: %q, ok=%v", got, ok)
+	}
+}
+
 func TestProcessorUsePrepareAndFromOption(t *testing.T) {
 	var events []string
 

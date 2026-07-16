@@ -207,13 +207,13 @@ func sourceMapFile(annotation, from string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if parsed.Scheme != "" {
+	if parsed.Scheme != "" && !isWindowsDrivePath(annotation) {
 		if parsed.Scheme != "file" {
 			return "", false
 		}
 		return filepath.FromSlash(parsed.Path), true
 	}
-	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" {
+	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" && !isWindowsDrivePath(from) {
 		if fromURL.Scheme != "file" {
 			return "", false
 		}
@@ -226,6 +226,12 @@ func sourceMapFile(annotation, from string) (string, bool) {
 		return annotation, true
 	}
 	return filepath.Join(filepath.Dir(from), filepath.FromSlash(annotation)), true
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 3 &&
+		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
+		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
 }
 
 func walk(node ast.Node, res *result.Result, plugins []Plugin) error {

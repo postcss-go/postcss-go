@@ -91,7 +91,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 }
 
 func isSourceURI(value string) bool {
-	if filepath.IsAbs(value) {
+	if filepath.IsAbs(value) || isWindowsDrivePath(value) {
 		return false
 	}
 	u, err := url.Parse(value)
@@ -291,7 +291,7 @@ func (i *Input) originContentAvailable(file string) bool {
 }
 
 func (i *Input) resolveOriginFile(file string) string {
-	if u, err := url.Parse(file); err == nil && u.Scheme != "" {
+	if u, err := url.Parse(file); err == nil && u.Scheme != "" && !isWindowsDrivePath(file) {
 		if u.Scheme == "file" {
 			return filepath.FromSlash(u.Path)
 		}
@@ -301,7 +301,7 @@ func (i *Input) resolveOriginFile(file string) string {
 		return file
 	}
 	mapURL := i.consumer.SourcemapURL()
-	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" {
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !isWindowsDrivePath(mapURL) {
 		if u.Scheme != "file" {
 			return file
 		}
@@ -338,7 +338,7 @@ func sourceMapContentAvailability(raw []byte, mapURL, inputFile string) map[stri
 }
 
 func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
-	if u, err := url.Parse(source); err == nil && u.Scheme != "" {
+	if u, err := url.Parse(source); err == nil && u.Scheme != "" && !isWindowsDrivePath(source) {
 		return source
 	}
 	if sourceRoot != "" {
@@ -351,7 +351,7 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 		return source
 	}
 	base := filepath.Dir(mapURL)
-	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" {
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !isWindowsDrivePath(mapURL) {
 		base = filepath.Dir(filepath.FromSlash(u.Path))
 	} else if mapURL == "" && inputFile != "" {
 		base = filepath.Dir(inputFile)
@@ -361,4 +361,10 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 		return filepath.Clean(filepath.Join(base, source))
 	}
 	return resolved
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 3 &&
+		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
+		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
 }

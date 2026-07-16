@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+func TestWindowsDrivePathsAreNotSourceURIs(t *testing.T) {
+	if isSourceURI(`C:\repo\input.css`) {
+		t.Fatal("Windows drive-letter paths must not be treated as URIs")
+	}
+}
+
 func TestNewInputFromOffsetsAndErrors(t *testing.T) {
 	input, err := NewInput("\uFEFFa\nbc", Options{From: "fixtures/a.css", Document: "doc"})
 	if err != nil {
