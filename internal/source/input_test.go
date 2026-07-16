@@ -2,6 +2,7 @@ package source
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,34 @@ func TestNewInputPreservesWindowsDrivePaths(t *testing.T) {
 	}
 	if input.File != "C:\\repo\\input.css" {
 		t.Fatalf("expected Windows drive path to be preserved, got %q", input.File)
+	}
+}
+
+func TestWindowsSourceMapPreservesSourcesContent(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires Windows path semantics")
+	}
+
+	const sourceMap = `{
+		"version": 3,
+		"sources": ["C:/repo/src/input.css"],
+		"sourcesContent": [".a { color: red; }"],
+		"names": [],
+		"mappings": "AAAA"
+	}`
+
+	input, err := NewInput(".a { color: blue; }", Options{
+		From:         `C:\repo\dist\output.css`,
+		SourceMapURL: `C:/repo/dist/output.css.map`,
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+
+	errObj := input.Error("boom", 1, 1, "demo")
+	if errObj.Source != ".a { color: red; }" {
+		t.Fatalf("expected original source content, got %q", errObj.Source)
 	}
 }
 

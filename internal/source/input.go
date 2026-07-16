@@ -285,10 +285,13 @@ func (i *Input) originContentAvailable(file string) bool {
 	if i.originContent == nil {
 		return false
 	}
-	if i.originContent[file] {
-		return true
+	for _, candidate := range []string{file, normalizeSourcePath(file)} {
+		if i.originContent[candidate] {
+			return true
+		}
 	}
-	return i.originContent[i.resolveOriginFile(file)]
+	resolved := i.resolveOriginFile(file)
+	return i.originContent[resolved] || i.originContent[normalizeSourcePath(resolved)]
 }
 
 func (i *Input) resolveOriginFile(file string) string {
@@ -299,7 +302,7 @@ func (i *Input) resolveOriginFile(file string) string {
 		return file
 	}
 	if isAbsoluteSourcePath(file) {
-		return file
+		return normalizeSourcePath(file)
 	}
 	mapURL := i.consumer.SourcemapURL()
 	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !isWindowsDrivePath(mapURL) {
@@ -353,7 +356,7 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 		}
 	}
 	if isAbsoluteSourcePath(source) {
-		return source
+		return normalizeSourcePath(source)
 	}
 	base := filepath.Dir(mapURL)
 	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !isWindowsDrivePath(mapURL) {
@@ -376,4 +379,11 @@ func isWindowsDrivePath(value string) bool {
 
 func isAbsoluteSourcePath(value string) bool {
 	return filepath.IsAbs(value) || strings.HasPrefix(value, "/") || isWindowsDrivePath(value)
+}
+
+func normalizeSourcePath(value string) string {
+	if isWindowsDrivePath(value) {
+		return filepath.FromSlash(value)
+	}
+	return value
 }
