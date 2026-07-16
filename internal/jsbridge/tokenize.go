@@ -16,8 +16,8 @@ type tokenizeSession struct {
 }
 
 type TokenizeOpenParams struct {
-	CSS     string                 `json:"css"`
-	File    string                 `json:"file,omitempty"`
+	CSS     string           `json:"css"`
+	File    string           `json:"file,omitempty"`
 	Options tokenize.Options `json:"options,omitempty"`
 }
 
@@ -30,7 +30,7 @@ type TokenizeSessionParams struct {
 }
 
 type TokenizeNextParams struct {
-	ID      int64                      `json:"id"`
+	ID      int64                `json:"id"`
 	Options tokenize.NextOptions `json:"options,omitempty"`
 }
 
