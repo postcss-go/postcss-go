@@ -22,11 +22,13 @@
 ### Task 1: Define the unified tokenizer API and compatibility tests
 
 **Files:**
+
 - Modify: `internal/tokenizer/tokenizer.go`
 - Modify: `internal/tokenizer/tokenizer_test.go`
 - Modify: `internal/parser/parser.go`
 
 **Interfaces:**
+
 - Produces `tokenizer.Options`, `tokenizer.NextOptions`, `New(input string, opts Options) *Tokenizer`, `Next(opts NextOptions) (Token, error)`, `Back(Token)`, `Position() int`, and `EOF() bool`.
 - Keeps `Token.Text(string) string` unchanged.
 
@@ -61,10 +63,12 @@ git commit -m "test: define unified tokenizer contract"
 ### Task 2: Implement the unified PostCSS-compatible scanner
 
 **Files:**
+
 - Modify: `internal/tokenizer/tokenizer.go`
 - Modify: `internal/tokenizer/tokenizer_test.go`
 
 **Interfaces:**
+
 - Consumes the API defined in Task 1.
 - Produces structured tokens with `Kind`, byte offsets in `Start`/`End`, and text recovered by `Token.Text`.
 
@@ -130,10 +134,12 @@ git commit -m "refactor: unify tokenizer scanning behavior"
 ### Task 3: Adapt jsbridge to structured tokens without changing RPC output
 
 **Files:**
+
 - Modify: `internal/jsbridge/tokenize.go`
 - Modify: `internal/jsbridge/bridge_test.go` or create: `internal/jsbridge/tokenize_test.go`
 
 **Interfaces:**
+
 - Consumes `tokenizer.New`, `tokenizer.Options`, `tokenizer.NextOptions`, `tokenizer.Token`, and `Token.Text`.
 - Produces the unchanged `TokenizeNextResult.Token []any` JSON payload and existing RPC handlers.
 
@@ -189,6 +195,7 @@ git commit -m "refactor: route tokenizer bridge through unified tokenizer"
 ### Task 4: Remove the duplicate package and unused dependency
 
 **Files:**
+
 - Delete: `internal/tokenize/tokenize.go`
 - Delete: `internal/tokenize/tokenize_test.go`
 - Modify: `go.mod`
@@ -196,6 +203,7 @@ git commit -m "refactor: route tokenizer bridge through unified tokenizer"
 - Modify: `docs/architecture.md`
 
 **Interfaces:**
+
 - Consumes the unified tokenizer and bridge from Tasks 1-3.
 - Produces a repository with no Go imports or source references to `internal/tokenize`.
 

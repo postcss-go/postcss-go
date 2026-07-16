@@ -7,7 +7,7 @@ when `POSTCSS_COMPAT_MODE=go`.
 
 | Module         | Backend                    | Notes                                                     |
 | -------------- | -------------------------- | --------------------------------------------------------- |
-| `tokenize.js`  | Upstream JS (compat entry) | Go tokenizer is implemented in `internal/tokenizer`      |
+| `tokenize.js`  | Upstream JS (compat entry) | Go tokenizer is implemented in `internal/tokenizer`       |
 | `parse.js`     | Upstream JS                | `postcss-parser-tests` fixtures need full `raws` fidelity |
 | `stringify.js` | Upstream JS                | Go `stringify` RPC available for DTO payloads             |
 | `processor.js` | Upstream JS                | Async/lazy plugin model not ported yet                    |
