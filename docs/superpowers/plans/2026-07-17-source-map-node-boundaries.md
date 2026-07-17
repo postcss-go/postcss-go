@@ -19,9 +19,11 @@
 ### Task 1: Add source map boundary regression coverage
 
 **Files:**
+
 - Modify: `internal/stringifier/stringifier_test.go`
 
 **Interfaces:**
+
 - Consumes: `parser.Parse`, `StringifyWithSourceMap`, and `github.com/go-sourcemap/sourcemap`.
 - Produces: tests that assert generated positions map to declaration start, value start, and node end, including a no-source node.
 
@@ -47,10 +49,12 @@
 ### Task 2: Implement minimal source map boundary support
 
 **Files:**
+
 - Modify: `internal/stringifier/source_map.go`
 - Modify: `internal/stringifier/stringifier.go`
 
 **Interfaces:**
+
 - Consumes: existing `source.Location` start/end positions and writer generated cursor state.
 - Produces: `AddEndMapping(node ast.Node)` plus explicit source-position mapping used by declaration serialization.
 
@@ -75,6 +79,7 @@
 ### Task 3: Verify compatibility and formatting
 
 **Files:**
+
 - No additional files.
 
 - [x] **Step 1: Run all Go tests**

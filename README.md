@@ -33,12 +33,12 @@ Still in progress:
 
 ## Packages
 
-| Package | Path | Role |
-| --- | --- | --- |
-| `@postcss-go/cli` | `packages/postcss-go-cli` | CLI (postcss-cli compatible) |
-| `@postcss-go/core` | `packages/postcss-go` | Node.js / TypeScript API surface |
-| `@postcss-go/compat` | `packages/postcss-compat` | Upstream test harness and Go overrides |
-| `@postcss-go/wasm` | `packages/postcss-go-wasm` | Browser / worker / wasm entry skeleton |
+| Package              | Path                       | Role                                   |
+| -------------------- | -------------------------- | -------------------------------------- |
+| `@postcss-go/cli`    | `packages/postcss-go-cli`  | CLI (postcss-cli compatible)           |
+| `@postcss-go/core`   | `packages/postcss-go`      | Node.js / TypeScript API surface       |
+| `@postcss-go/compat` | `packages/postcss-compat`  | Upstream test harness and Go overrides |
+| `@postcss-go/wasm`   | `packages/postcss-go-wasm` | Browser / worker / wasm entry skeleton |
 
 ## CLI
 
