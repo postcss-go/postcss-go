@@ -9,7 +9,7 @@ const { argv } = yargs(process.argv.slice(2))
   $0 <input-glob-pattern> [OPTIONS] --dir <output-directory> [--watch|-w]
   $0 <input.css>... [OPTIONS] --replace`,
   )
-  .group(['o', 'd', 'r', 'map', 'no-map', 'watch', 'verbose', 'env', 'engine'], 'Basic options:')
+  .group(['o', 'd', 'r', 'map', 'no-map', 'watch', 'verbose', 'env'], 'Basic options:')
   .option('o', {
     alias: 'output',
     desc: 'Output file',
@@ -47,12 +47,6 @@ const { argv } = yargs(process.argv.slice(2))
   .option('env', {
     desc: 'A shortcut for setting NODE_ENV',
     type: 'string',
-  })
-  .option('engine', {
-    desc: 'Processing engine: postcss (default) or go (postcss-go)',
-    type: 'string',
-    choices: ['postcss', 'go'],
-    default: process.env.POSTCSS_GO_ENGINE === 'go' ? 'go' : 'postcss',
   })
   .group(['u', 'parser', 'stringifier', 'syntax'], 'Options for use without a config file:')
   .option('u', {
@@ -100,7 +94,6 @@ const { argv } = yargs(process.argv.slice(2))
   .example('$0 input.css -o output.css', 'Basic usage')
   .example('$0 src/**/*.css --base src --dir build', 'Glob Pattern & output')
   .example('cat input.css | $0 -u autoprefixer > output.css', 'Piping input & output')
-  .example('$0 input.css -o output.css --engine go --no-map', 'Use the postcss-go engine')
   .epilog(
     `If no input files are passed, it reads from stdin. If neither -o, --dir, or --replace is passed, it writes to stdout.
 
@@ -108,10 +101,11 @@ If there are multiple input files, the --dir or --replace option must be passed.
 
 Input files may contain globs (e.g. src/**/*.css). If you pass an input directory, it will process all files in the directory and any subdirectories, respecting the glob pattern.
 
-The postcss-go engine (--engine go) runs JS plugin chains and source map generation before parse/stringify through the Go bridge. Custom parsers require --engine postcss.
+The postcss-go engine runs JS plugin chains and source map generation before parse/stringify through the Go bridge. Custom parsers, syntaxes, and stringifiers are not supported.
 
 For more details, please see https://github.com/eryue0220/postcss-go`,
-  );
+  )
+  .strictOptions();
 
 if (argv.ext && argv.ext.indexOf('.') !== 0) argv.ext = `.${argv.ext}`;
 

@@ -10,6 +10,7 @@ import (
 	"unicode/utf16"
 
 	"postcss-go/internal/ast"
+	"postcss-go/internal/source"
 )
 
 const vlqChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -88,18 +89,40 @@ func (w *sourceMapWriter) AddMapping(node ast.Node) {
 		w.addMapping(noSource, nil, 0, 0)
 		return
 	}
-	source := location.Input.From()
+	w.addLocationMapping(location, location.Start, w.line, w.column)
+}
+
+func (w *sourceMapWriter) AddMappingAt(node ast.Node, position source.Position) {
+	location := node.Source()
+	if location == nil || location.Input == nil {
+		w.addMapping(noSource, nil, 0, 0)
+		return
+	}
+	w.addLocationMapping(location, position, w.line, w.column)
+}
+
+func (w *sourceMapWriter) AddEndMapping(node ast.Node) {
+	location := node.Source()
+	if location == nil || location.Input == nil {
+		w.addMappingAtGenerated(noSource, nil, 0, 0, w.line, max(w.column-1, 0))
+		return
+	}
+	w.addLocationMapping(location, location.End, w.line, max(w.column-1, 0))
+}
+
+func (w *sourceMapWriter) addLocationMapping(location *source.Location, position source.Position, genLine, genColumn int) {
+	sourceName := location.Input.From()
 	if w.sourceOverride != "" {
-		source = w.sourceOverride
+		sourceName = w.sourceOverride
 	}
-	if source == "" || source == "<css input>" {
-		source = noSource
+	if sourceName == "" || sourceName == "<css input>" {
+		sourceName = noSource
 	}
-	if source != noSource && !isURI(source) {
-		if strings.HasPrefix(source, "/") {
-			source = path.Clean(source)
+	if sourceName != noSource && !isURI(sourceName) {
+		if strings.HasPrefix(sourceName, "/") {
+			sourceName = path.Clean(sourceName)
 		} else {
-			source = filepath.Clean(source)
+			sourceName = filepath.Clean(sourceName)
 		}
 	}
 	content := location.Input.CSS
@@ -107,10 +130,10 @@ func (w *sourceMapWriter) AddMapping(node ast.Node) {
 	if location.Input.SourceContentAvailable() {
 		sourceContent = &content
 	}
-	w.addMapping(source, sourceContent, max(location.Start.Line-1, 0), max(location.Start.Column-1, 0))
+	w.addMappingAtGenerated(sourceName, sourceContent, max(position.Line-1, 0), max(position.Column-1, 0), genLine, genColumn)
 }
 
-func (w *sourceMapWriter) addMapping(source string, content *string, sourceLine, sourceCol int) {
+func (w *sourceMapWriter) addMappingAtGenerated(source string, content *string, sourceLine, sourceCol, genLine, genColumn int) {
 	sourceIndex, ok := w.sourceIndexes[source]
 	if !ok {
 		sourceIndex = len(w.sources)
@@ -121,12 +144,16 @@ func (w *sourceMapWriter) addMapping(source string, content *string, sourceLine,
 		w.sourcesContent[source] = content
 	}
 	w.mappings = append(w.mappings, sourceMapping{
-		genLine:    w.line,
-		genColumn:  w.column,
+		genLine:    genLine,
+		genColumn:  genColumn,
 		source:     sourceIndex,
 		sourceLine: sourceLine,
 		sourceCol:  sourceCol,
 	})
+}
+
+func (w *sourceMapWriter) addMapping(source string, content *string, sourceLine, sourceCol int) {
+	w.addMappingAtGenerated(source, content, sourceLine, sourceCol, w.line, w.column)
 }
 
 func (w *sourceMapWriter) sourceMap(opts SourceMapOptions) (string, error) {

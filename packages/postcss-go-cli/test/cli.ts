@@ -10,16 +10,14 @@ test('works with defaults', async () => {
   const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output, '--no-map']);
 
   expect(error, stderr).toBeFalsy();
-  expect(await read(output)).toBe(await read('test/fixtures/a.css'));
+  expect((await read(output)).trim()).toBe((await read('test/fixtures/a.css')).trim());
 });
 
-test('uses default exports for custom parser, syntax, and stringifier modules', async () => {
-  const output = tmp('output.css');
-
+test('rejects custom parser, syntax, and stringifier modules', async () => {
   const { error, stderr } = await cli([
     'test/fixtures/a.css',
     '-o',
-    output,
+    tmp('output.css'),
     '--no-map',
     '--parser',
     './test/fixtures/custom-modules/parser.mjs',
@@ -29,6 +27,15 @@ test('uses default exports for custom parser, syntax, and stringifier modules', 
     './test/fixtures/custom-modules/stringifier.mjs',
   ]);
 
-  expect(error, stderr).toBeFalsy();
-  expect(await read(output)).toBe(await read('test/fixtures/a.css'));
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Engine Error: postcss-go does not support custom parser/syntax/stringifier yet',
+  );
+});
+
+test('rejects the removed --engine option', async () => {
+  const { error, stderr } = await cli(['test/fixtures/a.css', '--no-map', '--engine', 'go']);
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain('Unknown argument: engine');
 });

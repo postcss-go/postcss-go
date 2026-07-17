@@ -2,8 +2,11 @@ package stringifier
 
 import (
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"postcss-go/internal/ast"
+	"postcss-go/internal/source"
 )
 
 type SourceMapOptions struct {
@@ -105,6 +108,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.writeByte('\n')
 		writeMappedIndent(writer, depth)
 		writer.writeByte('}')
+		writer.AddEndMapping(current)
 		return true
 	case *ast.AtRule:
 		writeMappedIndent(writer, depth)
@@ -117,6 +121,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		}
 		if !current.Block {
 			writer.writeByte(';')
+			writer.AddEndMapping(current)
 			return true
 		}
 		writer.writeString(" {\n")
@@ -124,17 +129,20 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.writeByte('\n')
 		writeMappedIndent(writer, depth)
 		writer.writeByte('}')
+		writer.AddEndMapping(current)
 		return true
 	case *ast.Declaration:
 		writeMappedIndent(writer, depth)
 		writer.AddMapping(current)
 		writer.writeString(strings.TrimSpace(current.Prop))
 		writer.writeString(": ")
+		writer.AddMappingAt(current, declarationValuePosition(current))
 		writer.writeString(strings.TrimSpace(current.Value))
 		if current.Important {
 			writer.writeString(" !important")
 		}
 		writer.writeByte(';')
+		writer.AddEndMapping(current)
 		return true
 	case *ast.Comment:
 		if !writer.preserveAnnotation && isSourceMapAnnotation(current.Text) {
@@ -145,9 +153,36 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.writeString("/* ")
 		writer.writeString(strings.TrimSpace(current.Text))
 		writer.writeString(" */")
+		writer.AddEndMapping(current)
 		return true
 	}
 	return true
+}
+
+func declarationValuePosition(node *ast.Declaration) source.Position {
+	location := node.Source()
+	if location == nil || location.Input == nil {
+		return source.Position{}
+	}
+	input := location.Input
+	start := max(location.Start.Offset, 0)
+	end := min(location.End.Offset, len(input.CSS))
+	if start > end {
+		return location.Start
+	}
+	colon := strings.IndexByte(input.CSS[start:end], ':')
+	if colon < 0 {
+		return location.Start
+	}
+	valueOffset := start + colon + 1
+	for valueOffset < end {
+		r, size := utf8.DecodeRuneInString(input.CSS[valueOffset:end])
+		if !unicode.IsSpace(r) {
+			break
+		}
+		valueOffset += size
+	}
+	return input.FromOffset(valueOffset)
 }
 
 func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) {

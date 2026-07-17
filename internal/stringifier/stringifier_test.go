@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/ast"
+	"postcss-go/internal/parser"
 	"postcss-go/internal/source"
 )
 
@@ -82,6 +83,55 @@ func TestStringifyWithSourceMap(t *testing.T) {
 	}
 	if payload.Mappings == "" {
 		t.Fatal("expected mappings to be populated")
+	}
+}
+
+func TestStringifySourceMapNodeBoundaries(t *testing.T) {
+	root, err := parser.Parse(".a { color: red; }", source.Options{From: "input.css"})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	result, err := StringifyWithSourceMap(root, SourceMapOptions{To: "out.css"})
+	if err != nil {
+		t.Fatalf("stringify with source map failed: %v", err)
+	}
+	consumer, err := sourcemap.Parse("out.css.map", []byte(result.Map))
+	if err != nil {
+		t.Fatalf("parse source map: %v", err)
+	}
+
+	assertMapping := func(generatedLine, generatedColumn, sourceLine, sourceColumn int) {
+		t.Helper()
+		file, _, line, column, ok := consumer.Source(generatedLine, generatedColumn)
+		if !ok || file != "input.css" || line != sourceLine || column != sourceColumn {
+			t.Fatalf("unexpected mapping at generated %d:%d: file=%q source=%d:%d ok=%v", generatedLine, generatedColumn, file, line, column, ok)
+		}
+	}
+
+	assertMapping(2, 2, 1, 5)
+	assertMapping(2, 9, 1, 12)
+	assertMapping(2, 12, 1, 15)
+	assertMapping(3, 0, 1, 2)
+}
+
+func TestStringifySourceMapNoSourceNodeBoundaries(t *testing.T) {
+	root := ast.NewRoot()
+	rule := ast.NewRule(".a")
+	rule.Append(ast.NewDeclaration("color", "red"))
+	root.Append(rule)
+	result, err := StringifyWithSourceMap(root, SourceMapOptions{To: "out.css"})
+	if err != nil {
+		t.Fatalf("stringify with source map failed: %v", err)
+	}
+	consumer, err := sourcemap.Parse("out.css.map", []byte(result.Map))
+	if err != nil {
+		t.Fatalf("parse source map: %v", err)
+	}
+	for _, column := range []int{2, 12} {
+		file, _, line, sourceColumn, ok := consumer.Source(2, column)
+		if !ok || file != "<no source>" || line != 1 || sourceColumn != 0 {
+			t.Fatalf("unexpected no-source mapping at generated 2:%d: file=%q source=%d:%d ok=%v", column, file, line, sourceColumn, ok)
+		}
 	}
 }
 

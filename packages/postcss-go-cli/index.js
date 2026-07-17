@@ -20,17 +20,17 @@ import argv from './lib/args.js';
 import createDependencyGraph from './lib/DependencyGraph.js';
 import getMapfile from './lib/getMapfile.js';
 import {
-  assertGoEngineCompatible,
-  createEngine,
+  assertGoCompatibility,
+  createGoEngine,
   getEffectiveMapOption,
   isExternalSourceMap,
-  processWithEngine,
+  processWithGoEngine,
 } from './lib/engine.js';
 import { getPollInterval, usePolling } from './lib/poll.js';
 
 const reporter = postcssReporter();
 const depGraph = createDependencyGraph();
-const engine = createEngine(argv);
+const engine = createGoEngine();
 const explicitConfigPath = argv.config ? path.resolve(argv.config) : null;
 
 let input = argv._;
@@ -251,7 +251,7 @@ function css(css, file) {
   return rc(ctx, configSearchPath)
     .then((config) => {
       config = config || cliConfig;
-      assertGoEngineCompatible(argv, config);
+      assertGoCompatibility(argv, config);
       const options = { ...config.options };
       if (options.map === undefined) {
         options.map = getEffectiveMapOption(config);
@@ -277,7 +277,7 @@ function css(css, file) {
         throw new Error('Output Error: Cannot output external sourcemaps when writing to STDOUT');
       }
 
-      return processWithEngine(engine, config, css, options).then((result) => {
+      return processWithGoEngine(engine, config, css, options).then((result) => {
         const tasks = [];
 
         if (options.to) {
