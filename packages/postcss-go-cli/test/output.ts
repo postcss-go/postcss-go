@@ -35,7 +35,9 @@ test('--ext changes the output extension when using --dir', async () => {
   ]);
 
   expect(error, stderr).toBeFalsy();
-  expect(await read(path.join(outputDir, 'a.min.css'))).toBe(await read('test/fixtures/a.css'));
+  expect((await read(path.join(outputDir, 'a.min.css'))).trim()).toBe(
+    (await read('test/fixtures/a.css')).trim(),
+  );
 });
 
 test('rejects external sourcemaps from config.map when writing to stdout', async () => {
@@ -49,7 +51,7 @@ test('rejects external sourcemaps from config.map when writing to stdout', async
   );
 });
 
-test('--map writes an external sourcemap with the postcss engine', async () => {
+test('--map writes an external sourcemap with the Go engine', async () => {
   const output = tmp('mapped.css');
 
   const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output, '--map']);

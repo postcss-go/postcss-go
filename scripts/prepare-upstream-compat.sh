@@ -15,6 +15,10 @@ fi
 
 apply_override() {
   local file="$1"
+  case "$file" in
+    *.js) ;;
+    *) return 0 ;;
+  esac
   cp "$file" "$TARGET_LIB/$(basename "$file")"
 }
 

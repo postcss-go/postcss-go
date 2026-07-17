@@ -7,11 +7,11 @@ import cli from './helpers/cli.ts';
 import tmp from './helpers/tmp.ts';
 import read from './helpers/read.ts';
 import {
-  assertGoEngineCompatible,
+  assertGoCompatibility,
   getEffectiveMapOption,
   isExternalSourceMap,
   isSourceMapEnabled,
-  processWithEngine,
+  processWithGoEngine,
 } from '../lib/engine.js';
 import {
   getBundledGoBridgeBinPath,
@@ -47,21 +47,13 @@ function waitForContent(file: string, content: string, timeout = 20000) {
 }
 
 test.skipIf(process.env.COVERAGE_RUN === 'true')(
-  '--engine go writes output',
+  'writes output with the Go engine by default',
   { timeout: 25000 },
   async () => {
     const output = tmp('output.css');
     const child = spawn(
       process.execPath,
-      [
-        path.join(packageRoot, 'index.js'),
-        'test/fixtures/a.css',
-        '-o',
-        output,
-        '--no-map',
-        '--engine',
-        'go',
-      ],
+      [path.join(packageRoot, 'index.js'), 'test/fixtures/a.css', '-o', output, '--no-map'],
       { cwd: packageRoot },
     );
 
@@ -84,7 +76,7 @@ test.skipIf(process.env.COVERAGE_RUN === 'true')(
   },
 );
 
-test('--engine go runs --use plugins', async () => {
+test('the Go engine runs --use plugins by default', async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli([
@@ -92,8 +84,6 @@ test('--engine go runs --use plugins', async () => {
     '-o',
     output,
     '--no-map',
-    '--engine',
-    'go',
     '-u',
     path.resolve('test/fixtures/plugins/to-blue.mjs'),
   ]);
@@ -102,44 +92,34 @@ test('--engine go runs --use plugins', async () => {
   expect(await read(output)).toContain('color: blue');
 });
 
-test('--engine go runs config plugins', async () => {
+test('the Go engine runs config plugins by default', async () => {
   const fixtureDir = 'test/fixtures/config';
   const output = path.resolve(tmp('output.css'));
 
-  const { error, stderr } = await cli(
-    ['input.css', '-o', output, '--no-map', '--engine', 'go'],
-    fixtureDir,
-  );
+  const { error, stderr } = await cli(['input.css', '-o', output, '--no-map'], fixtureDir);
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toContain('color: tomato');
 });
 
-test('--engine go rejects config parser overrides', async () => {
+test('the Go engine rejects config parser overrides', async () => {
   const fixtureDir = 'test/fixtures/config-parser';
 
   const { error, stderr } = await cli(
-    ['input.css', '-o', tmp('output.css'), '--no-map', '--engine', 'go'],
+    ['input.css', '-o', tmp('output.css'), '--no-map'],
     fixtureDir,
   );
 
   expect(error).toBeTruthy();
   expect(stderr).toContain(
-    'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet; use --engine postcss',
+    'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet',
   );
 });
 
-test('--engine go writes external sourcemaps', async () => {
+test('the Go engine writes external sourcemaps by default', async () => {
   const output = tmp('output.css');
 
-  const { error, stderr } = await cli([
-    'test/fixtures/a.css',
-    '-o',
-    output,
-    '--map',
-    '--engine',
-    'go',
-  ]);
+  const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output, '--map']);
 
   expect(error, stderr).toBeFalsy();
   const css = await read(output);
@@ -150,7 +130,7 @@ test('--engine go writes external sourcemaps', async () => {
   expect(map.mappings).toBeTruthy();
 });
 
-test('--engine go composes plugin sourcemaps back to the original CSS', async () => {
+test('the Go engine composes plugin sourcemaps back to the original CSS', async () => {
   const output = tmp('output.css');
 
   const { error, stderr } = await cli([
@@ -158,8 +138,6 @@ test('--engine go composes plugin sourcemaps back to the original CSS', async ()
     '-o',
     output,
     '--map',
-    '--engine',
-    'go',
     '-u',
     path.resolve('test/fixtures/plugins/to-blue.mjs'),
   ]);
@@ -171,33 +149,30 @@ test('--engine go composes plugin sourcemaps back to the original CSS', async ()
   expect(map.sources[0]).not.toMatch(/^[/\\]/);
 });
 
-test('--engine go writes default inline sourcemaps', async () => {
+test('the Go engine writes default inline sourcemaps', async () => {
   const output = tmp('output.css');
 
-  const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output, '--engine', 'go']);
+  const { error, stderr } = await cli(['test/fixtures/a.css', '-o', output]);
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
 });
 
-test('--engine go supports postcss.config.js map options', async () => {
+test('the Go engine supports postcss.config.js map options', async () => {
   const fixtureDir = 'test/fixtures/config';
   const output = path.resolve(tmp('output.css'));
 
-  const { error, stderr } = await cli(['input.css', '-o', output, '--engine', 'go'], fixtureDir);
+  const { error, stderr } = await cli(['input.css', '-o', output], fixtureDir);
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
 });
 
-test('--engine go supports explicit map: true in postcss.config.js', async () => {
+test('the Go engine supports explicit map: true in postcss.config.js', async () => {
   const fixtureDir = 'test/fixtures/config-map';
   const output = path.resolve(tmp('output.css'));
 
-  const { error, stderr } = await cli(
-    ['input.css', '-o', output, '--no-map', '--engine', 'go'],
-    fixtureDir,
-  );
+  const { error, stderr } = await cli(['input.css', '-o', output, '--no-map'], fixtureDir);
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
@@ -223,9 +198,9 @@ test('getEffectiveMapOption prefers config.options.map', () => {
   expect(getEffectiveMapOption({ map: { inline: true } })).toEqual({ inline: true });
 });
 
-test('assertGoEngineCompatible allows enabled map options for the go engine', () => {
+test('Go compatibility allows enabled map options', () => {
   expect(() =>
-    assertGoEngineCompatible({ engine: 'go' }, { options: { map: { inline: true } }, plugins: [] }),
+    assertGoCompatibility({}, { options: { map: { inline: true } }, plugins: [] }),
   ).not.toThrow();
 });
 
@@ -235,7 +210,7 @@ test('resolveGoBridgeServiceOptions prefers bundled binary', () => {
   });
 });
 
-test('processWithEngine serializes go engine requests', async () => {
+test('processWithGoEngine serializes requests', async () => {
   let active = 0;
   let maxActive = 0;
 
@@ -254,9 +229,9 @@ test('processWithEngine serializes go engine requests', async () => {
   };
 
   const results = await Promise.all([
-    processWithEngine(engine, {}, '.a { color: red; }', { from: 'a.css' }),
-    processWithEngine(engine, {}, '.b { color: blue; }', { from: 'b.css' }),
-    processWithEngine(engine, {}, '.c { color: green; }', { from: 'c.css' }),
+    processWithGoEngine(engine, {}, '.a { color: red; }', { from: 'a.css' }),
+    processWithGoEngine(engine, {}, '.b { color: blue; }', { from: 'b.css' }),
+    processWithGoEngine(engine, {}, '.c { color: green; }', { from: 'c.css' }),
   ]);
 
   expect(maxActive).toBe(1);

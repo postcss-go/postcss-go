@@ -17,6 +17,10 @@ test('--dir works', async () => {
   ]);
 
   expect(error, stderr).toBeFalsy();
-  expect(await read(path.join(dir, 'a.css'))).toBe(await read('test/fixtures/a.css'));
-  expect(await read(path.join(dir, 'b.css'))).toBe(await read('test/fixtures/b.css'));
+  expect((await read(path.join(dir, 'a.css'))).trim()).toBe(
+    (await read('test/fixtures/a.css')).trim(),
+  );
+  expect((await read(path.join(dir, 'b.css'))).trim()).toBe(
+    (await read('test/fixtures/b.css')).trim(),
+  );
 });

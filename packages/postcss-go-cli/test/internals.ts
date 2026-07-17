@@ -2,24 +2,17 @@ import path from 'node:path';
 import postcss from 'postcss';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { assertGoEngineCompatible, createEngine, processWithEngine } from '../lib/engine.js';
+import { assertGoCompatibility, createGoEngine, processWithGoEngine } from '../lib/engine.js';
 import {
   getBundledGoBridgeBinPath,
   resolveGoBridgeServiceOptions,
 } from '../lib/resolveGoBridge.js';
 
 const originalArgv = [...process.argv];
-const originalEngine = process.env.POSTCSS_GO_ENGINE;
 const originalBin = process.env.POSTCSS_GO_NODE_API_BIN;
 
 afterEach(() => {
   process.argv = [...originalArgv];
-  if (originalEngine === undefined) {
-    delete process.env.POSTCSS_GO_ENGINE;
-  } else {
-    process.env.POSTCSS_GO_ENGINE = originalEngine;
-  }
-
   if (originalBin === undefined) {
     delete process.env.POSTCSS_GO_NODE_API_BIN;
   } else {
@@ -42,50 +35,30 @@ async function importArgs(args: string[], env: Record<string, string | undefined
   return (await import('../lib/args.js')).default;
 }
 
-test('args normalizes --ext and respects the POSTCSS_GO_ENGINE default', async () => {
-  const argv = await importArgs(['input.css', '--dir', 'out', '--ext', 'min.css'], {
-    POSTCSS_GO_ENGINE: 'go',
-  });
+test('args normalizes --ext without exposing an engine option', async () => {
+  const argv = await importArgs(['input.css', '--dir', 'out', '--ext', 'min.css']);
 
   expect(argv.ext).toBe('.min.css');
   expect(argv.dir).toBe('out');
-  expect(argv.engine).toBe('go');
+  expect(argv.engine).toBeUndefined();
   expect(argv._).toEqual(['input.css']);
 });
 
-test('args keeps the default postcss engine when POSTCSS_GO_ENGINE is unset', async () => {
-  const argv = await importArgs(['input.css', '--no-map'], { POSTCSS_GO_ENGINE: undefined });
+test('args has no engine default', async () => {
+  const argv = await importArgs(['input.css', '--no-map']);
 
-  expect(argv.engine).toBe('postcss');
+  expect(argv.engine).toBeUndefined();
   expect(argv.map).toBe(false);
 });
 
-test('createEngine returns a postcss engine with a no-op close', async () => {
-  const engine = createEngine({ engine: 'postcss' });
+test('createGoEngine always returns the Go engine', async () => {
+  const engine = createGoEngine();
 
-  expect(engine.name).toBe('postcss');
-  await expect(engine.close()).resolves.toBeUndefined();
+  expect(engine.name).toBe('go');
+  await engine.close();
 });
 
-test('processWithEngine runs the postcss branch with plugins', async () => {
-  const plugin = {
-    postcssPlugin: 'to-blue',
-    Declaration(decl: postcss.Declaration) {
-      decl.value = 'blue';
-    },
-  };
-
-  const result = await processWithEngine(
-    { name: 'postcss', close: async () => {} },
-    { plugins: [plugin] },
-    '.a { color: red; }',
-    { from: 'a.css' },
-  );
-
-  expect(result.css).toContain('blue');
-});
-
-test('processWithEngine converts buffer input and warning objects for the go engine', async () => {
+test('processWithGoEngine converts buffer input and warning objects', async () => {
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a { color: red; }',
     messages: [{ type: 'warning', text: 'be careful' }],
@@ -99,7 +72,7 @@ test('processWithEngine converts buffer input and warning objects for the go eng
     },
   };
 
-  const result = await processWithEngine(engine, {}, Buffer.from('.a { color: red; }'), {
+  const result = await processWithGoEngine(engine, {}, Buffer.from('.a { color: red; }'), {
     from: 'buffer.css',
   });
 
@@ -109,7 +82,7 @@ test('processWithEngine converts buffer input and warning objects for the go eng
   expect(result.warnings()[0].toString()).toBe('be careful');
 });
 
-test('processWithEngine runs plugins before the go bridge', async () => {
+test('processWithGoEngine runs plugins before the Go bridge', async () => {
   const processSpy = vi.fn().mockImplementation(async (css) => ({
     css,
     messages: [],
@@ -121,7 +94,7 @@ test('processWithEngine runs plugins before the go bridge', async () => {
     },
   };
 
-  const result = await processWithEngine(
+  const result = await processWithGoEngine(
     {
       name: 'go',
       queue: Promise.resolve(),
@@ -138,7 +111,7 @@ test('processWithEngine runs plugins before the go bridge', async () => {
   expect(result.css).toContain('blue');
 });
 
-test('processWithEngine passes the plugin map to the go bridge for composition', async () => {
+test('processWithGoEngine passes the plugin map to the Go bridge for composition', async () => {
   const processSpy = vi.fn().mockImplementation(async (css) => ({
     css,
     map: '{"version":3,"sources":[],"names":[],"mappings":""}',
@@ -151,7 +124,7 @@ test('processWithEngine passes the plugin map to the go bridge for composition',
     },
   };
 
-  await processWithEngine(
+  await processWithGoEngine(
     {
       name: 'go',
       queue: Promise.resolve(),
@@ -173,14 +146,14 @@ test('processWithEngine passes the plugin map to the go bridge for composition',
   );
 });
 
-test('processWithEngine keeps inline maps when annotation is false', async () => {
+test('processWithGoEngine keeps inline maps when annotation is false', async () => {
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a {}',
     map: '{"version":3,"sources":[],"names":[],"mappings":""}',
     messages: [],
   });
 
-  const result = await processWithEngine(
+  const result = await processWithGoEngine(
     {
       name: 'go',
       queue: Promise.resolve(),
@@ -195,7 +168,7 @@ test('processWithEngine keeps inline maps when annotation is false', async () =>
   expect(result.map).toBeUndefined();
 });
 
-test('processWithEngine resolves dynamic source map annotations before the Go bridge', async () => {
+test('processWithGoEngine resolves dynamic source map annotations before the Go bridge', async () => {
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a {}',
     map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
@@ -206,7 +179,7 @@ test('processWithEngine resolves dynamic source map annotations before the Go br
     return 'maps/custom.map';
   });
 
-  const result = await processWithEngine(
+  const result = await processWithGoEngine(
     {
       name: 'go',
       queue: Promise.resolve(),
@@ -231,14 +204,14 @@ test('processWithEngine resolves dynamic source map annotations before the Go br
   expect(result.mapFile).toBe(expectedMapFile);
 });
 
-test('processWithEngine preserves existing annotations when annotation is false', async () => {
+test('processWithGoEngine preserves existing annotations when annotation is false', async () => {
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a {}/*# sourceMappingURL=old.css.map */',
     map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
     messages: [],
   });
 
-  const result = await processWithEngine(
+  const result = await processWithGoEngine(
     {
       name: 'go',
       queue: Promise.resolve(),
@@ -260,21 +233,21 @@ test('processWithEngine preserves existing annotations when annotation is false'
   expect(result.css).toContain('sourceMappingURL=old.css.map');
 });
 
-test('assertGoEngineCompatible rejects custom parser flags', () => {
+test('assertGoCompatibility rejects custom parser flags', () => {
   expect(() =>
-    assertGoEngineCompatible({ engine: 'go', parser: './parser.js' }, { plugins: {}, options: {} }),
-  ).toThrow(
-    'Engine Error: postcss-go does not support custom parser/syntax/stringifier yet; use --engine postcss',
-  );
+    assertGoCompatibility({ parser: './parser.js' }, { plugins: {}, options: {} }),
+  ).toThrow('Engine Error: postcss-go does not support custom parser/syntax/stringifier yet');
 });
 
-test('assertGoEngineCompatible is a no-op for the postcss engine', () => {
+test('assertGoCompatibility rejects custom config parser options', () => {
   expect(() =>
-    assertGoEngineCompatible(
-      { engine: 'postcss', parser: './parser.js', use: ['autoprefixer'] },
-      { plugins: { autoprefixer: {} }, options: { map: true } },
+    assertGoCompatibility(
+      {},
+      { plugins: { autoprefixer: {} }, options: { parser: './parser.js' } },
     ),
-  ).not.toThrow();
+  ).toThrow(
+    'Engine Error: postcss-go does not support postcss.config.js parser/syntax/stringifier yet',
+  );
 });
 
 test('resolveGoBridgeServiceOptions prefers the POSTCSS_GO_NODE_API_BIN override', () => {

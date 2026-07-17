@@ -22,25 +22,18 @@ npm i -D @postcss-go/cli postcss
 postcss-go input.css -o output.css
 postcss-go src/**/*.css --base src --dir build
 cat input.css | postcss-go -u autoprefixer > output.css
-postcss-go input.css -o output.css --engine go --no-map
+postcss-go input.css -o output.css --no-map
 ```
 
 The CLI mirrors [postcss-cli](https://github.com/postcss/postcss-cli) options: glob inputs, `--dir` / `--replace` / `-o`, watch mode, `postcss.config.js`, and `--use` plugin chains.
 
-### Engines
-
-| Engine              | Flag               | When to use                                           |
-| ------------------- | ------------------ | ----------------------------------------------------- |
-| `postcss` (default) | `--engine postcss` | Plugin chains, custom parsers, source maps            |
-| `go`                | `--engine go`      | JS plugin chains, source maps, and Go parse/stringify |
-
-Set `POSTCSS_GO_ENGINE=go` to default to the Go engine.
+The CLI always uses the Go engine. JS plugin chains run through the PostCSS runtime before Go parse/stringify and source-map generation.
 
 ## Config
 
 Supports `postcss.config.js` / `.cjs` / `.mjs` via [postcss-load-config](https://github.com/postcss/postcss-load-config), including function configs with `ctx.file` and `ctx.env`.
 
-When using `--engine go`, plugin chains are supported through the JS PostCSS runtime before the Go bridge. Source maps are generated from Go AST locations; custom parsers, syntaxes, and stringifiers still require `--engine postcss`.
+Source maps are generated from Go AST locations. Custom parsers, syntaxes, and stringifiers are not supported by the Go engine.
 
 ## Development
 

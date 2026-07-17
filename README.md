@@ -9,15 +9,16 @@ The repository mirrors the same high-level pipeline as upstream PostCSS:
 3. `processor` runs visitor-style plugins on the AST
 4. `stringifier` turns the AST back into CSS
 
-Today the Go engine is already usable for parsing, AST mutation, walking, and stringifying CSS. The surrounding Node.js workspace provides a compatible CLI, upstream compatibility harnesses, and the in-progress bridge layers for future JS and browser runtimes.
+Today the Go engine is already usable for parsing, AST mutation, walking, stringifying, and source map generation. The surrounding Node.js workspace provides a compatible CLI, upstream compatibility harnesses, and the in-progress bridge layers for future JS and browser runtimes.
 
 ## Status
 
 Implemented today:
 
 - Go tokenizer, parser, AST, processor, and stringifier
-- Visitor-style plugin execution with enter/exit hooks
-- Root Go API for parsing, processing, and walking nodes
+- Visitor-style plugin execution with enter/exit hooks (including named at-rule / declaration prop hooks)
+- Go facade API under `internal/postcss` for parsing, processing, walking, and warnings
+- Source map generation and previous-map composition in the Go processor
 - A Node.js CLI aligned with [postcss-cli](https://github.com/postcss/postcss-cli)
 - Upstream compatibility checks against a vendored copy of `postcss/postcss`
 - Benchmark tooling for comparing the Go engine with upstream PostCSS
@@ -25,9 +26,19 @@ Implemented today:
 Still in progress:
 
 - Full `lazy-result` / async plugin behavior
-- `raws`, source map composition, and formatting fidelity comparable to upstream PostCSS
+- `raws` and formatting fidelity comparable to upstream PostCSS
+- Full source map option / annotation parity with upstream
 - A production-ready JS bridge and wasm/browser runtime
 - Closer tokenizer/parser edge-case parity with upstream
+
+## Packages
+
+| Package | Path | Role |
+| --- | --- | --- |
+| `@postcss-go/cli` | `packages/postcss-go-cli` | CLI (postcss-cli compatible) |
+| `@postcss-go/core` | `packages/postcss-go` | Node.js / TypeScript API surface |
+| `@postcss-go/compat` | `packages/postcss-compat` | Upstream test harness and Go overrides |
+| `@postcss-go/wasm` | `packages/postcss-go-wasm` | Browser / worker / wasm entry skeleton |
 
 ## CLI
 
@@ -37,18 +48,15 @@ Process CSS files from the command line (compatible with [postcss-cli](https://g
 pnpm install
 pnpm --filter @postcss-go/cli test
 
-# postcss engine (plugins, source maps)
+# Go engine (JS plugin chains + Go parse/stringify and source maps)
 node packages/postcss-go-cli/index.js input.css -o output.css
-
-# go engine (parse/stringify via Go bridge)
-node packages/postcss-go-cli/index.js input.css -o output.css --engine go --no-map
 ```
 
 See [packages/postcss-go-cli/README.md](packages/postcss-go-cli/README.md) for full usage.
 
 ## Go API
 
-Use the Go processor directly when you want to parse CSS, mutate the AST, and stringify the result in-process:
+Use the Go processor directly when you want to parse CSS, mutate the AST, and stringify the result in-process. The facade lives at `postcss-go/internal/postcss`:
 
 ## Example
 
@@ -58,7 +66,7 @@ package main
 import (
 	"fmt"
 
-	postcss "postcss-go"
+	postcss "postcss-go/internal/postcss"
 )
 
 func main() {
@@ -76,7 +84,11 @@ func main() {
 		},
 	)
 
-	result, err := processor.Process(".btn { color: red; }")
+	result, err := processor.Process(".btn { color: red; }", postcss.ProcessOptions{
+		From: "input.css",
+		To:   "output.css",
+		Map:  true,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -85,11 +97,12 @@ func main() {
 }
 ```
 
-The root package also exposes lower-level helpers such as:
+The facade also exposes lower-level helpers such as:
 
 - `Parse` / `ParseWithOptions`
 - `Stringify`
 - `NewRoot`, `NewRule`, `NewAtRule`, `NewDeclaration`, `NewComment`
+- `NewInput`
 - `Walk`, `WalkRules`, `WalkAtRules`, `WalkDecls`, `WalkComments`
 
 ## Visitor Hooks
@@ -101,7 +114,9 @@ Currently supported hooks:
 - `Root` / `RootExit`
 - `Rule` / `RuleExit`
 - `AtRule` / `AtRuleExit`
+- `AtRuleNamed` / `AtRuleExitNamed`
 - `Declaration` / `DeclarationExit`
+- `DeclarationProp` / `DeclarationExitProp`
 - `Comment` / `CommentExit`
 
 `Plugin.Prepare` is also supported, which lets a plugin create a per-run visitor from the current `Result`.
@@ -110,9 +125,10 @@ Currently supported hooks:
 
 This version is closer to the upstream architecture than the initial simplified implementation, but the port is not complete:
 
-- No Go-native `lazy-result` plugin pipeline yet
-- No `raws`, source map composition, or faithful formatting output yet
-- The `go` CLI engine runs JS PostCSS plugin chains before parse/stringify through the Go bridge
+- No Go-native `lazy-result` / async plugin pipeline yet
+- No `raws` or faithful formatting output yet
+- Source maps work for common cases, but option / annotation parity with upstream is still incomplete
+- The CLI runs JS PostCSS plugin chains before parse/stringify through the Go bridge
 - JS/TS `packages/` are still bridge layers in progress rather than a finished runtime surface
 - parser / tokenizer still need to be aligned further with upstream behavior
 
@@ -127,7 +143,7 @@ pnpm install
 Common local workflows:
 
 ```bash
-go test ./...
+pnpm test:go
 pnpm test
 pnpm check
 pnpm check:all
@@ -137,21 +153,21 @@ pnpm bench
 ## Verification
 
 ```bash
-go test ./...
+pnpm test:go
 pnpm check
 pnpm check:all
 ```
 
-Upstream PostCSS compatibility (Phases 1–3):
+Upstream PostCSS compatibility:
 
 ```bash
 pnpm check:upstream      # fail if vendor/postcss is stale
 pnpm sync:upstream       # refresh vendor/postcss from postcss/postcss@main
-pnpm test:upstream       # run full vendored PostCSS unit suite (652 tests)
+pnpm test:upstream       # run full vendored PostCSS unit suite
 pnpm test:upstream:go    # run Go compat tokenizer subset
 ```
 
-See [docs/upstream-tests.md](docs/upstream-tests.md) for the full upstream test strategy.
+See [packages/postcss-compat/overrides/go/README.md](packages/postcss-compat/overrides/go/README.md) for the current Go-backed override status.
 
 ## Benchmark vs postcss
 
@@ -164,13 +180,14 @@ pnpm bench
 
 Benchmarks cover synthetic scaling workloads and real-world CSS fixtures (modern-normalize, Tailwind preflight, animate.css, Bootstrap). See [docs/benchmark.md](docs/benchmark.md) for workload details and individual commands.
 
-GitHub Actions CI runs five lanes:
+GitHub Actions CI runs these lanes:
 
 - Upstream snapshot: verify `vendor/postcss/` matches `postcss/postcss@main`
 - Benchmark comparison: run `pnpm bench` and publish the benchmark report as a CI summary/artifact
+- Format, lint, and build: `prettier --check`, `eslint`, `gofmt`, `go vet`, and `pnpm build`
+- Node / TypeScript tests on Ubuntu, macOS, and Windows
 - Upstream tests: full vendored PostCSS unit suite plus Go compat tokenizer subset
-- Node / TypeScript: `prettier --check`, `eslint`, workspace typecheck/tests, and `pnpm build`
-- Go: `gofmt` verification, `go vet ./...`, and `go test ./...`
+- Go tests on Ubuntu, macOS, and Windows
 
 A scheduled workflow (`.github/workflows/upstream-postcss-sync.yml`) opens a PR when upstream tests change.
 
