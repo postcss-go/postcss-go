@@ -65,4 +65,29 @@ Before submitting a pull request:
 - include benchmark results when changing performance-sensitive code;
 - update documentation when public behavior or commands change.
 
+## Releases
+
+When a change affects a published package, add a changeset before opening the
+pull request:
+
+```bash
+pnpm changeset
+```
+
+Select the affected package(s), choose the semver bump, and commit the
+generated file under `.changeset/`. The release workflow creates a release PR
+that updates package versions and changelogs. After that PR is merged, it
+builds and publishes the public packages to npm.
+
+Useful local checks and commands:
+
+```bash
+pnpm changeset:check
+pnpm changeset:version
+pnpm release
+```
+
+Publishing requires the repository `NPM_TOKEN` secret. The compatibility
+harness package remains private and is not published.
+
 GitHub Actions runs the same validation across Ubuntu, macOS, and Windows. A scheduled workflow keeps the vendored PostCSS tests in sync.
