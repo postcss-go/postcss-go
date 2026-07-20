@@ -23,6 +23,17 @@ type SourceRange struct {
 	End   int
 }
 
+// Raws stores the formatting metadata used by PostCSS's stringifier. Values
+// are normally strings, except value-like entries (for example selector and
+// declaration value) which may be {raw, value} objects.
+type Raws map[string]any
+
+// RawValue pairs an original raw spelling with its normalized semantic value.
+type RawValue struct {
+	Raw   string `json:"raw"`
+	Value string `json:"value"`
+}
+
 type Node interface {
 	Type() NodeType
 	Parent() Container
@@ -31,6 +42,8 @@ type Node interface {
 	SetRange(SourceRange)
 	Source() *source.Location
 	SetSource(*source.Location)
+	RawFormatting() Raws
+	RawFormattingReadOnly() Raws
 	Root() *Root
 	Next() Node
 	Prev() Node
@@ -64,6 +77,7 @@ type BaseNode struct {
 	parent       Container
 	rng          SourceRange
 	src          *source.Location
+	Raws         Raws
 	lastIterator int
 	iterators    map[int]int
 }
@@ -99,6 +113,17 @@ func (n *BaseNode) Source() *source.Location {
 
 func (n *BaseNode) SetSource(src *source.Location) {
 	n.src = src
+}
+
+func (n *BaseNode) RawFormatting() Raws {
+	if n.Raws == nil {
+		n.Raws = Raws{}
+	}
+	return n.Raws
+}
+
+func (n *BaseNode) RawFormattingReadOnly() Raws {
+	return n.Raws
 }
 
 func (n *BaseNode) nextIterator() int {
@@ -449,6 +474,7 @@ func cloneNode(node Node) Node {
 		out := NewRoot()
 		out.rng = current.rng
 		out.src = current.src
+		out.Raws = CloneRaws(current.Raws)
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
@@ -457,6 +483,7 @@ func cloneNode(node Node) Node {
 		out := NewRule(current.Selector)
 		out.rng = current.rng
 		out.src = current.src
+		out.Raws = CloneRaws(current.Raws)
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
@@ -466,6 +493,7 @@ func cloneNode(node Node) Node {
 		out.Block = current.Block
 		out.rng = current.rng
 		out.src = current.src
+		out.Raws = CloneRaws(current.Raws)
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
@@ -475,15 +503,89 @@ func cloneNode(node Node) Node {
 		out.Important = current.Important
 		out.rng = current.rng
 		out.src = current.src
+		out.Raws = CloneRaws(current.Raws)
 		return out
 	case *Comment:
 		out := NewComment(current.Text)
 		out.rng = current.rng
 		out.src = current.src
+		out.Raws = CloneRaws(current.Raws)
 		return out
 	default:
 		return nil
 	}
+}
+
+// CloneRaws deep-copies formatting metadata and normalizes value-like maps into RawValue.
+func CloneRaws(raws Raws) Raws {
+	if raws == nil {
+		return nil
+	}
+	out := make(Raws, len(raws))
+	for key, value := range raws {
+		out[key] = cloneRawValue(value)
+	}
+	return out
+}
+
+func cloneRawValue(value any) any {
+	switch current := value.(type) {
+	case nil:
+		return nil
+	case string, bool, int, int64, float64:
+		return current
+	case RawValue:
+		return current
+	case *RawValue:
+		if current == nil {
+			return nil
+		}
+		copied := *current
+		return &copied
+	case map[string]string:
+		if raw, ok := current["raw"]; ok {
+			if _, hasValue := current["value"]; hasValue && len(current) == 2 {
+				return RawValue{Raw: raw, Value: current["value"]}
+			}
+		}
+		out := make(map[string]string, len(current))
+		for key, item := range current {
+			out[key] = item
+		}
+		return out
+	case map[string]any:
+		if raw, ok := current["raw"].(string); ok {
+			if semantic, hasValue := current["value"].(string); hasValue && looksLikeRawValue(current) {
+				return RawValue{Raw: raw, Value: semantic}
+			}
+		}
+		out := make(map[string]any, len(current))
+		for key, item := range current {
+			out[key] = cloneRawValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(current))
+		for index, item := range current {
+			out[index] = cloneRawValue(item)
+		}
+		return out
+	case []string:
+		out := make([]string, len(current))
+		copy(out, current)
+		return out
+	default:
+		return current
+	}
+}
+
+func looksLikeRawValue(value map[string]any) bool {
+	if len(value) != 2 {
+		return false
+	}
+	_, hasRaw := value["raw"]
+	_, hasValue := value["value"]
+	return hasRaw && hasValue
 }
 
 func stringifyNode(node Node) string {

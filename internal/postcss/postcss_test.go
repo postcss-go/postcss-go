@@ -23,13 +23,7 @@ func TestParseStringify(t *testing.T) {
 	}
 
 	got := Stringify(root)
-	want := `@media screen and (min-width: 768px) {
-  .card {
-    color: red;
-    background: url("/demo;a.png");
-  }
-}`
-
+	want := css
 	if got != want {
 		t.Fatalf("stringify mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 	}
@@ -122,7 +116,7 @@ func TestPreserveEmptyAtRuleBlockAndComments(t *testing.T) {
 	}
 
 	got := Stringify(root)
-	if !strings.Contains(got, "@layer demo {\n\n}") {
+	if !strings.Contains(got, "@layer demo {}") {
 		t.Fatalf("expected empty block at-rule, got %q", got)
 	}
 	if !strings.Contains(got, "color: red/* ok */;") {

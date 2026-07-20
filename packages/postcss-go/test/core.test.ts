@@ -48,7 +48,16 @@ rl.on('line', (line) => {
     process.stdout.write(JSON.stringify({
       jsonrpc: '2.0',
       id: request.id,
-      error: { code: -32000, message: 'bridge failed' },
+      error: {
+        code: -32000,
+        message: 'input.css:2:4: bridge failed',
+        name: 'CssSyntaxError',
+        reason: 'bridge failed',
+        line: 2,
+        column: 4,
+        source: 'a {\\n  color: red;\\n}',
+        file: 'input.css',
+      },
     }) + '\\n');
     return;
   }
@@ -214,7 +223,14 @@ test('NodePostcssGoService rejects invalid bridge payloads', async () => {
 
 test('NodePostcssGoService surfaces bridge errors and invalid JSON', async () => {
   const errorService = await createService('bridge-error');
-  await expect(errorService.parse('a{}')).rejects.toThrow(/bridge failed/);
+  const error = await errorService.parse('a{}').catch((value) => value);
+  expect(error).toMatchObject({
+    name: 'CssSyntaxError',
+    reason: 'bridge failed',
+    line: 2,
+    column: 4,
+    file: 'input.css',
+  });
   await errorService.close();
 
   const invalidJsonService = await createService('invalid-json');

@@ -1,89 +1,71 @@
 import childProcess from 'node:child_process';
-import fs from 'node:fs';
-import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { expect, test } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
-function withBridgeClient(responseLines, run) {
-  const originalSpawn = childProcess.spawn;
-  const originalReadSync = fs.readSync;
+function withBridgeClient(response, run) {
+  const originalSpawnSync = childProcess.spawnSync;
+  const originalExecFileSync = childProcess.execFileSync;
+  const calls = [];
 
-  const writes = [];
-  let killed = false;
-  let buffer = Buffer.from(responseLines.join(''), 'utf8');
-
-  childProcess.spawn = () => {
-    const child = new EventEmitter();
-    child.stdout = new EventEmitter();
-    child.stdout.fd = 42;
-    child.stderr = new EventEmitter();
-    child.stdin = {
-      write(chunk) {
-        writes.push(chunk);
-        return true;
-      },
+  childProcess.execFileSync = () => Buffer.alloc(0);
+  childProcess.spawnSync = (command, args, options) => {
+    calls.push({ command, args, options });
+    return {
+      status: 0,
+      stdout: Buffer.from(`${JSON.stringify(response)}\n`),
+      stderr: Buffer.alloc(0),
     };
-    child.kill = () => {
-      killed = true;
-      child.emit('close');
-    };
-    return child;
-  };
-
-  fs.readSync = (fd, chunk, offset, length) => {
-    expect(fd).toBe(42);
-    const bytesRead = buffer.copy(chunk, offset, 0, Math.min(length, buffer.length));
-    buffer = buffer.subarray(bytesRead);
-    return bytesRead;
   };
 
   const bridgePath = require.resolve('../bridge-client.cjs');
   delete require.cache[bridgePath];
   const bridge = require(bridgePath);
 
-  const restore = () => {
+  try {
+    return run({ bridge, calls });
+  } finally {
     bridge.close();
     delete require.cache[bridgePath];
-    childProcess.spawn = originalSpawn;
-    fs.readSync = originalReadSync;
-  };
-
-  return Promise.resolve()
-    .then(() => run({ bridge, writes, wasKilled: () => killed }))
-    .finally(restore);
+    childProcess.spawnSync = originalSpawnSync;
+    childProcess.execFileSync = originalExecFileSync;
+  }
 }
 
-test('bridge-client.cjs sends JSON-RPC requests through the go bridge', async () => {
-  await withBridgeClient(
-    [
-      `${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true, method: 'process', params: { css: '.a { color: red; }' } } })}\n`,
-    ],
-    ({ bridge, writes, wasKilled }) => {
-      const result = bridge.callSync('process', { css: '.a { color: red; }' });
-      expect(result).toEqual({
-        ok: true,
-        method: 'process',
-        params: { css: '.a { color: red; }' },
-      });
-      expect(writes[0]).toMatch(/"method":"process"/);
-      bridge.close();
-      expect(wasKilled()).toBe(true);
-    },
-  );
+test('bridge-client.cjs builds one bridge binary and sends JSON-RPC requests', () => {
+  withBridgeClient({ jsonrpc: '2.0', id: 1, result: { ok: true } }, ({ bridge, calls }) => {
+    expect(bridge.callSync('process', { css: '.a { color: red; }' })).toEqual({ ok: true });
+    expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].args).toEqual(['--single']);
+    expect(calls[1].args).toEqual(['--single']);
+  });
 });
 
-test('bridge-client.cjs wraps bridge errors as CssSyntaxError', async () => {
-  await withBridgeClient(
-    [
-      `${JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'syntax boom' } })}\n`,
-    ],
+test('bridge-client.cjs preserves structured bridge errors', () => {
+  withBridgeClient(
+    {
+      jsonrpc: '2.0',
+      id: 1,
+      error: {
+        code: -32000,
+        message: 'input.css:2:4: syntax boom',
+        name: 'CssSyntaxError',
+        reason: 'syntax boom',
+        line: 2,
+        column: 4,
+        file: 'input.css',
+      },
+    },
     ({ bridge }) => {
       expect(() => bridge.callSync('parse', { css: '.a {' })).toThrowError(
         expect.objectContaining({
           name: 'CssSyntaxError',
-          message: expect.stringMatching(/syntax boom/),
+          reason: 'syntax boom',
+          line: 2,
+          column: 4,
+          file: 'input.css',
         }),
       );
     },

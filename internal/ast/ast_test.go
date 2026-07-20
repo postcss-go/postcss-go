@@ -91,6 +91,34 @@ func TestRuleSelectorsRootStringVariableAndClone(t *testing.T) {
 	}
 }
 
+func TestCloneDeepCopiesNestedRaws(t *testing.T) {
+	node := NewDeclaration("color", "red")
+	node.RawFormatting()["custom"] = map[string]any{
+		"nested": []any{map[string]any{"value": "red"}},
+	}
+	clone := node.Clone().(*Declaration)
+	clone.RawFormatting()["custom"].(map[string]any)["nested"].([]any)[0].(map[string]any)["value"] = "blue"
+
+	original := node.RawFormatting()["custom"].(map[string]any)["nested"].([]any)[0].(map[string]any)["value"]
+	if original != "red" {
+		t.Fatalf("nested raws were shared with clone: %v", original)
+	}
+}
+
+func TestCloneDeepCopiesTypedRawContainers(t *testing.T) {
+	node := NewDeclaration("color", "red")
+	node.RawFormatting()["map"] = map[string]string{"value": "red"}
+	node.RawFormatting()["slice"] = []string{"red"}
+	clone := node.Clone().(*Declaration)
+	clone.RawFormatting()["map"].(map[string]string)["value"] = "blue"
+	clone.RawFormatting()["slice"].([]string)[0] = "blue"
+
+	if node.RawFormatting()["map"].(map[string]string)["value"] != "red" ||
+		node.RawFormatting()["slice"].([]string)[0] != "red" {
+		t.Fatal("typed raws containers were shared with clone")
+	}
+}
+
 func TestContainerCollectionHelpers(t *testing.T) {
 	rule := NewRule(".a")
 	decl1 := NewDeclaration("color", "red")

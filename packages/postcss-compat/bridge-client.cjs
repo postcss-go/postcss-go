@@ -1,99 +1,97 @@
 'use strict';
 
-const { spawn } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
-let child = null;
-let stdoutFd = null;
+let bridgeDir = null;
+let bridgeBinary = null;
 let nextId = 1;
-let stdoutBuffer = '';
 
 function repositoryRoot() {
   return path.resolve(__dirname, '../..');
 }
 
-function ensureChild() {
-  if (child) {
-    return child;
+function ensureBinary() {
+  if (bridgeBinary) return bridgeBinary;
+
+  const envBinary = process.env.POSTCSS_GO_COMPAT_BRIDGE_BIN;
+  if (envBinary) {
+    bridgeBinary = envBinary;
+    return bridgeBinary;
   }
 
-  child = spawn('go', ['run', './cmd/postcss-go-node-api'], {
+  bridgeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'postcss-go-compat-'));
+  bridgeBinary = path.join(
+    bridgeDir,
+    process.platform === 'win32' ? 'postcss-go-api.exe' : 'postcss-go-api',
+  );
+  execFileSync('go', ['build', '-mod=mod', '-o', bridgeBinary, './cmd/api'], {
     cwd: repositoryRoot(),
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio: 'pipe',
   });
-
-  stdoutFd = child.stdout.fd;
-  child.stderr.on('data', (chunk) => {
-    process.stderr.write(chunk);
-  });
-  child.on('close', () => {
-    child = null;
-    stdoutFd = null;
-    stdoutBuffer = '';
-  });
-
-  return child;
+  return bridgeBinary;
 }
 
-function readLineSync() {
-  ensureChild();
-
-  while (true) {
-    const newlineIndex = stdoutBuffer.indexOf('\n');
-    if (newlineIndex >= 0) {
-      const line = stdoutBuffer.slice(0, newlineIndex);
-      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
-      return line;
-    }
-
-    const chunk = Buffer.alloc(4096);
-    const bytesRead = fs.readSync(stdoutFd, chunk, 0, chunk.length, null);
-    if (bytesRead <= 0) {
-      throw new Error('postcss-go bridge stdout closed unexpectedly');
-    }
-    stdoutBuffer += chunk.toString('utf8', 0, bytesRead);
-  }
+function cleanup() {
+  if (bridgeDir) fs.rmSync(bridgeDir, { recursive: true, force: true });
+  bridgeDir = null;
+  bridgeBinary = null;
 }
 
 function callSync(method, params) {
   const id = nextId++;
-  const request = {
+  const request = JSON.stringify({
     jsonrpc: '2.0',
     id,
     method,
     params,
-  };
-
-  ensureChild().stdin.write(`${JSON.stringify(request)}\n`);
-
-  while (true) {
-    const line = readLineSync().trim();
-    if (!line) {
-      continue;
-    }
-
-    const message = JSON.parse(line);
-    if (message.id !== id) {
-      continue;
-    }
-    if (message.error) {
-      const error = new Error(message.error.message || 'postcss-go bridge error');
-      error.name = 'CssSyntaxError';
-      throw error;
-    }
-    return message.result;
+  });
+  const result = spawnSync(ensureBinary(), ['--single'], {
+    cwd: repositoryRoot(),
+    input: `${request}\n`,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error((result.stderr || '').trim() || 'postcss-go bridge failed');
   }
+
+  let message;
+  try {
+    message = JSON.parse(String(result.stdout).trim());
+  } catch (error) {
+    throw new Error(`postcss-go bridge returned invalid JSON: ${String(error)}`, { cause: error });
+  }
+  if (message.error) {
+    throw createBridgeError(message.error);
+  }
+  return message.result;
+}
+
+function createBridgeError(payload) {
+  const error = new Error(payload.message || 'postcss-go bridge error');
+  if (payload.name) error.name = payload.name;
+  for (const key of [
+    'reason',
+    'line',
+    'column',
+    'endLine',
+    'endColumn',
+    'source',
+    'file',
+    'plugin',
+  ]) {
+    if (payload[key] !== undefined) error[key] = payload[key];
+  }
+  return error;
 }
 
 module.exports = {
   callSync,
-  close() {
-    if (child) {
-      child.kill();
-      child = null;
-      stdoutFd = null;
-      stdoutBuffer = '';
-    }
-  },
+  close: cleanup,
 };
+
+process.once('exit', cleanup);

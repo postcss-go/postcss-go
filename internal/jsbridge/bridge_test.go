@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"postcss-go/internal/ast"
 )
 
 func TestParseProcessAndStringifyBridge(t *testing.T) {
@@ -40,6 +42,67 @@ func TestParseProcessAndStringifyBridge(t *testing.T) {
 	})
 	if !stringifyResp.OK || !strings.Contains(stringifyResp.CSS, ".a") {
 		t.Fatalf("unexpected stringify response: %#v", stringifyResp)
+	}
+}
+
+func TestStringifyBridgePreservesRawsFromDTO(t *testing.T) {
+	resp := Execute(Request{
+		Command: "stringify",
+		AST: &NodeDTO{
+			Type: "root",
+			Raws: ast.Raws{"after": ""},
+			Nodes: []*NodeDTO{{
+				Type:     "rule",
+				Selector: ".a",
+				Raws:     ast.Raws{"before": "", "between": "", "after": "", "semicolon": false},
+				Nodes: []*NodeDTO{{
+					Type:  "decl",
+					Prop:  "color",
+					Value: "red",
+					Raws:  ast.Raws{"before": "", "between": ":", "semicolon": false},
+				}},
+			}},
+		},
+	})
+	if !resp.OK || resp.CSS != ".a{color:red}" {
+		t.Fatalf("expected DTO raws to control output, got %#v", resp)
+	}
+}
+
+func TestToDTODoesNotInitializeNilRaws(t *testing.T) {
+	root := ast.NewRoot()
+	rule := ast.NewRule(".a")
+	root.Append(rule)
+
+	dto, err := ToDTO(root)
+	if err != nil {
+		t.Fatalf("ToDTO failed: %v", err)
+	}
+	if dto.Raws != nil {
+		t.Fatalf("expected nil raws on DTO, got %#v", dto.Raws)
+	}
+	if root.RawFormattingReadOnly() != nil {
+		t.Fatalf("ToDTO mutated AST raws: %#v", root.RawFormattingReadOnly())
+	}
+	if rule.RawFormattingReadOnly() != nil {
+		t.Fatalf("ToDTO mutated child raws: %#v", rule.RawFormattingReadOnly())
+	}
+}
+
+func TestFromDTOClonesRaws(t *testing.T) {
+	raws := ast.Raws{"before": "\n"}
+	dto := &NodeDTO{
+		Type:     "rule",
+		Selector: ".a",
+		Raws:     raws,
+	}
+	node, err := FromDTO(dto)
+	if err != nil {
+		t.Fatalf("FromDTO failed: %v", err)
+	}
+	node.RawFormatting()["before"] = "\n  "
+	if raws["before"] != "\n" {
+		t.Fatalf("expected FromDTO to clone raws, got %#v", raws)
 	}
 }
 

@@ -9,7 +9,7 @@ const bundledBinPath = join(
   process.platform === 'win32' ? 'postcss-go-node-api.exe' : 'postcss-go-node-api',
 );
 const monorepoRoot = resolve(packageRoot, '..', '..');
-const monorepoBridgeEntry = join(monorepoRoot, 'cmd', 'postcss-go-node-api', 'main.go');
+const monorepoBridgeEntry = join(monorepoRoot, 'cmd', 'api', 'main.go');
 
 export function getBundledGoBridgeBinPath() {
   return bundledBinPath;

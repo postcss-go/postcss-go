@@ -111,7 +111,12 @@ export class NodePostcssGoService implements PostcssGoService {
       this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise });
     });
 
-    child.stdin.write(`${JSON.stringify(request)}\n`, 'utf8');
+    try {
+      child.stdin.write(`${JSON.stringify(request)}\n`, 'utf8');
+    } catch (error) {
+      this.pending.delete(id);
+      throw new Error(`postcss-go bridge write failed: ${String(error)}`, { cause: error });
+    }
     return responsePromise;
   }
 
@@ -137,6 +142,11 @@ export class NodePostcssGoService implements PostcssGoService {
     child.stderr.setEncoding('utf8');
 
     child.stdout.on('data', (chunk: string) => this.handleStdout(chunk));
+    child.stdin.on('error', (error) => {
+      this.rejectAllPending(
+        new Error(`postcss-go bridge write failed: ${error.message}`, { cause: error }),
+      );
+    });
     child.stderr.on('data', (chunk: string) => {
       this.stderrBuffer += chunk;
     });
@@ -198,9 +208,7 @@ export class NodePostcssGoService implements PostcssGoService {
     this.pending.delete(message.id);
 
     if (message.error) {
-      pending.reject(
-        new Error(message.error.message || 'postcss-go bridge returned an unknown JSON-RPC error'),
-      );
+      pending.reject(createBridgeError(message.error));
       return;
     }
 
@@ -232,7 +240,7 @@ export class NodePostcssGoService implements PostcssGoService {
     const cwd = this.workingDirectory ?? resolve(defaultRepositoryRoot());
     return {
       command: 'go',
-      args: ['run', '-mod=mod', './cmd/postcss-go-node-api'],
+      args: ['run', '-mod=mod', './cmd/api'],
       cwd,
     };
   }
@@ -325,6 +333,41 @@ interface JsonRpcRequest<TParams> {
 interface JsonRpcError {
   code: number;
   message: string;
+  name?: string;
+  reason?: string;
+  line?: number;
+  column?: number;
+  endLine?: number;
+  endColumn?: number;
+  source?: string;
+  file?: string;
+  plugin?: string;
+}
+
+function createBridgeError(payload: JsonRpcError): Error {
+  const error = new Error(
+    payload.message || 'postcss-go bridge returned an unknown JSON-RPC error',
+  );
+  if (payload.name) error.name = payload.name;
+  for (const key of [
+    'reason',
+    'line',
+    'column',
+    'endLine',
+    'endColumn',
+    'source',
+    'file',
+    'plugin',
+  ] as const) {
+    if (payload[key] !== undefined) {
+      Object.defineProperty(error, key, {
+        configurable: true,
+        enumerable: true,
+        value: payload[key],
+      });
+    }
+  }
+  return error;
 }
 
 interface JsonRpcResponse<TResult> {
