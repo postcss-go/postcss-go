@@ -14,6 +14,8 @@ type Node = ast.Node
 type Container = ast.Container
 type NodeType = ast.NodeType
 type SourceRange = ast.SourceRange
+type Raws = ast.Raws
+type RawValue = ast.RawValue
 type Position = source.Position
 type SourceLocation = source.Location
 

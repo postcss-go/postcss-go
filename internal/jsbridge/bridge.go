@@ -3,7 +3,9 @@ package jsbridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/creachadair/jrpc2/handler"
 	"postcss-go/internal/ast"
@@ -41,7 +43,16 @@ type Response struct {
 }
 
 type ErrorDTO struct {
-	Message string `json:"message"`
+	Message   string `json:"message"`
+	Name      string `json:"name,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Line      int    `json:"line,omitempty"`
+	Column    int    `json:"column,omitempty"`
+	EndLine   int    `json:"endLine,omitempty"`
+	EndColumn int    `json:"endColumn,omitempty"`
+	Source    string `json:"source,omitempty"`
+	File      string `json:"file,omitempty"`
+	Plugin    string `json:"plugin,omitempty"`
 }
 
 type WarningDTO struct {
@@ -59,9 +70,10 @@ type NodeDTO struct {
 	Prop      string             `json:"prop,omitempty"`
 	Value     string             `json:"value,omitempty"`
 	Important bool               `json:"important,omitempty"`
-	Text      string             `json:"text,omitempty"`
+	Text      string             `json:"text"`
 	Nodes     []*NodeDTO         `json:"nodes,omitempty"`
 	Source    *SourceLocationDTO `json:"source,omitempty"`
+	Raws      ast.Raws           `json:"raws,omitempty"`
 }
 
 type SourcePositionDTO struct {
@@ -143,7 +155,10 @@ func Execute(req Request) Response {
 }
 
 func ParseRPC(_ context.Context, params ParseParams) (*ParseResult, error) {
-	root, err := postcss.ParseWithOptions(params.CSS, postcss.ParseOptions{From: params.Options.From})
+	root, err := postcss.ParseWithOptions(params.CSS, postcss.ParseOptions{
+		From:        params.Options.From,
+		TrackSource: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -205,17 +220,22 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &NodeDTO{Type: string(ast.NodeRoot), Nodes: nodes, Source: sourceToDTO(current.Source())}, nil
+		return &NodeDTO{Type: string(ast.NodeRoot), Nodes: nodes, Source: sourceToDTO(current.Source(), false, false, false), Raws: ast.CloneRaws(current.RawFormattingReadOnly())}, nil
 	case *ast.Rule:
 		nodes, err := childrenToDTO(current.Children())
 		if err != nil {
 			return nil, err
 		}
+		ruleSource := sourceToDTO(current.Source(), true, true, current.RawFormattingReadOnly()["ownSemicolon"] == ";")
+		if current.RawFormattingReadOnly()["ownSemicolon"] == ";" && ruleSource != nil {
+			ruleSource.End.Column++
+		}
 		return &NodeDTO{
 			Type:     string(ast.NodeRule),
 			Selector: current.Selector,
 			Nodes:    nodes,
-			Source:   sourceToDTO(current.Source()),
+			Source:   ruleSource,
+			Raws:     ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.AtRule:
 		nodes, err := childrenToDTO(current.Children())
@@ -228,7 +248,8 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 			Params: current.Params,
 			Block:  current.Block,
 			Nodes:  nodes,
-			Source: sourceToDTO(current.Source()),
+			Source: sourceToDTO(current.Source(), true, current.Block, false),
+			Raws:   ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.Declaration:
 		return &NodeDTO{
@@ -236,13 +257,15 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 			Prop:      current.Prop,
 			Value:     current.Value,
 			Important: current.Important,
-			Source:    sourceToDTO(current.Source()),
+			Source:    sourceToDTO(current.Source(), true, false, false),
+			Raws:      ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.Comment:
 		return &NodeDTO{
 			Type:   string(ast.NodeComment),
 			Text:   current.Text,
-			Source: sourceToDTO(current.Source()),
+			Source: sourceToDTO(current.Source(), true, false, false),
+			Raws:   ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported node type %T", node)
@@ -259,6 +282,7 @@ func FromDTO(dto *NodeDTO) (ast.Node, error) {
 		}
 		node.Append(children...)
 		node.SetSource(sourceFromDTO(dto.Source))
+		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeRule):
 		node := ast.NewRule(dto.Selector)
@@ -268,6 +292,7 @@ func FromDTO(dto *NodeDTO) (ast.Node, error) {
 		}
 		node.Append(children...)
 		node.SetSource(sourceFromDTO(dto.Source))
+		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeAtRule):
 		node := ast.NewAtRule(dto.Name, dto.Params)
@@ -278,15 +303,18 @@ func FromDTO(dto *NodeDTO) (ast.Node, error) {
 		}
 		node.Append(children...)
 		node.SetSource(sourceFromDTO(dto.Source))
+		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeDecl):
 		node := ast.NewDeclaration(dto.Prop, dto.Value)
 		node.Important = dto.Important
 		node.SetSource(sourceFromDTO(dto.Source))
+		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeComment):
 		node := ast.NewComment(dto.Text)
 		node.SetSource(sourceFromDTO(dto.Source))
+		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	default:
 		return nil, fmt.Errorf("unsupported dto type %q", dto.Type)
@@ -317,7 +345,7 @@ func childrenFromDTO(nodes []*NodeDTO) ([]ast.Node, error) {
 	return out, nil
 }
 
-func sourceToDTO(loc *postcss.SourceLocation) *SourceLocationDTO {
+func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn bool) *SourceLocationDTO {
 	if loc == nil {
 		return nil
 	}
@@ -333,10 +361,95 @@ func sourceToDTO(loc *postcss.SourceLocation) *SourceLocationDTO {
 			Offset: loc.End.Offset,
 		},
 	}
+	adjustedEndColumn := false
+	if block && loc.Input != nil {
+		if end, ok := findBlockEnd(loc.Input.CSS, loc.Start.Offset); ok {
+			if end > dto.End.Offset {
+				position := loc.Input.FromOffset(end)
+				dto.End = SourcePositionDTO{Line: position.Line, Column: position.Column, Offset: position.Offset}
+			} else if dto.End.Offset > end {
+				position := loc.Input.FromOffset(dto.End.Offset - 1)
+				blockEnd := loc.Input.FromOffset(end - 1)
+				if preserveEndColumn {
+					dto.End.Line = blockEnd.Line
+					dto.End.Column = blockEnd.Column
+					adjustedEndColumn = true
+				} else if position.Line == blockEnd.Line {
+					dto.End.Line = position.Line
+					dto.End.Column = position.Column - 1
+					adjustedEndColumn = true
+				}
+			}
+		}
+	}
 	if loc.Input != nil {
 		dto.File = loc.Input.File
 	}
+	if nodeEnd && !preserveEndColumn && !adjustedEndColumn && dto.End.Offset > dto.Start.Offset && dto.End.Column > 1 {
+		dto.End.Column--
+	}
 	return dto
+}
+
+func findBlockEnd(css string, start int) (int, bool) {
+	paren, square, depth := 0, 0, 0
+	var quote byte
+	for index := start; index < len(css); index++ {
+		ch := css[index]
+		if quote != 0 {
+			if ch == '\\' {
+				index++
+			} else if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\\' {
+			index++
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		if paren == 0 && square == 0 && ch == '/' && index+1 < len(css) && css[index+1] == '*' {
+			if end := strings.Index(css[index+2:], "*/"); end >= 0 {
+				index += end + 3
+				continue
+			}
+			return 0, false
+		}
+		switch ch {
+		case '(':
+			paren++
+		case ')':
+			if paren > 0 {
+				paren--
+			}
+		case '[':
+			square++
+		case ']':
+			if square > 0 {
+				square--
+			}
+		case '{':
+			if depth == 0 {
+				if paren == 0 && square == 0 {
+					depth = 1
+				}
+			} else {
+				depth++
+			}
+		case '}':
+			if depth > 0 {
+				depth--
+				if depth == 0 {
+					return index + 1, true
+				}
+			}
+		}
+	}
+	return 0, false
 }
 
 func sourceFromDTO(loc *SourceLocationDTO) *postcss.SourceLocation {
@@ -364,8 +477,21 @@ func warningsToDTO(warnings []postcss.Warning) []WarningDTO {
 }
 
 func errorResponse(err error) Response {
+	detail := &ErrorDTO{Message: err.Error()}
+	var syntaxErr *postcss.CssSyntaxError
+	if errors.As(err, &syntaxErr) {
+		detail.Name = "CssSyntaxError"
+		detail.Reason = syntaxErr.Reason
+		detail.Line = syntaxErr.Line
+		detail.Column = syntaxErr.Column
+		detail.EndLine = syntaxErr.EndLine
+		detail.EndColumn = syntaxErr.EndColumn
+		detail.Source = syntaxErr.Source
+		detail.File = syntaxErr.File
+		detail.Plugin = syntaxErr.Plugin
+	}
 	return Response{
 		OK:    false,
-		Error: &ErrorDTO{Message: err.Error()},
+		Error: detail,
 	}
 }

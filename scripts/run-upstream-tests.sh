@@ -28,12 +28,15 @@ COMPAT_DIR="$TMP_DIR/postcss"
 mkdir -p "$COMPAT_DIR"
 cp -R "$UPSTREAM_DIR/." "$COMPAT_DIR"
 
-POSTCSS_COMPAT_TARGET_LIB="$COMPAT_DIR/lib" "$ROOT_DIR/scripts/prepare-upstream-compat.sh"
+POSTCSS_COMPAT_TARGET_LIB="$COMPAT_DIR/lib" \
+POSTCSS_GO_COMPAT_BRIDGE_CLIENT="$ROOT_DIR/packages/postcss-compat/bridge-client.cjs" \
+  "$ROOT_DIR/scripts/prepare-upstream-compat.sh"
 
 TEST_DIR="$COMPAT_DIR/test"
 
 if [ "$MODE" = "go" ]; then
-  pnpm --dir "$ROOT_DIR/packages/postcss-compat" exec uvu \
+  POSTCSS_GO_COMPAT_BRIDGE_CLIENT="$ROOT_DIR/packages/postcss-compat/bridge-client.cjs" \
+    pnpm --dir "$ROOT_DIR/packages/postcss-compat" exec uvu \
     -r "$ROOT_DIR/packages/postcss-compat/register.cjs" \
     "$TEST_DIR" "$PATTERN"
 else

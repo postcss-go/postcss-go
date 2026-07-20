@@ -16,18 +16,51 @@ export interface Warning {
   plugin?: string;
 }
 
+export interface RawValue {
+  raw: string;
+  value: string;
+}
+
+export type RawField =
+  | string
+  | number
+  | boolean
+  | null
+  | RawValue
+  | RawField[]
+  | { [key: string]: RawField | undefined };
+
+export interface Raws {
+  before?: string;
+  after?: string;
+  between?: string;
+  afterName?: string;
+  important?: string;
+  left?: string;
+  right?: string;
+  indent?: string;
+  semicolon?: boolean;
+  ownSemicolon?: string;
+  selector?: RawValue;
+  params?: RawValue;
+  value?: RawValue;
+  [key: string]: RawField | undefined;
+}
+
 export interface DeclarationNode {
   type: 'decl';
   prop: string;
   value: string;
   important?: boolean;
   source?: SourceLocation;
+  raws?: Raws;
 }
 
 export interface CommentNode {
   type: 'comment';
   text: string;
   source?: SourceLocation;
+  raws?: Raws;
 }
 
 export interface RuleNode {
@@ -35,6 +68,7 @@ export interface RuleNode {
   selector: string;
   nodes: AstNode[];
   source?: SourceLocation;
+  raws?: Raws;
 }
 
 export interface AtRuleNode {
@@ -44,12 +78,14 @@ export interface AtRuleNode {
   block?: boolean;
   nodes?: AstNode[];
   source?: SourceLocation;
+  raws?: Raws;
 }
 
 export interface RootNode {
   type: 'root';
   nodes: AstNode[];
   source?: SourceLocation;
+  raws?: Raws;
 }
 
 export type AstNode = RootNode | RuleNode | AtRuleNode | DeclarationNode | CommentNode;

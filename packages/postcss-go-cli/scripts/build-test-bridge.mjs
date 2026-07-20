@@ -12,18 +12,14 @@ const outputPath = path.join(outputDir, outputName);
 
 fs.mkdirSync(outputDir, { recursive: true });
 
-const result = spawnSync(
-  'go',
-  ['build', '-mod=mod', '-o', outputPath, './cmd/postcss-go-node-api'],
-  {
-    cwd: repoRoot,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
-    },
+const result = spawnSync('go', ['build', '-mod=mod', '-o', outputPath, './cmd/api'], {
+  cwd: repoRoot,
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
   },
-);
+});
 
 if (result.status !== 0) {
   process.exit(result.status ?? 1);

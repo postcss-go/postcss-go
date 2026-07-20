@@ -27,9 +27,9 @@ func TestStringifyComplexTree(t *testing.T) {
 	got := Stringify(root)
 	want := `/* top */
 @media screen {
-  .a {
-    color: red !important;
-  }
+    .a {
+        color: red !important;
+    }
 }`
 	if got != want {
 		t.Fatalf("unexpected stringified css\nwant:\n%s\n\ngot:\n%s", want, got)
@@ -38,8 +38,406 @@ func TestStringifyComplexTree(t *testing.T) {
 
 func TestStringifyAtRuleWithoutBlock(t *testing.T) {
 	node := ast.NewAtRule("import", `"a.css"`)
+	node.RawFormatting()["semicolon"] = true
 	if got := Stringify(node); got != `@import "a.css";` {
 		t.Fatalf("unexpected at-rule string: %q", got)
+	}
+}
+
+func TestParseStringifyPreservesPostCSSRaws(t *testing.T) {
+	css := "/*x*/\n.a{color:red!important;\n  background :  blue  ;}\n"
+	root, err := parser.Parse(css, source.Options{From: "input.css"})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("raw formatting was not preserved\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseStringifyPreservesRawSpacingAroundBlocksAndAtRules(t *testing.T) {
+	tests := []struct {
+		name string
+		css  string
+	}{
+		{name: "rule opening spacing", css: ".a  { color: red }"},
+		{name: "at rule opening spacing", css: "@media screen  { color: red }"},
+		{name: "at rule parameter comment", css: "@media /*c*/ screen { color: red; }"},
+		{name: "at rule semicolon spacing", css: "@import x ;"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root, err := parser.Parse(test.css, source.Options{})
+			if err != nil {
+				t.Fatalf("parse failed: %v", err)
+			}
+			if got := Stringify(root); got != test.css {
+				t.Fatalf("raw formatting was not preserved\nwant: %q\ngot:  %q", test.css, got)
+			}
+		})
+	}
+}
+
+func TestStringifyInfersBeforeFromFormattedSibling(t *testing.T) {
+	root, err := parser.Parse(".a {\n  color: red;\n}\n.b {\n  color: blue;\n}", source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	root.Append(ast.NewRule(".c"))
+
+	want := ".a {\n  color: red;\n}\n.b {\n  color: blue;\n}\n.c {}"
+	if got := Stringify(root); got != want {
+		t.Fatalf("inferred raw spacing was incorrect\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestParsePreservesCommentsAsASTNodes(t *testing.T) {
+	tests := []struct {
+		name string
+		css  string
+	}{
+		{name: "comment before declaration", css: "a{ /*x*/ color:red }"},
+		{name: "comment before closing brace", css: "a{/*x*/}"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root, err := parser.Parse(test.css, source.Options{})
+			if err != nil {
+				t.Fatalf("parse failed: %v", err)
+			}
+			rule, ok := root.First().(*ast.Rule)
+			if !ok {
+				t.Fatalf("expected rule, got %T", root.First())
+			}
+			if test.name == "comment before closing brace" {
+				if len(rule.Children()) != 1 {
+					t.Fatalf("expected one child, got %d", len(rule.Children()))
+				}
+				if _, ok := rule.First().(*ast.Comment); !ok {
+					t.Fatalf("expected comment node, got %T", rule.First())
+				}
+			}
+			if test.name == "comment before declaration" {
+				if len(rule.Children()) != 2 {
+					t.Fatalf("expected comment+decl, got %d", len(rule.Children()))
+				}
+				comment, ok := rule.First().(*ast.Comment)
+				if !ok || comment.Text != "x" {
+					t.Fatalf("expected leading comment, got %#v", rule.First())
+				}
+				decl, ok := rule.Children()[1].(*ast.Declaration)
+				if !ok || decl.Prop != "color" {
+					t.Fatalf("expected declaration prop color, got %#v", rule.Children()[1])
+				}
+				if got := decl.RawFormatting()["before"]; got != " " {
+					t.Fatalf("expected decl before space, got %#v", got)
+				}
+			}
+			if got := Stringify(root); got != test.css {
+				t.Fatalf("raw formatting was not preserved\nwant: %q\ngot:  %q", test.css, got)
+			}
+		})
+	}
+}
+
+func TestParseStringifyPreservesAtRuleOnlyCommentSpacing(t *testing.T) {
+	css := "@media /*x*/ {a{}}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("raw formatting was not preserved\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseAtRuleCommentParamsExposeSemanticAndRawValues(t *testing.T) {
+	root, err := parser.Parse("@media /*c*/ screen {}", source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	node := root.First().(*ast.AtRule)
+	if node.Params != "screen" {
+		t.Fatalf("expected semantic params screen, got %q", node.Params)
+	}
+	if got := node.RawFormatting()["afterName"]; got != " /*c*/ " {
+		t.Fatalf("expected afterName %q, got %#v", " /*c*/ ", got)
+	}
+	if _, ok := node.RawFormatting()["params"]; ok {
+		t.Fatalf("params raws should be absent when comments live in afterName, got %#v", node.RawFormatting()["params"])
+	}
+	if got := Stringify(root); got != "@media /*c*/ screen {}" {
+		t.Fatalf("raw params were not preserved, got %q", got)
+	}
+}
+
+func TestParseStringifyPreservesTrailingAtRuleComments(t *testing.T) {
+	for _, css := range []string{
+		"@media screen /*c*/ {a{}}",
+		"@import screen /*c*/ ;",
+	} {
+		root, err := parser.Parse(css, source.Options{})
+		if err != nil {
+			t.Fatalf("parse %q failed: %v", css, err)
+		}
+		if got := Stringify(root); got != css {
+			t.Fatalf("at-rule comment was duplicated\nwant: %q\ngot:  %q", css, got)
+		}
+	}
+}
+
+func TestParseStringifyPreservesDeclarationValueComments(t *testing.T) {
+	css := "a{color: /*c*/ red}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("declaration comment was duplicated\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseStringifyPreservesColonAdjacentCommentsInBetween(t *testing.T) {
+	css := "a{color:/*c*/red}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	decl := root.First().(*ast.Rule).First().(*ast.Declaration)
+	if decl.Value != "red" {
+		t.Fatalf("expected semantic value red, got %q", decl.Value)
+	}
+	if got := decl.RawFormatting()["between"]; got != ":/*c*/" {
+		t.Fatalf("expected between :/*c*/, got %#v", got)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("colon comment round-trip failed\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseStringifyPreservesPropSideColonComments(t *testing.T) {
+	css := "a{color/**/:red}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	decl := root.First().(*ast.Rule).First().(*ast.Declaration)
+	if decl.Prop != "color" {
+		t.Fatalf("expected prop color, got %q", decl.Prop)
+	}
+	if got := decl.RawFormatting()["between"]; got != "/**/:" {
+		t.Fatalf("expected between /**/:, got %#v", got)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("prop-side colon comment round-trip failed\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParsePreservesOwnSemicolon(t *testing.T) {
+	css := ".a {} ;"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule := root.First().(*ast.Rule)
+	if got := rule.RawFormatting()["ownSemicolon"]; got != " ;" {
+		t.Fatalf("expected ownSemicolon %q, got %#v", " ;", got)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("ownSemicolon round-trip failed\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseTrailingValueCommentBecomesSiblingNode(t *testing.T) {
+	css := "a{color:red/*c*/}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule := root.First().(*ast.Rule)
+	if len(rule.Children()) != 2 {
+		t.Fatalf("expected decl+comment, got %d children", len(rule.Children()))
+	}
+	decl := rule.First().(*ast.Declaration)
+	if decl.Value != "red" {
+		t.Fatalf("expected value red, got %q", decl.Value)
+	}
+	if _, ok := rule.Children()[1].(*ast.Comment); !ok {
+		t.Fatalf("expected comment sibling, got %T", rule.Children()[1])
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("trailing value comment round-trip failed\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseLeadingBlockCommentBecomesSiblingNode(t *testing.T) {
+	css := "a{\n  /*c*/\n  color:red\n}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule := root.First().(*ast.Rule)
+	if len(rule.Children()) != 2 {
+		t.Fatalf("expected comment+decl, got %d", len(rule.Children()))
+	}
+	if _, ok := rule.First().(*ast.Comment); !ok {
+		t.Fatalf("expected comment first, got %T", rule.First())
+	}
+	rule.Append(ast.NewDeclaration("width", "1px"))
+	want := "a{\n  /*c*/\n  color:red;\n  width:1px\n}"
+	if got := Stringify(root); got != want {
+		t.Fatalf("inferred before should not copy comment\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestParseImportantWithInternalSpaces(t *testing.T) {
+	css := "a{color:red ! important}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	decl := root.First().(*ast.Rule).First().(*ast.Declaration)
+	if !decl.Important {
+		t.Fatal("expected important=true")
+	}
+	if decl.Value != "red" {
+		t.Fatalf("expected value red, got %q", decl.Value)
+	}
+	if got := decl.RawFormatting()["important"]; got != " ! important" {
+		t.Fatalf("expected important raw %q, got %#v", " ! important", got)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("important spacing round-trip failed\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestStringifyAppendedAtRuleInfersNewlineWithoutSemicolon(t *testing.T) {
+	root, err := parser.Parse(".a {\n  color: red;\n}", source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	root.Append(ast.NewAtRule("media", "print"))
+	want := ".a {\n  color: red;\n}\n@media print"
+	if got := Stringify(root); got != want {
+		t.Fatalf("appended at-rule formatting incorrect\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestParseStringifyPreservesImportantTrailingSpacing(t *testing.T) {
+	css := "a{color : blue !important ;}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("important spacing was not preserved\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestParseStringifyPreservesCustomPropertyComments(t *testing.T) {
+	css := "a{--x: /*c*/ foo  ;}"
+	root, err := parser.Parse(css, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := Stringify(root); got != css {
+		t.Fatalf("custom property comments were not preserved\nwant: %q\ngot:  %q", css, got)
+	}
+}
+
+func TestMappedStringifyPreservesOwnSemicolon(t *testing.T) {
+	root := ast.NewRoot()
+	rule := ast.NewRule(".a")
+	rule.RawFormatting()["before"] = ""
+	rule.RawFormatting()["between"] = " "
+	rule.RawFormatting()["after"] = ""
+	rule.RawFormatting()["ownSemicolon"] = " ;"
+	root.Append(rule)
+
+	got := Stringify(root)
+	if got != ".a {} ;" {
+		t.Fatalf("unmapped ownSemicolon failed\nwant: %q\ngot:  %q", ".a {} ;", got)
+	}
+	mapped, err := StringifyWithSourceMap(root, SourceMapOptions{From: "input.css", To: "out.css"})
+	if err != nil {
+		t.Fatalf("mapped stringify failed: %v", err)
+	}
+	if mapped.CSS != ".a {} ;" {
+		t.Fatalf("mapped ownSemicolon failed\nwant: %q\ngot:  %q", ".a {} ;", mapped.CSS)
+	}
+}
+
+func TestMappedStringifyMatchesCompressedFormatting(t *testing.T) {
+	root, err := parser.Parse("a{color:red;width:1px}", source.Options{From: "input.css"})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	result, err := StringifyWithSourceMap(root, SourceMapOptions{To: "out.css"})
+	if err != nil {
+		t.Fatalf("stringify with source map failed: %v", err)
+	}
+	if want := Stringify(root); result.CSS != want {
+		t.Fatalf("mapped stringification changed formatting\nwant: %q\ngot:  %q", want, result.CSS)
+	}
+}
+
+func TestMappedStringifyUsesFourSpaceDefaultIndent(t *testing.T) {
+	root := ast.NewRoot()
+	rule := ast.NewRule(".a")
+	rule.Append(ast.NewDeclaration("color", "red"))
+	root.Append(rule)
+	result, err := StringifyWithSourceMap(root, SourceMapOptions{To: "out.css"})
+	if err != nil {
+		t.Fatalf("stringify with source map failed: %v", err)
+	}
+	want := ".a {\n    color: red;\n}"
+	if result.CSS != want {
+		t.Fatalf("unexpected mapped default indentation\nwant: %q\ngot:  %q", want, result.CSS)
+	}
+}
+
+func TestStringifyDoesNotInitializeNilRaws(t *testing.T) {
+	node := ast.NewDeclaration("color", "red")
+	if node.Raws != nil {
+		t.Fatal("expected nil raws before stringify")
+	}
+	_ = Stringify(node)
+	if node.Raws != nil {
+		t.Fatal("stringify should not mutate nil raws into an empty map")
+	}
+}
+
+func TestStringifyUsesExplicitRootIndentInMappedAndUnmappedOutput(t *testing.T) {
+	root := ast.NewRoot()
+	root.RawFormatting()["indent"] = "\t"
+	rule := ast.NewRule(".a")
+	rule.Append(ast.NewDeclaration("color", "red"))
+	root.Append(rule)
+
+	want := ".a {\n\tcolor: red;\n}"
+	if got := Stringify(root); got != want {
+		t.Fatalf("unexpected explicit-indent output\nwant: %q\ngot:  %q", want, got)
+	}
+	result, err := StringifyWithSourceMap(root, SourceMapOptions{To: "out.css"})
+	if err != nil {
+		t.Fatalf("stringify with source map failed: %v", err)
+	}
+	if result.CSS != want {
+		t.Fatalf("mapped output ignored explicit indent\nwant: %q\ngot:  %q", want, result.CSS)
+	}
+}
+
+func TestStringifyInfersDeclarationBetweenFromSibling(t *testing.T) {
+	root, err := parser.Parse("a{color:red}", source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule := root.First().(*ast.Rule)
+	rule.Append(ast.NewDeclaration("width", "1px"))
+	if got := Stringify(root); got != "a{color:red;width:1px}" {
+		t.Fatalf("did not infer declaration formatting\ngot: %q", got)
 	}
 }
 
@@ -108,10 +506,10 @@ func TestStringifySourceMapNodeBoundaries(t *testing.T) {
 		}
 	}
 
-	assertMapping(2, 2, 1, 5)
-	assertMapping(2, 9, 1, 12)
-	assertMapping(2, 12, 1, 15)
-	assertMapping(3, 0, 1, 2)
+	assertMapping(1, 5, 1, 5)
+	assertMapping(1, 12, 1, 12)
+	assertMapping(1, 15, 1, 15)
+	assertMapping(1, 18, 1, 2)
 }
 
 func TestStringifySourceMapNoSourceNodeBoundaries(t *testing.T) {

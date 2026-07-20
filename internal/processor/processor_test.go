@@ -160,7 +160,7 @@ func TestProcessorSourceMapUsesUTF16ColumnsAndEncodedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse generated source map: %v", err)
 	}
-	_, _, line, column, ok := consumer.Source(2, 2)
+	_, _, line, column, ok := consumer.Source(1, 6)
 	if !ok || line != 1 || column != 6 {
 		t.Fatalf("unexpected UTF-16 declaration mapping: line=%d column=%d ok=%v", line, column, ok)
 	}
@@ -338,7 +338,7 @@ func TestProcessorFollowsMutationSafeTraversal(t *testing.T) {
 	if !reflect.DeepEqual(visited, []string{"color", "background", "z-index"}) {
 		t.Fatalf("unexpected visit order: %#v", visited)
 	}
-	if got := res.CSS; got != ".a {\n  -webkit-color: red;\n  color: red;\n  background: blue;\n}" {
+	if got := res.CSS; got != ".a { -webkit-color: red; color: red; background: blue; }" {
 		t.Fatalf("unexpected css output: %q", got)
 	}
 }

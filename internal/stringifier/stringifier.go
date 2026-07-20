@@ -24,9 +24,26 @@ type StringifyResult struct {
 	Map string
 }
 
+type cssWriter interface {
+	writeString(string)
+	writeByte(byte)
+}
+
+type builderWriter struct {
+	*strings.Builder
+}
+
+func (w builderWriter) writeString(text string) {
+	w.Builder.WriteString(text)
+}
+
+func (w builderWriter) writeByte(ch byte) {
+	w.Builder.WriteByte(ch)
+}
+
 func Stringify(node ast.Node) string {
 	var builder strings.Builder
-	writeNode(&builder, node, 0)
+	writeNode(builderWriter{&builder}, node, 0)
 	return builder.String()
 }
 
@@ -44,54 +61,37 @@ func StringifyWithSourceMap(node ast.Node, opts SourceMapOptions) (StringifyResu
 	return StringifyResult{CSS: writer.String(), Map: sourceMap}, nil
 }
 
-func writeNode(builder *strings.Builder, node ast.Node, depth int) {
+func writeNode(writer cssWriter, node ast.Node, depth int) {
 	switch current := node.(type) {
 	case *ast.Root:
-		for index, child := range current.Nodes {
-			if index > 0 {
-				builder.WriteByte('\n')
-			}
-			writeNode(builder, child, depth)
-		}
+		writeChildren(writer, current.Nodes, depth)
+		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
-		writeIndent(builder, depth)
-		builder.WriteString(strings.TrimSpace(current.Selector))
-		builder.WriteString(" {\n")
-		writeChildren(builder, current.Nodes, depth+1)
-		builder.WriteByte('\n')
-		writeIndent(builder, depth)
-		builder.WriteByte('}')
+		writer.writeString(ruleHeader(current))
+		writer.writeByte('{')
+		writeChildren(writer, current.Nodes, depth+1)
+		writeBlockClose(writer, current, len(current.Nodes), depth)
+		writer.writeString(rawString(current, "ownSemicolon", ""))
 	case *ast.AtRule:
-		writeIndent(builder, depth)
-		builder.WriteByte('@')
-		builder.WriteString(current.Name)
-		if strings.TrimSpace(current.Params) != "" {
-			builder.WriteByte(' ')
-			builder.WriteString(strings.TrimSpace(current.Params))
-		}
+		writer.writeString(atRuleHeader(current))
 		if !current.Block {
-			builder.WriteByte(';')
+			writer.writeString(rawString(current, "between", ""))
+			if atRuleHasSemicolon(current) {
+				writer.writeByte(';')
+			}
 			return
 		}
-		builder.WriteString(" {\n")
-		writeChildren(builder, current.Nodes, depth+1)
-		builder.WriteByte('\n')
-		writeIndent(builder, depth)
-		builder.WriteByte('}')
+		writer.writeString(rawBetween(current, "between", " "))
+		writer.writeByte('{')
+		writeChildren(writer, current.Nodes, depth+1)
+		writeBlockClose(writer, current, len(current.Nodes), depth)
 	case *ast.Declaration:
-		writeIndent(builder, depth)
-		builder.WriteString(strings.TrimSpace(current.Prop))
-		builder.WriteString(": ")
-		builder.WriteString(strings.TrimSpace(current.Value))
-		if current.Important {
-			builder.WriteString(" !important")
+		writer.writeString(declarationText(current))
+		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+			writer.writeByte(';')
 		}
-		builder.WriteByte(';')
 	case *ast.Comment:
-		writeIndent(builder, depth)
-		builder.WriteString("/* ")
-		builder.WriteString(strings.TrimSpace(current.Text))
-		builder.WriteString(" */")
+		writer.writeString(commentText(current))
 	}
 }
 
@@ -99,64 +99,73 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 	switch current := node.(type) {
 	case *ast.Root:
 		writeMappedChildren(writer, current.Nodes, depth)
+		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
-		writeMappedIndent(writer, depth)
 		writer.AddMapping(current)
-		writer.writeString(strings.TrimSpace(current.Selector))
-		writer.writeString(" {\n")
+		writer.writeString(ruleHeader(current))
+		writer.writeByte('{')
 		writeMappedChildren(writer, current.Nodes, depth+1)
-		writer.writeByte('\n')
-		writeMappedIndent(writer, depth)
-		writer.writeByte('}')
+		writeBlockClose(writer, current, len(current.Nodes), depth)
+		writer.writeString(rawString(current, "ownSemicolon", ""))
 		writer.AddEndMapping(current)
 		return true
 	case *ast.AtRule:
-		writeMappedIndent(writer, depth)
 		writer.AddMapping(current)
-		writer.writeByte('@')
-		writer.writeString(current.Name)
-		if strings.TrimSpace(current.Params) != "" {
-			writer.writeByte(' ')
-			writer.writeString(strings.TrimSpace(current.Params))
-		}
+		writer.writeString(atRuleHeader(current))
 		if !current.Block {
-			writer.writeByte(';')
+			writer.writeString(rawString(current, "between", ""))
+			if atRuleHasSemicolon(current) {
+				writer.writeByte(';')
+			}
 			writer.AddEndMapping(current)
 			return true
 		}
-		writer.writeString(" {\n")
+		writer.writeString(rawBetween(current, "between", " "))
+		writer.writeByte('{')
 		writeMappedChildren(writer, current.Nodes, depth+1)
-		writer.writeByte('\n')
-		writeMappedIndent(writer, depth)
-		writer.writeByte('}')
+		writeBlockClose(writer, current, len(current.Nodes), depth)
 		writer.AddEndMapping(current)
 		return true
 	case *ast.Declaration:
-		writeMappedIndent(writer, depth)
 		writer.AddMapping(current)
-		writer.writeString(strings.TrimSpace(current.Prop))
-		writer.writeString(": ")
+		writer.writeString(declarationPrefix(current))
 		writer.AddMappingAt(current, declarationValuePosition(current))
-		writer.writeString(strings.TrimSpace(current.Value))
-		if current.Important {
-			writer.writeString(" !important")
+		writer.writeString(declarationValueText(current))
+		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+			writer.writeByte(';')
 		}
-		writer.writeByte(';')
 		writer.AddEndMapping(current)
 		return true
 	case *ast.Comment:
 		if !writer.preserveAnnotation && isSourceMapAnnotation(current.Text) {
 			return false
 		}
-		writeMappedIndent(writer, depth)
 		writer.AddMapping(current)
-		writer.writeString("/* ")
-		writer.writeString(strings.TrimSpace(current.Text))
-		writer.writeString(" */")
+		writer.writeString(commentText(current))
 		writer.AddEndMapping(current)
 		return true
 	}
 	return true
+}
+
+func atRuleHasSemicolon(node *ast.AtRule) bool {
+	if rawBool(node, "semicolon", false) {
+		return true
+	}
+	if parent := node.Parent(); parent != nil {
+		return rawBool(parent, "semicolon", false)
+	}
+	return false
+}
+
+func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
+	if hasRaw(node, "after") {
+		writer.writeString(rawString(node, "after", ""))
+	} else if childCount != 0 {
+		writer.writeByte('\n')
+		writeIndent(writer, node, depth)
+	}
+	writer.writeByte('}')
 }
 
 func declarationValuePosition(node *ast.Declaration) source.Position {
@@ -186,15 +195,12 @@ func declarationValuePosition(node *ast.Declaration) source.Position {
 }
 
 func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) {
-	written := false
-	for _, child := range nodes {
+	for index, child := range nodes {
 		if !writer.preserveAnnotation && isSourceMapAnnotationNode(child) {
 			continue
 		}
-		if written {
-			writer.writeByte('\n')
-		}
-		written = writeMappedNode(writer, child, depth) || written
+		writer.writeString(nodeBefore(child, depth, index))
+		writeMappedNode(writer, child, depth)
 	}
 }
 
@@ -207,23 +213,206 @@ func isSourceMapAnnotation(text string) bool {
 	return strings.HasPrefix(strings.TrimSpace(text), "# sourceMappingURL=")
 }
 
-func writeMappedIndent(writer *sourceMapWriter, depth int) {
-	for i := 0; i < depth; i++ {
-		writer.writeString("  ")
-	}
-}
-
-func writeChildren(builder *strings.Builder, nodes []ast.Node, depth int) {
+func writeChildren(writer cssWriter, nodes []ast.Node, depth int) {
 	for index, child := range nodes {
-		if index > 0 {
-			builder.WriteByte('\n')
-		}
-		writeNode(builder, child, depth)
+		writer.writeString(nodeBefore(child, depth, index))
+		writeNode(writer, child, depth)
 	}
 }
 
-func writeIndent(builder *strings.Builder, depth int) {
+func writeIndent(writer cssWriter, node ast.Node, depth int) {
+	indent := indentFor(node)
 	for i := 0; i < depth; i++ {
-		builder.WriteString("  ")
+		writer.writeString(indent)
 	}
+}
+
+func hasRaw(node ast.Node, key string) bool {
+	raws := node.RawFormattingReadOnly()
+	if raws == nil {
+		return false
+	}
+	_, ok := raws[key]
+	return ok
+}
+
+func rawString(node ast.Node, key, fallback string) string {
+	value, ok := lookupRaw(node, key)
+	if !ok {
+		return fallback
+	}
+	if stringValue, ok := value.(string); ok {
+		return stringValue
+	}
+	return fallback
+}
+
+func rawBool(node ast.Node, key string, fallback bool) bool {
+	value, ok := lookupRaw(node, key)
+	if !ok {
+		return fallback
+	}
+	boolean, ok := value.(bool)
+	if !ok {
+		return fallback
+	}
+	return boolean
+}
+
+func rawValue(node ast.Node, key, fallback string) string {
+	value, ok := lookupRaw(node, key)
+	if !ok {
+		return fallback
+	}
+	switch current := value.(type) {
+	case string:
+		return current
+	case ast.RawValue:
+		if current.Value == fallback {
+			return current.Raw
+		}
+	case *ast.RawValue:
+		if current != nil && current.Value == fallback {
+			return current.Raw
+		}
+	case map[string]string:
+		if raw, rawOK := current["raw"]; rawOK {
+			if semantic, semanticOK := current["value"]; !semanticOK || semantic == fallback {
+				return raw
+			}
+		}
+	case map[string]any:
+		if raw, rawOK := current["raw"].(string); rawOK {
+			if semantic, semanticOK := current["value"].(string); !semanticOK || semantic == fallback {
+				return raw
+			}
+		}
+	}
+	return fallback
+}
+
+func lookupRaw(node ast.Node, key string) (any, bool) {
+	raws := node.RawFormattingReadOnly()
+	if raws == nil {
+		return nil, false
+	}
+	value, ok := raws[key]
+	return value, ok
+}
+
+func ruleHeader(node *ast.Rule) string {
+	return rawValue(node, "selector", strings.TrimSpace(node.Selector)) + rawBetween(node, "between", " ")
+}
+
+func atRuleHeader(node *ast.AtRule) string {
+	params := rawValue(node, "params", strings.TrimSpace(node.Params))
+	if params == "" && !hasRaw(node, "afterName") {
+		return "@" + node.Name
+	}
+	return "@" + node.Name + rawString(node, "afterName", " ") + params
+}
+
+func declarationText(node *ast.Declaration) string {
+	return declarationPrefix(node) + declarationValueText(node)
+}
+
+func declarationPrefix(node *ast.Declaration) string {
+	return strings.TrimSpace(node.Prop) + rawBetween(node, "between", ": ")
+}
+
+func declarationValueText(node *ast.Declaration) string {
+	value := node.Value
+	if !strings.HasPrefix(node.Prop, "--") {
+		value = strings.TrimSpace(value)
+	}
+	text := rawValue(node, "value", value)
+	if node.Important {
+		text += rawString(node, "important", " !important")
+	}
+	return text
+}
+
+func commentText(node *ast.Comment) string {
+	return "/*" + rawString(node, "left", " ") + node.Text + rawString(node, "right", " ") + "*/"
+}
+
+func nodeBefore(node ast.Node, depth, index int) string {
+	if hasRaw(node, "before") {
+		return rawString(node, "before", "")
+	}
+	if parent := node.Parent(); parent != nil {
+		if inferred, ok := inferSiblingRaw(parent, "before", node.Type()); ok {
+			return inferred
+		}
+		if inferred, ok := inferSiblingRaw(parent, "before", ""); ok && inferred != "" {
+			return inferred
+		}
+	}
+	if index == 0 && depth == 0 {
+		return ""
+	}
+	return "\n" + strings.Repeat(indentFor(node), depth)
+}
+
+func rawBetween(node ast.Node, key, fallback string) string {
+	if value, ok := lookupRaw(node, key); ok {
+		if stringValue, ok := value.(string); ok {
+			return stringValue
+		}
+		return fallback
+	}
+	if parent := node.Parent(); parent != nil {
+		if inferred, ok := inferSiblingRaw(parent, key, node.Type()); ok {
+			return inferred
+		}
+	}
+	return fallback
+}
+
+func inferSiblingRaw(parent ast.Container, key string, nodeType ast.NodeType) (string, bool) {
+	var inferred string
+	hasExplicit := false
+	for _, sibling := range parent.Children() {
+		if nodeType != "" && sibling.Type() != nodeType {
+			continue
+		}
+		value, ok := lookupRaw(sibling, key)
+		if !ok {
+			continue
+		}
+		hasExplicit = true
+		if stringValue, ok := value.(string); ok {
+			inferred = stringValue
+		} else {
+			inferred = ""
+		}
+		if inferred != "" {
+			return inferred, true
+		}
+	}
+	return inferred, hasExplicit
+}
+
+func indentFor(node ast.Node) string {
+	if root := node.Root(); root != nil {
+		if indent := rawString(root, "indent", ""); indent != "" {
+			return indent
+		}
+	}
+	return "    "
+}
+
+func needsSemicolon(parent ast.Container, node ast.Node) bool {
+	children := parent.Children()
+	lastSignificant := -1
+	nodeIndex := -1
+	for index, child := range children {
+		if child == node {
+			nodeIndex = index
+		}
+		if child.Type() != ast.NodeComment {
+			lastSignificant = index
+		}
+	}
+	return nodeIndex < lastSignificant || rawBool(parent, "semicolon", true)
 }

@@ -20,9 +20,11 @@
 ### Task 1: Reorganize the top-level README
 
 **Files:**
+
 - Modify: `/Users/eryue0220/cin/eryue/css/postcss-go/README.md`
 
 **Interfaces:**
+
 - Consumes: Existing README content and links.
 - Produces: A readable README with the experimental notice and approved section order.
 
@@ -35,6 +37,7 @@
 ### Task 2: Validate the documentation change
 
 **Files:**
+
 - Inspect: `/Users/eryue0220/cin/eryue/css/postcss-go/README.md`
 
 - [ ] Confirm headings are ordered as designed and code fences are balanced.

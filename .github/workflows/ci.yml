@@ -209,6 +209,12 @@ jobs:
       - name: Run Go compat tokenizer suite
         run: pnpm test:upstream:go
 
+      - name: Run Go compat parse suite
+        run: pnpm test:upstream:go:parse
+
+      - name: Run Go compat stringify suite
+        run: pnpm test:upstream:go:stringify
+
   go-tests:
     name: Go Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

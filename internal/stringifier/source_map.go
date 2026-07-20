@@ -107,7 +107,11 @@ func (w *sourceMapWriter) AddEndMapping(node ast.Node) {
 		w.addMappingAtGenerated(noSource, nil, 0, 0, w.line, max(w.column-1, 0))
 		return
 	}
-	w.addLocationMapping(location, location.End, w.line, max(w.column-1, 0))
+	position := location.End
+	if node.Type() == ast.NodeDecl && position.Offset > 0 && position.Offset <= len(location.Input.CSS) && location.Input.CSS[position.Offset-1] == ';' {
+		position = location.Input.FromOffset(position.Offset - 1)
+	}
+	w.addLocationMapping(location, position, w.line, max(w.column-1, 0))
 }
 
 func (w *sourceMapWriter) addLocationMapping(location *source.Location, position source.Position, genLine, genColumn int) {

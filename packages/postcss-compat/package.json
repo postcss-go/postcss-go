@@ -10,6 +10,7 @@
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream ../../scripts/run-upstream-tests.sh",
     "test:upstream:go": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='tokenize\\.test\\.js$' ../../scripts/run-upstream-tests.sh",
     "test:upstream:go:parse": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='parse\\.test\\.ts$' ../../scripts/run-upstream-tests.sh",
+    "test:upstream:go:stringify": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='stringify\\.test\\.ts$' ../../scripts/run-upstream-tests.sh",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },

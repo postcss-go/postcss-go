@@ -63,6 +63,76 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestParseCustomPropertyBlockAsDeclaration(t *testing.T) {
+	root, err := Parse(":root { --size: {\n  width: 0;\n}; }", source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(root.Children()) != 1 {
+		t.Fatalf("expected one root child, got %d", len(root.Children()))
+	}
+	rule := root.Children()[0].(*ast.Rule)
+	if len(rule.Children()) != 1 {
+		t.Fatalf("expected one declaration, got %d", len(rule.Children()))
+	}
+	decl, ok := rule.Children()[0].(*ast.Declaration)
+	if !ok {
+		t.Fatalf("expected custom property declaration, got %T", rule.Children()[0])
+	}
+	if decl.Prop != "--size" || decl.Value != "{\n  width: 0;\n}" {
+		t.Fatalf("unexpected custom property: prop=%q value=%q", decl.Prop, decl.Value)
+	}
+}
+
+func TestParseNestedBracesInsideAtRuleParams(t *testing.T) {
+	root, err := Parse(`@supports (--element("x", { "width": 1 })) { * { color: red; } }`, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(root.Children()) != 1 || root.Children()[0].Type() != ast.NodeAtRule {
+		t.Fatalf("expected one at-rule, got %#v", root.Children())
+	}
+	atRule := root.Children()[0].(*ast.AtRule)
+	if len(atRule.Children()) != 1 || atRule.Children()[0].Type() != ast.NodeRule {
+		t.Fatalf("expected nested rule, got %#v", atRule.Children())
+	}
+}
+
+func TestParseAtRuleWithoutSemicolonAtEOF(t *testing.T) {
+	root, err := Parse(`@import"test.css"`, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(root.Children()) != 1 {
+		t.Fatalf("expected one at-rule, got %d", len(root.Children()))
+	}
+	atRule := root.Children()[0].(*ast.AtRule)
+	if atRule.Name != "import" || atRule.Params != `"test.css"` || atRule.Block {
+		t.Fatalf("unexpected at-rule: %#v", atRule)
+	}
+}
+
+func TestParseEmptyRule(t *testing.T) {
+	root, err := Parse(`{}`, source.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(root.Children()) != 1 || root.Children()[0].Type() != ast.NodeRule {
+		t.Fatalf("expected empty rule, got %#v", root.Children())
+	}
+}
+
+func TestParseDeclarationSourceIncludesSemicolon(t *testing.T) {
+	root, err := Parse("a{color: black;}", source.Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	decl := root.Children()[0].(*ast.Rule).Children()[0].(*ast.Declaration)
+	if got := decl.Source().End.Offset; got != 15 {
+		t.Fatalf("declaration source end offset = %d, want 15", got)
+	}
+}
+
 func TestParseWithSourceMapMapsLocations(t *testing.T) {
 	const sourceMap = `{
 		"version": 3,
