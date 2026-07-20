@@ -134,7 +134,7 @@ function parseArgsWithStableErrors(argvInput: string[]) {
       error.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
     ) {
       const option = error.message.match(/Unknown option ['"]--?([^'"]+)['"]/u)?.[1];
-      if (option) throw new Error(`Unknown argument: ${option}`);
+      if (option) throw new Error(`Unknown argument: ${option}`, { cause: error });
     }
     throw error;
   }

@@ -34,10 +34,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm run build && vitest run test/*.test.ts && pnpm run test:cli",
-    "test:coverage": "pnpm run build && vitest run --coverage test/*.test.ts && pnpm run test:cli",
+    "test": "pnpm run build && vitest run",
+    "test:coverage": "pnpm run build && vitest run --coverage",
     "test:cli": "vitest run test/base.ts test/cli.ts test/config.ts test/dir.ts test/engine.ts test/errors.ts test/output.ts test/poll.ts test/stdin.ts test/stdout.ts test/watch.ts",
-    "test:core": "pnpm run build && vitest run test/*.test.ts"
+    "test:core": "pnpm run build && vitest run"
   },
   "dependencies": {
     "chokidar": "^3.6.0",
