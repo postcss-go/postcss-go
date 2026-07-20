@@ -45,7 +45,7 @@ ignore:
   - 'coverage/**'
   - '**/coverage/**'
   - 'benchmark/fixtures/**'
-  - 'packages/postcss-go-cli/dist/**'
+  - 'packages/postcss-go/bin/postcss-go'
   - '**/*.d.ts'
   - '**/*.d.mts'
 

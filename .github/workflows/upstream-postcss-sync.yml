@@ -18,11 +18,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Sync upstream tests
-        run: ./scripts/sync-upstream-postcss-tests.sh
+        run: node ./scripts/sync-upstream-postcss-tests.mjs
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v7

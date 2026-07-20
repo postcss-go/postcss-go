@@ -5,12 +5,12 @@
   "description": "PostCSS upstream test harness and Go-backed compat overrides.",
   "type": "module",
   "scripts": {
-    "prepare:upstream": "POSTCSS_COMPAT_MODE=upstream ../../scripts/prepare-upstream-compat.sh",
-    "prepare:go": "POSTCSS_COMPAT_MODE=go ../../scripts/prepare-upstream-compat.sh",
-    "test:upstream": "POSTCSS_COMPAT_MODE=upstream ../../scripts/run-upstream-tests.sh",
-    "test:upstream:go": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='tokenize\\.test\\.js$' ../../scripts/run-upstream-tests.sh",
-    "test:upstream:go:parse": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='parse\\.test\\.ts$' ../../scripts/run-upstream-tests.sh",
-    "test:upstream:go:stringify": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='stringify\\.test\\.ts$' ../../scripts/run-upstream-tests.sh",
+    "prepare:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/prepare-upstream-compat.mjs",
+    "prepare:go": "POSTCSS_COMPAT_MODE=go node ../../scripts/prepare-upstream-compat.mjs",
+    "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/run-upstream-tests.mjs",
+    "test:upstream:go": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='tokenize\\.test\\.js$' node ../../scripts/run-upstream-tests.mjs",
+    "test:upstream:go:parse": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='parse\\.test\\.ts$' node ../../scripts/run-upstream-tests.mjs",
+    "test:upstream:go:stringify": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='stringify\\.test\\.ts$' node ../../scripts/run-upstream-tests.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },

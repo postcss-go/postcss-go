@@ -17,6 +17,10 @@ export interface NodePostcssGoServiceOptions {
   workingDirectory?: string;
 }
 
+export function createNodeService(options: NodePostcssGoServiceOptions = {}): NodePostcssGoService {
+  return new NodePostcssGoService(options);
+}
+
 export class NodePostcssGoService implements PostcssGoService {
   readonly binPath?: string;
   readonly binArgs?: string[];
@@ -129,13 +133,14 @@ export class NodePostcssGoService implements PostcssGoService {
     }
 
     const { command, args, cwd } = this.resolveCommand();
+    const env = { ...process.env };
+    if (command === 'go') {
+      env.GOFLAGS = process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod';
+    }
     const child = spawn(command, args, {
       cwd,
       stdio: 'pipe',
-      env: {
-        ...process.env,
-        GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
-      },
+      env,
     });
 
     child.stdout.setEncoding('utf8');
