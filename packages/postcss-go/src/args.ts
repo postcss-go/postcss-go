@@ -118,14 +118,30 @@ function normalizePoll(argvInput: string[]): string[] {
   });
 }
 
+function parseArgsWithStableErrors(argvInput: string[]) {
+  try {
+    return parseArgs({
+      args: normalizePoll(argvInput),
+      options,
+      allowNegative: true,
+      allowPositionals: true,
+      strict: true,
+    });
+  } catch (error: unknown) {
+    if (
+      error instanceof TypeError &&
+      'code' in error &&
+      error.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
+    ) {
+      const option = error.message.match(/Unknown option ['"]--?([^'"]+)['"]/u)?.[1];
+      if (option) throw new Error(`Unknown argument: ${option}`);
+    }
+    throw error;
+  }
+}
+
 export function parseCliArgs(argvInput: string[] = process.argv.slice(2)): CliArgv {
-  const parsed = parseArgs({
-    args: normalizePoll(argvInput),
-    options,
-    allowNegative: true,
-    allowPositionals: true,
-    strict: true,
-  });
+  const parsed = parseArgsWithStableErrors(argvInput);
   const values = parsed.values as Record<string, unknown>;
   const argv: CliArgv = {
     ...values,
