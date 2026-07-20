@@ -1,7 +1,7 @@
 # Go compat overrides
 
 `.js` files in this directory replace matching modules under `vendor/postcss/lib/`
-when `POSTCSS_COMPAT_MODE=go` (via `scripts/prepare-upstream-compat.sh`).
+when `POSTCSS_COMPAT_MODE=go` (via `scripts/prepare-upstream-compat.mjs`).
 Non-JS files (such as this README) are ignored by the prepare script.
 
 Upstream test runs copy the vendored tree into a temp directory first, so

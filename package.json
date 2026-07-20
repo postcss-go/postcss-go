@@ -1,7 +1,20 @@
 {
   "name": "postcss-go-monorepo",
   "private": true,
+  "description": "PostCSSGo Monorepo",
+  "homepage": "https://github.com/eryue0220/postcss-go#readme",
+  "bugs": {
+    "url": "https://github.com/eryue0220/postcss-go/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eryue0220/postcss-go.git"
+  },
+  "license": "MIT",
   "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "pnpm": ">=9.12.3"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "check": "pnpm -r check",
@@ -21,12 +34,12 @@
     "test:go": "go test -mod=mod ./...",
     "coverage": "pnpm coverage:go && pnpm coverage:js",
     "coverage:go": "mkdir -p coverage && go test -mod=mod -covermode=atomic -coverprofile=coverage/go.out ./... && go tool cover -func=coverage/go.out | tee coverage/go.txt",
-    "coverage:js": "pnpm --filter @postcss-go/cli test:coverage",
-    "sync:upstream": "./scripts/sync-upstream-postcss-tests.sh",
-    "sync:benchmark-fixtures": "./scripts/sync-benchmark-fixtures.sh",
-    "check:upstream": "./scripts/check-upstream-postcss-sync.sh",
-    "prepare:upstream-compat": "./scripts/prepare-upstream-compat.sh",
-    "test:upstream": "POSTCSS_COMPAT_MODE=upstream ./scripts/run-upstream-tests.sh",
+    "coverage:js": "pnpm --filter @postcss-go/core test:coverage",
+    "sync:upstream": "node ./scripts/sync-upstream-postcss-tests.mjs",
+    "sync:benchmark-fixtures": "node ./scripts/sync-benchmark-fixtures.mjs",
+    "check:upstream": "node ./scripts/check-upstream-postcss-sync.mjs",
+    "prepare:upstream-compat": "node ./scripts/prepare-upstream-compat.mjs",
+    "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
     "test:upstream:go:parse": "pnpm --filter @postcss-go/compat test:upstream:go:parse",
     "test:upstream:go:stringify": "pnpm --filter @postcss-go/compat test:upstream:go:stringify",
@@ -45,7 +58,7 @@
     "globals": "^17.6.0",
     "postcss": "^8.5.15",
     "prettier": "^3.8.4",
-    "typescript": "^5.6.3",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0"
   }
 }

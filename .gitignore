@@ -30,3 +30,6 @@ dist/
 .tmp/
 coverage/
 **/coverage/
+
+# Local Go bridge binary for @postcss-go/core
+packages/postcss-go/bin/postcss-go

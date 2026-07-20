@@ -1,9 +1,35 @@
-import { NodePostcssGoService, type NodePostcssGoServiceOptions } from './node.js';
-import type { PostcssGoService } from './service.js';
-import type { ParseResult, ProcessOptions, ProcessResult } from './types.js';
-
+export { parse, process } from './api.js';
+export { parseCliArgs, type CliArgv } from './args.js';
+export { runCLI } from './cli.js';
+export {
+  default as createDependencyGraph,
+  type DependencyGraph,
+  type DependencyMessage,
+  type DirDependencyMessage,
+  type GraphMessage,
+} from './DependencyGraph.js';
+export {
+  assertGoCompatibility,
+  createGoEngine,
+  getEffectiveMapOption,
+  isExternalSourceMap,
+  isSourceMapEnabled,
+  processWithGoEngine,
+  runPluginChain,
+  type CliConfig,
+  type CliMessage,
+  type CliProcessResult,
+  type GoEngine,
+} from './engine.js';
+export { default as getMapfile, type MapOptions, type ProcessFileOptions } from './getMapfile.js';
 export { BrowserPostcssGoService } from './browser.js';
-export { NodePostcssGoService } from './node.js';
+export {
+  createNodeService,
+  NodePostcssGoService,
+  type NodePostcssGoServiceOptions,
+} from './node.js';
+export { getPollInterval, usePolling } from './poll.js';
+export { getBundledGoBridgeBinPath, resolveGoBridgeServiceOptions } from './resolveGoBridge.js';
 export { UnsupportedServiceError, type PostcssGoService } from './service.js';
 export type {
   AstNode,
@@ -24,37 +50,3 @@ export type {
   SourceMapOptions,
   Warning,
 } from './types.js';
-
-export async function parse(
-  css: string,
-  options: ProcessOptions = {},
-  service?: PostcssGoService,
-): Promise<ParseResult> {
-  const activeService = service ?? new NodePostcssGoService();
-  try {
-    return await activeService.parse(css, options);
-  } finally {
-    if (!service) {
-      await activeService.close();
-    }
-  }
-}
-
-export async function process(
-  css: string,
-  options: ProcessOptions = {},
-  service?: PostcssGoService,
-): Promise<ProcessResult> {
-  const activeService = service ?? new NodePostcssGoService();
-  try {
-    return await activeService.process(css, options);
-  } finally {
-    if (!service) {
-      await activeService.close();
-    }
-  }
-}
-
-export function createNodeService(options: NodePostcssGoServiceOptions = {}): NodePostcssGoService {
-  return new NodePostcssGoService(options);
-}

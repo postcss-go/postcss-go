@@ -23,11 +23,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Check vendored upstream tests are current
-        run: ./scripts/check-upstream-postcss-sync.sh
+        run: node ./scripts/check-upstream-postcss-sync.mjs
 
   benchmark:
     name: Benchmark Comparison

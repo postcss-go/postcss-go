@@ -20,7 +20,7 @@ flowchart LR
 - The Go core owns parsing, AST mutation, plugin visitor execution, stringification, warnings, and source maps.
 - The Node.js packages provide the public JavaScript-facing API, CLI behavior, plugin loading, and process management.
 - The bridge serializes requests and AST results so the JavaScript layer can use the Go engine without duplicating core CSS logic.
-- The browser/WASM service implements the same service contract as the Node service; its runtime is a future integration point.
+- The browser/WASM service implements the same service contract as the Node service through a classic Web Worker and a Go WASM request handler.
 
 ## Core processing pipeline
 
@@ -152,10 +152,11 @@ sequenceDiagram
 
 Responsibilities are intentionally split:
 
-- `packages/postcss-go/src/service.ts` defines the shared async service contract.
-- `packages/postcss-go/src/node.ts` manages the Go child process, request queue, response matching, and source-map option normalization.
-- `packages/postcss-go/src/browser.ts` reserves the same contract for a future worker/WASM runtime.
-- `packages/postcss-go-cli` loads configuration, runs JavaScript plugins, forwards CSS/options to the service, combines messages, applies map annotations, and writes output files.
+- `packages/postcss-go/src/service` defines the shared async service contract.
+- `packages/postcss-go/src/node` manages the Go child process, request queue, response matching, and source-map option normalization.
+- `packages/postcss-go/src/browser` implements the browser service contract over a Worker; `@postcss-go/wasm` ships the worker, Go WASM binary, and `wasm_exec.js` runtime asset.
+- `packages/postcss-go/src/cli` loads configuration, runs JavaScript plugins, forwards CSS/options to the service, combines messages, applies map annotations, and writes output files. The `bin/postcss-go.js` entry imports compiled `dist/cli/index.js` and calls `runCLI()`.
+- `packages/postcss-go/src/index.ts` and `types.ts` remain the only top-level source files; everything else lives in module directories.
 
 The result is a hybrid pipeline: JavaScript remains responsible for ecosystem-facing behavior, while Go handles the performance-sensitive parse, AST, process, and stringify path.
 

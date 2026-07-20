@@ -16,21 +16,20 @@
 
 ## Packages
 
-| Package              | Path                       | Role                                     |
-| -------------------- | -------------------------- | ---------------------------------------- |
-| `@postcss-go/cli`    | `packages/postcss-go-cli`  | PostCSS CLI-compatible command-line tool |
-| `@postcss-go/core`   | `packages/postcss-go`      | Node.js / TypeScript API                 |
-| `@postcss-go/compat` | `packages/postcss-compat`  | Upstream compatibility harness           |
-| `@postcss-go/wasm`   | `packages/postcss-go-wasm` | Browser / worker / wasm entry point      |
+| Package              | Path                       | Role                                          |
+| -------------------- | -------------------------- | --------------------------------------------- |
+| `@postcss-go/core`   | `packages/postcss-go`      | Node.js / TypeScript API and `postcss-go` CLI |
+| `@postcss-go/compat` | `packages/postcss-compat`  | Upstream compatibility harness                |
+| `@postcss-go/wasm`   | `packages/postcss-go-wasm` | Browser / worker / wasm entry point           |
 
 ## CLI
 
 ```bash
 pnpm install
-node packages/postcss-go-cli/index.js input.css -o output.css
+node packages/postcss-go/bin/postcss-go.js input.css -o output.css
 ```
 
-See [packages/postcss-go-cli/README.md](packages/postcss-go-cli/README.md) for CLI options and examples.
+See [packages/postcss-go/README.md](packages/postcss-go/README.md) for CLI options and examples.
 
 ## Go API
 

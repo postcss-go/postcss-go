@@ -3,12 +3,6 @@
   "include": ["src/**/*.ts"],
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "..",
-    "baseUrl": ".",
-    "paths": {
-      "@postcss-go/core": ["../postcss-go/src/index.ts"],
-      "@postcss-go/core/browser": ["../postcss-go/src/browser.ts"],
-      "@postcss-go/core/service": ["../postcss-go/src/service.ts"]
-    }
+    "rootDir": "src"
   }
 }

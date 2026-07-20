@@ -1,10 +1,16 @@
 {
   "name": "@postcss-go/core",
   "version": "0.0.1",
-  "description": "Node.js API surface for the postcss-go engine.",
+  "description": "Node.js API and CLI for the postcss-go engine.",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "postcss-go": "./bin/postcss-go.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,18 +23,45 @@
     "./service": {
       "types": "./dist/service.d.ts",
       "default": "./dist/service.js"
-    }
+    },
+    "./bin": "./bin/postcss-go.js",
+    "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm run build && vitest run",
-    "test:coverage": "pnpm run build && vitest run --coverage"
+    "test:coverage": "pnpm run build && vitest run --coverage",
+    "test:cli": "vitest run test/base.ts test/cli.ts test/config.ts test/dir.ts test/engine.ts test/errors.ts test/output.ts test/poll.ts test/stdin.ts test/stdout.ts test/watch.ts",
+    "test:core": "pnpm run build && vitest run"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "dependency-graph": "^1.0.0",
+    "picocolors": "^1.1.1",
+    "postcss-load-config": "^5.1.0",
+    "postcss-reporter": "^7.1.0",
+    "pretty-hrtime": "^1.0.3",
+    "read-cache": "^1.0.0",
+    "slash": "^5.1.0",
+    "tinyglobby": "^0.2.15"
+  },
+  "peerDependencies": {
+    "postcss": "^8.0.0"
   },
   "devDependencies": {
+    "postcss": "^8.5.15",
     "vitest": "^3.2.4"
-  }
+  },
+  "keywords": [
+    "cli",
+    "postcss",
+    "postcss-go",
+    "postcss-runner"
+  ],
+  "license": "MIT"
 }
