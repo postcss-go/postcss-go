@@ -63,6 +63,9 @@ func StringifyWithSourceMap(node ast.Node, opts SourceMapOptions) (StringifyResu
 
 func writeNode(writer cssWriter, node ast.Node, depth int) {
 	switch current := node.(type) {
+	case *ast.Document:
+		writeChildren(writer, current.Nodes, depth)
+		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
 		writeChildren(writer, current.Nodes, depth)
 		writer.writeString(rawString(current, "after", ""))
@@ -97,6 +100,9 @@ func writeNode(writer cssWriter, node ast.Node, depth int) {
 
 func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 	switch current := node.(type) {
+	case *ast.Document:
+		writeMappedChildren(writer, current.Nodes, depth)
+		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
 		writeMappedChildren(writer, current.Nodes, depth)
 		writer.writeString(rawString(current, "after", ""))

@@ -11,11 +11,12 @@ import (
 type NodeType string
 
 const (
-	NodeRoot    NodeType = "root"
-	NodeRule    NodeType = "rule"
-	NodeAtRule  NodeType = "atrule"
-	NodeDecl    NodeType = "decl"
-	NodeComment NodeType = "comment"
+	NodeRoot     NodeType = "root"
+	NodeDocument NodeType = "document"
+	NodeRule     NodeType = "rule"
+	NodeAtRule   NodeType = "atrule"
+	NodeDecl     NodeType = "decl"
+	NodeComment  NodeType = "comment"
 )
 
 type SourceRange struct {
@@ -192,6 +193,51 @@ func (n *BaseNode) shiftIteratorsOnRemove(index int) {
 type Root struct {
 	BaseNode
 	Nodes []Node
+}
+
+// Document is a container for multiple CSS roots. It is used by syntaxes that
+// parse a document containing more than one stylesheet (for example HTML with
+// multiple <style> blocks). A normal CSS parse still returns a Root.
+type Document struct {
+	BaseNode
+	Nodes []Node
+}
+
+func NewDocument() *Document { return &Document{} }
+
+func (d *Document) Type() NodeType        { return NodeDocument }
+func (d *Document) Children() []Node      { return d.Nodes }
+func (d *Document) Append(nodes ...Node)  { appendNodes(d, &d.Nodes, nodes...) }
+func (d *Document) Prepend(nodes ...Node) { prependNodes(d, &d.Nodes, nodes...) }
+func (d *Document) InsertBefore(target Node, nodes ...Node) error {
+	return insertBefore(d, &d.Nodes, target, nodes...)
+}
+func (d *Document) InsertAfter(target Node, nodes ...Node) error {
+	return insertAfter(d, &d.Nodes, target, nodes...)
+}
+func (d *Document) RemoveChild(target Node) error   { return removeChildFrom(d, &d.Nodes, target) }
+func (d *Document) Index(target Node) int           { return indexNode(d.Nodes, target) }
+func (d *Document) First() Node                     { return firstNode(d.Nodes) }
+func (d *Document) Last() Node                      { return lastNode(d.Nodes) }
+func (d *Document) RemoveAll()                      { removeAllChildren(d, &d.Nodes) }
+func (d *Document) Some(fn func(Node) bool) bool    { return someNodes(d.Nodes, fn) }
+func (d *Document) Every(fn func(Node) bool) bool   { return everyNodes(d.Nodes, fn) }
+func (d *Document) Root() *Root                     { return nil }
+func (d *Document) Next() Node                      { return nextNode(d) }
+func (d *Document) Prev() Node                      { return prevNode(d) }
+func (d *Document) Remove() Node                    { return removeNode(d) }
+func (d *Document) ReplaceWith(nodes ...Node) error { return replaceNode(d, nodes...) }
+func (d *Document) Clone() Node                     { return cloneNode(d) }
+func (d *Document) Before(nodes ...Node) error      { return beforeNode(d, nodes...) }
+func (d *Document) After(nodes ...Node) error       { return afterNode(d, nodes...) }
+func (d *Document) Error(message string, opts ...ErrorOptions) *csserrors.SyntaxError {
+	return errorNode(d, message, opts...)
+}
+func (d *Document) CloneBefore(overrides ...Node) (Node, error) {
+	return cloneBefore(d, overrides...)
+}
+func (d *Document) CloneAfter(overrides ...Node) (Node, error) {
+	return cloneAfter(d, overrides...)
 }
 
 func NewRoot() *Root {
@@ -470,6 +516,15 @@ type iteratorContainer interface {
 
 func cloneNode(node Node) Node {
 	switch current := node.(type) {
+	case *Document:
+		out := NewDocument()
+		out.rng = current.rng
+		out.src = current.src
+		out.Raws = CloneRaws(current.Raws)
+		for _, child := range current.Nodes {
+			out.Append(cloneNode(child))
+		}
+		return out
 	case *Root:
 		out := NewRoot()
 		out.rng = current.rng
@@ -609,6 +664,9 @@ func stringifyNode(node Node) string {
 func rootOf(node Node) *Root {
 	current := node
 	for current != nil && current.Parent() != nil {
+		if _, isDocumentChild := current.Parent().(*Document); isDocumentChild {
+			break
+		}
 		current = current.Parent()
 	}
 	root, _ := current.(*Root)

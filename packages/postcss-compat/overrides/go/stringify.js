@@ -6,6 +6,7 @@ const { call } = require('./bridge');
 function dtoOf(node) {
   const dto = { type: node.type, raws: node.raws || {} };
   switch (node.type) {
+    case 'document':
     case 'root':
       break;
     case 'rule':

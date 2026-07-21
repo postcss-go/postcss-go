@@ -69,6 +69,34 @@ func TestStringifyBridgePreservesRawsFromDTO(t *testing.T) {
 	}
 }
 
+func TestDocumentDTOStringifiesAndRoundTrips(t *testing.T) {
+	document := &NodeDTO{
+		Type: "document",
+		Nodes: []*NodeDTO{
+			{Type: "root", Nodes: []*NodeDTO{{Type: "rule", Selector: "a", Raws: ast.Raws{"between": " "}}}},
+			{Type: "root", Nodes: []*NodeDTO{{Type: "rule", Selector: "b", Raws: ast.Raws{"between": " "}}}},
+		},
+	}
+	node, err := FromDTO(document)
+	if err != nil {
+		t.Fatalf("document FromDTO failed: %v", err)
+	}
+	if node.Type() != ast.NodeDocument {
+		t.Fatalf("expected document node, got %q", node.Type())
+	}
+	resp, err := StringifyRPC(context.Background(), StringifyParams{AST: document})
+	if err != nil {
+		t.Fatalf("document stringify failed: %v", err)
+	}
+	if resp.CSS != "a {}\nb {}" {
+		t.Fatalf("unexpected document CSS: %q", resp.CSS)
+	}
+	roundTrip, err := ToDTO(node)
+	if err != nil || roundTrip.Type != "document" || len(roundTrip.Nodes) != 2 {
+		t.Fatalf("document ToDTO failed: dto=%#v err=%v", roundTrip, err)
+	}
+}
+
 func TestToDTODoesNotInitializeNilRaws(t *testing.T) {
 	root := ast.NewRoot()
 	rule := ast.NewRule(".a")

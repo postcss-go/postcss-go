@@ -20,14 +20,16 @@ type Position = source.Position
 type SourceLocation = source.Location
 
 const (
-	NodeRoot    = ast.NodeRoot
-	NodeRule    = ast.NodeRule
-	NodeAtRule  = ast.NodeAtRule
-	NodeDecl    = ast.NodeDecl
-	NodeComment = ast.NodeComment
+	NodeRoot     = ast.NodeRoot
+	NodeDocument = ast.NodeDocument
+	NodeRule     = ast.NodeRule
+	NodeAtRule   = ast.NodeAtRule
+	NodeDecl     = ast.NodeDecl
+	NodeComment  = ast.NodeComment
 )
 
 type Root = ast.Root
+type Document = ast.Document
 type Rule = ast.Rule
 type AtRule = ast.AtRule
 type Declaration = ast.Declaration
@@ -62,6 +64,10 @@ func Stringify(node Node) string {
 
 func NewRoot() *Root {
 	return ast.NewRoot()
+}
+
+func NewDocument() *Document {
+	return ast.NewDocument()
 }
 
 func NewRule(selector string) *Rule {
