@@ -103,6 +103,7 @@ function createBridgeError(payload) {
       line: payload.input.line,
       offset: payload.input.offset,
       source: payload.input.source,
+      sourceMapPresent: payload.input.sourceMapPresent,
       url: inputURL(payload.input.file),
     };
   }

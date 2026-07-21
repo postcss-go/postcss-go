@@ -58,11 +58,12 @@ type ErrorDTO struct {
 }
 
 type ErrorInputDTO struct {
-	Source string `json:"source,omitempty"`
-	File   string `json:"file,omitempty"`
-	Line   int    `json:"line"`
-	Column int    `json:"column"`
-	Offset int    `json:"offset"`
+	Source           string `json:"source,omitempty"`
+	File             string `json:"file,omitempty"`
+	Line             int    `json:"line"`
+	Column           int    `json:"column"`
+	Offset           int    `json:"offset"`
+	SourceMapPresent bool   `json:"sourceMapPresent,omitempty"`
 }
 
 type WarningDTO struct {
@@ -286,10 +287,12 @@ func toDTO(node ast.Node, includeInput bool) (*NodeDTO, error) {
 			Raws:      ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.Comment:
+		preserveEndColumn := current.Source() != nil && current.Source().Input != nil && current.Source().Input.HasSourceMap()
+		commentSource := sourceToDTO(current.Source(), true, false, preserveEndColumn, includeInput)
 		return &NodeDTO{
 			Type:   string(ast.NodeComment),
 			Text:   current.Text,
-			Source: sourceToDTO(current.Source(), true, false, false, includeInput),
+			Source: commentSource,
 			Raws:   ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	default:
@@ -578,7 +581,7 @@ func ErrorDTOFromError(err error) *ErrorDTO {
 		detail.File = syntaxErr.File
 		detail.Plugin = syntaxErr.Plugin
 		if syntaxErr.Input != nil {
-			detail.Input = &ErrorInputDTO{Source: syntaxErr.Input.Source, File: syntaxErr.Input.File, Line: syntaxErr.Input.Line, Column: syntaxErr.Input.Column, Offset: syntaxErr.Input.Offset}
+			detail.Input = &ErrorInputDTO{Source: syntaxErr.Input.Source, File: syntaxErr.Input.File, Line: syntaxErr.Input.Line, Column: syntaxErr.Input.Column, Offset: syntaxErr.Input.Offset, SourceMapPresent: syntaxErr.Input.SourceMapPresent}
 		}
 		if syntaxErr.Input != nil && syntaxErr.Input.SourceMapPresent {
 			detail.Column = max(detail.Column-1, 0)

@@ -10,16 +10,16 @@ import (
 	"unicode/utf16"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/pathutil"
 	"postcss-go/internal/source"
+	"postcss-go/internal/utils"
 )
 
 const vlqChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 const noSource = "<no source>"
 
 // isURI is retained as a package-local compatibility helper for tests and
-// callers in this package; the path classification lives in pathutil.
-func isURI(value string) bool { return pathutil.IsURI(value) }
+// callers in this package; the path classification lives in utils.
+func isURI(value string) bool { return utils.IsURI(value) }
 
 type sourceMapWriter struct {
 	builder            strings.Builder
@@ -134,7 +134,7 @@ func (w *sourceMapWriter) addLocationMapping(location *source.Location, position
 	if sourceName == "" || sourceName == "<css input>" {
 		sourceName = noSource
 	}
-	if sourceName != noSource && !pathutil.IsURI(sourceName) {
+	if sourceName != noSource && !utils.IsURI(sourceName) {
 		if strings.HasPrefix(sourceName, "/") {
 			sourceName = path.Clean(sourceName)
 		} else {
@@ -214,23 +214,23 @@ func (w *sourceMapWriter) sourceMap(opts SourceMapOptions) (string, error) {
 }
 
 func sourcePath(source, mapDir string, absolute bool) string {
-	if source == noSource || pathutil.IsURI(source) {
+	if source == noSource || utils.IsURI(source) {
 		return source
 	}
 	if absolute {
 		return fileURL(source)
 	}
-	if pathutil.IsURI(mapDir) {
+	if utils.IsURI(mapDir) {
 		return (&url.URL{Path: filepath.ToSlash(source)}).EscapedPath()
 	}
 	return relativePath(mapDir, source)
 }
 
 func outputPath(outputFile, mapDir string) string {
-	if pathutil.IsURI(outputFile) {
+	if utils.IsURI(outputFile) {
 		return outputFile
 	}
-	if pathutil.IsURI(mapDir) {
+	if utils.IsURI(mapDir) {
 		return (&url.URL{Path: filepath.ToSlash(outputFile)}).EscapedPath()
 	}
 	return relativePath(mapDir, outputFile)
@@ -240,7 +240,7 @@ func pathDirectory(value string) string {
 	if strings.HasPrefix(value, "/") {
 		return path.Dir(value)
 	}
-	if u, err := url.Parse(value); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(value) {
+	if u, err := url.Parse(value); err == nil && u.Scheme != "" && !utils.IsWindowsDrivePath(value) {
 		u.Path = filepath.ToSlash(filepath.Dir(filepath.FromSlash(u.Path)))
 		return u.String()
 	}
