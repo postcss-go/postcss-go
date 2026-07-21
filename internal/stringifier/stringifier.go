@@ -346,6 +346,11 @@ func nodeBefore(node ast.Node, depth, index int) string {
 	if hasRaw(node, "before") {
 		return rawString(node, "before", "")
 	}
+	// A newly inserted first node in a root has no leading separator. Existing
+	// parsed nodes can still preserve an explicit `raws.before` above.
+	if index == 0 && depth == 0 {
+		return ""
+	}
 	if parent := node.Parent(); parent != nil {
 		if inferred, ok := inferSiblingRaw(parent, "before", node.Type()); ok {
 			return inferred
@@ -420,5 +425,7 @@ func needsSemicolon(parent ast.Container, node ast.Node) bool {
 			lastSignificant = index
 		}
 	}
-	return nodeIndex < lastSignificant || rawBool(parent, "semicolon", true)
+	// Parsed containers record their semicolon style explicitly. For manually
+	// constructed containers, match PostCSS's default and omit the final one.
+	return nodeIndex < lastSignificant || rawBool(parent, "semicolon", false)
 }
