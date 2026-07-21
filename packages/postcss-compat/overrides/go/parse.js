@@ -99,16 +99,8 @@ function syntaxErrorFromBridge(error) {
     const word = source.slice(offset).match(/^[\w-]+/)?.[0] || '';
     reason = word ? `Unknown word ${word}` : 'Unknown word';
   }
-  const source = error.source ||
-    (error.input?.sourceMapPresent ? undefined : error.input?.source);
-  const syntaxError = new CssSyntaxError(
-    reason,
-    line,
-    column,
-    source,
-    error.file,
-    error.plugin,
-  );
+  const source = error.source || (error.input?.sourceMapPresent ? undefined : error.input?.source);
+  const syntaxError = new CssSyntaxError(reason, line, column, source, error.file, error.plugin);
   if (error.endLine !== undefined) syntaxError.endLine = error.endLine;
   if (error.endColumn !== undefined) syntaxError.endColumn = error.endColumn;
   if (reason.startsWith('Unknown word') && syntaxError.endColumn === undefined) {
