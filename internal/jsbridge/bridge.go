@@ -43,16 +43,26 @@ type Response struct {
 }
 
 type ErrorDTO struct {
-	Message   string `json:"message"`
-	Name      string `json:"name,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Line      int    `json:"line,omitempty"`
-	Column    int    `json:"column,omitempty"`
-	EndLine   int    `json:"endLine,omitempty"`
-	EndColumn int    `json:"endColumn,omitempty"`
-	Source    string `json:"source,omitempty"`
-	File      string `json:"file,omitempty"`
-	Plugin    string `json:"plugin,omitempty"`
+	Code      int            `json:"code"`
+	Message   string         `json:"message"`
+	Name      string         `json:"name,omitempty"`
+	Reason    string         `json:"reason,omitempty"`
+	Line      int            `json:"line,omitempty"`
+	Column    int            `json:"column,omitempty"`
+	EndLine   int            `json:"endLine,omitempty"`
+	EndColumn int            `json:"endColumn,omitempty"`
+	Source    string         `json:"source,omitempty"`
+	File      string         `json:"file,omitempty"`
+	Plugin    string         `json:"plugin,omitempty"`
+	Input     *ErrorInputDTO `json:"input,omitempty"`
+}
+
+type ErrorInputDTO struct {
+	Source string `json:"source,omitempty"`
+	File   string `json:"file,omitempty"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
+	Offset int    `json:"offset"`
 }
 
 type WarningDTO struct {
@@ -83,9 +93,12 @@ type SourcePositionDTO struct {
 }
 
 type SourceLocationDTO struct {
-	Start SourcePositionDTO `json:"start"`
-	End   SourcePositionDTO `json:"end"`
-	File  string            `json:"file,omitempty"`
+	Start  SourcePositionDTO `json:"start"`
+	End    SourcePositionDTO `json:"end"`
+	File   string            `json:"file,omitempty"`
+	CSS    string            `json:"css,omitempty"`
+	Map    string            `json:"map,omitempty"`
+	MapURL string            `json:"mapUrl,omitempty"`
 }
 
 type ParseParams struct {
@@ -156,8 +169,10 @@ func Execute(req Request) Response {
 
 func ParseRPC(_ context.Context, params ParseParams) (*ParseResult, error) {
 	root, err := postcss.ParseWithOptions(params.CSS, postcss.ParseOptions{
-		From:        params.Options.From,
-		TrackSource: true,
+		From:         params.Options.From,
+		SourceMap:    []byte(params.Options.PreviousMap),
+		SourceMapURL: params.Options.PreviousMapURL,
+		TrackSource:  true,
 	})
 	if err != nil {
 		return nil, err
@@ -214,25 +229,29 @@ func ToJSON(resp Response) ([]byte, error) {
 }
 
 func ToDTO(node ast.Node) (*NodeDTO, error) {
+	return toDTO(node, true)
+}
+
+func toDTO(node ast.Node, includeInput bool) (*NodeDTO, error) {
 	switch current := node.(type) {
 	case *ast.Document:
-		nodes, err := childrenToDTO(current.Children())
+		nodes, err := childrenToDTO(current.Children(), false)
 		if err != nil {
 			return nil, err
 		}
-		return &NodeDTO{Type: string(ast.NodeDocument), Nodes: nodes, Source: sourceToDTO(current.Source(), false, false, false), Raws: ast.CloneRaws(current.RawFormattingReadOnly())}, nil
+		return &NodeDTO{Type: string(ast.NodeDocument), Nodes: nodes, Source: sourceToDTO(current.Source(), false, false, false, includeInput), Raws: ast.CloneRaws(current.RawFormattingReadOnly())}, nil
 	case *ast.Root:
-		nodes, err := childrenToDTO(current.Children())
+		nodes, err := childrenToDTO(current.Children(), false)
 		if err != nil {
 			return nil, err
 		}
-		return &NodeDTO{Type: string(ast.NodeRoot), Nodes: nodes, Source: sourceToDTO(current.Source(), false, false, false), Raws: ast.CloneRaws(current.RawFormattingReadOnly())}, nil
+		return &NodeDTO{Type: string(ast.NodeRoot), Nodes: nodes, Source: sourceToDTO(current.Source(), false, false, false, includeInput), Raws: ast.CloneRaws(current.RawFormattingReadOnly())}, nil
 	case *ast.Rule:
-		nodes, err := childrenToDTO(current.Children())
+		nodes, err := childrenToDTO(current.Children(), false)
 		if err != nil {
 			return nil, err
 		}
-		ruleSource := sourceToDTO(current.Source(), true, true, current.RawFormattingReadOnly()["ownSemicolon"] == ";")
+		ruleSource := sourceToDTO(current.Source(), true, true, current.RawFormattingReadOnly()["ownSemicolon"] == ";", includeInput)
 		if current.RawFormattingReadOnly()["ownSemicolon"] == ";" && ruleSource != nil {
 			ruleSource.End.Column++
 		}
@@ -244,7 +263,7 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 			Raws:     ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.AtRule:
-		nodes, err := childrenToDTO(current.Children())
+		nodes, err := childrenToDTO(current.Children(), false)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +273,7 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 			Params: current.Params,
 			Block:  current.Block,
 			Nodes:  nodes,
-			Source: sourceToDTO(current.Source(), true, current.Block, false),
+			Source: sourceToDTO(current.Source(), true, current.Block, false, includeInput),
 			Raws:   ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.Declaration:
@@ -263,14 +282,14 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 			Prop:      current.Prop,
 			Value:     current.Value,
 			Important: current.Important,
-			Source:    sourceToDTO(current.Source(), true, false, false),
+			Source:    sourceToDTO(current.Source(), true, false, false, includeInput),
 			Raws:      ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	case *ast.Comment:
 		return &NodeDTO{
 			Type:   string(ast.NodeComment),
 			Text:   current.Text,
-			Source: sourceToDTO(current.Source(), true, false, false),
+			Source: sourceToDTO(current.Source(), true, false, false, includeInput),
 			Raws:   ast.CloneRaws(current.RawFormattingReadOnly()),
 		}, nil
 	default:
@@ -279,57 +298,88 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 }
 
 func FromDTO(dto *NodeDTO) (ast.Node, error) {
+	return fromDTO(dto, nil)
+}
+
+func fromDTO(dto *NodeDTO, inheritedInput *postcss.Input) (ast.Node, error) {
+	if dto == nil {
+		return nil, fmt.Errorf("nil node dto")
+	}
 	switch dto.Type {
 	case string(ast.NodeDocument):
 		node := ast.NewDocument()
-		children, err := childrenFromDTO(dto.Nodes)
+		input, source, err := sourceFromDTO(dto.Source, inheritedInput)
+		if err != nil {
+			return nil, err
+		}
+		children, err := childrenFromDTO(dto.Nodes, input)
 		if err != nil {
 			return nil, err
 		}
 		node.Append(children...)
-		node.SetSource(sourceFromDTO(dto.Source))
+		node.SetSource(source)
 		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeRoot):
 		node := ast.NewRoot()
-		children, err := childrenFromDTO(dto.Nodes)
+		input, source, err := sourceFromDTO(dto.Source, inheritedInput)
+		if err != nil {
+			return nil, err
+		}
+		children, err := childrenFromDTO(dto.Nodes, input)
 		if err != nil {
 			return nil, err
 		}
 		node.Append(children...)
-		node.SetSource(sourceFromDTO(dto.Source))
+		node.SetSource(source)
 		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeRule):
 		node := ast.NewRule(dto.Selector)
-		children, err := childrenFromDTO(dto.Nodes)
+		input, source, err := sourceFromDTO(dto.Source, inheritedInput)
+		if err != nil {
+			return nil, err
+		}
+		children, err := childrenFromDTO(dto.Nodes, input)
 		if err != nil {
 			return nil, err
 		}
 		node.Append(children...)
-		node.SetSource(sourceFromDTO(dto.Source))
+		node.SetSource(source)
 		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeAtRule):
 		node := ast.NewAtRule(dto.Name, dto.Params)
 		node.Block = dto.Block
-		children, err := childrenFromDTO(dto.Nodes)
+		input, source, err := sourceFromDTO(dto.Source, inheritedInput)
+		if err != nil {
+			return nil, err
+		}
+		children, err := childrenFromDTO(dto.Nodes, input)
 		if err != nil {
 			return nil, err
 		}
 		node.Append(children...)
-		node.SetSource(sourceFromDTO(dto.Source))
+		node.SetSource(source)
 		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeDecl):
 		node := ast.NewDeclaration(dto.Prop, dto.Value)
 		node.Important = dto.Important
-		node.SetSource(sourceFromDTO(dto.Source))
+		_, source, err := sourceFromDTO(dto.Source, inheritedInput)
+		if err != nil {
+			return nil, err
+		}
+		node.SetSource(source)
 		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	case string(ast.NodeComment):
 		node := ast.NewComment(dto.Text)
-		node.SetSource(sourceFromDTO(dto.Source))
+		_, source, err := sourceFromDTO(dto.Source, inheritedInput)
+		if err != nil {
+			return nil, err
+		}
+		node.SetSource(source)
 		node.Raws = ast.CloneRaws(dto.Raws)
 		return node, nil
 	default:
@@ -337,10 +387,10 @@ func FromDTO(dto *NodeDTO) (ast.Node, error) {
 	}
 }
 
-func childrenToDTO(nodes []ast.Node) ([]*NodeDTO, error) {
+func childrenToDTO(nodes []ast.Node, includeInput bool) ([]*NodeDTO, error) {
 	out := make([]*NodeDTO, 0, len(nodes))
 	for _, child := range nodes {
-		dto, err := ToDTO(child)
+		dto, err := toDTO(child, includeInput)
 		if err != nil {
 			return nil, err
 		}
@@ -349,10 +399,10 @@ func childrenToDTO(nodes []ast.Node) ([]*NodeDTO, error) {
 	return out, nil
 }
 
-func childrenFromDTO(nodes []*NodeDTO) ([]ast.Node, error) {
+func childrenFromDTO(nodes []*NodeDTO, input *postcss.Input) ([]ast.Node, error) {
 	out := make([]ast.Node, 0, len(nodes))
 	for _, child := range nodes {
-		node, err := FromDTO(child)
+		node, err := fromDTO(child, input)
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +411,7 @@ func childrenFromDTO(nodes []*NodeDTO) ([]ast.Node, error) {
 	return out, nil
 }
 
-func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn bool) *SourceLocationDTO {
+func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool) *SourceLocationDTO {
 	if loc == nil {
 		return nil
 	}
@@ -400,6 +450,10 @@ func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn 
 	}
 	if loc.Input != nil {
 		dto.File = loc.Input.File
+		if includeInput {
+			dto.CSS = loc.Input.CSS
+			dto.MapURL = loc.Input.File
+		}
 	}
 	if nodeEnd && !preserveEndColumn && !adjustedEndColumn && dto.End.Offset > dto.Start.Offset && dto.End.Column > 1 {
 		dto.End.Column--
@@ -468,16 +522,27 @@ func findBlockEnd(css string, start int) (int, bool) {
 	return 0, false
 }
 
-func sourceFromDTO(loc *SourceLocationDTO) *postcss.SourceLocation {
+func sourceFromDTO(loc *SourceLocationDTO, inheritedInput *postcss.Input) (*postcss.Input, *postcss.SourceLocation, error) {
 	if loc == nil {
-		return nil
+		return inheritedInput, nil, nil
 	}
-	input, _ := postcss.NewInput("", postcss.ParseOptions{From: loc.File})
-	return &postcss.SourceLocation{
+	input := inheritedInput
+	if input == nil || loc.CSS != "" || loc.Map != "" {
+		var err error
+		input, err = postcss.NewInput(loc.CSS, postcss.ParseOptions{
+			From:         loc.File,
+			SourceMap:    []byte(loc.Map),
+			SourceMapURL: loc.MapURL,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("decode source location input: %w", err)
+		}
+	}
+	return input, &postcss.SourceLocation{
 		Start: postcss.Position{Line: loc.Start.Line, Column: loc.Start.Column, Offset: loc.Start.Offset},
 		End:   postcss.Position{Line: loc.End.Line, Column: loc.End.Column, Offset: loc.End.Offset},
 		Input: input,
-	}
+	}, nil
 }
 
 func warningsToDTO(warnings []postcss.Warning) []WarningDTO {
@@ -493,7 +558,14 @@ func warningsToDTO(warnings []postcss.Warning) []WarningDTO {
 }
 
 func errorResponse(err error) Response {
-	detail := &ErrorDTO{Message: err.Error()}
+	detail := ErrorDTOFromError(err)
+	return Response{OK: false, Error: detail}
+}
+
+// ErrorDTO converts errors for both JSON-RPC transports. Keeping this in the
+// bridge package prevents --single and the long-lived RPC server from drifting.
+func ErrorDTOFromError(err error) *ErrorDTO {
+	detail := &ErrorDTO{Code: -32000, Message: err.Error()}
 	var syntaxErr *postcss.CssSyntaxError
 	if errors.As(err, &syntaxErr) {
 		detail.Name = "CssSyntaxError"
@@ -505,9 +577,15 @@ func errorResponse(err error) Response {
 		detail.Source = syntaxErr.Source
 		detail.File = syntaxErr.File
 		detail.Plugin = syntaxErr.Plugin
+		if syntaxErr.Input != nil {
+			detail.Input = &ErrorInputDTO{Source: syntaxErr.Input.Source, File: syntaxErr.Input.File, Line: syntaxErr.Input.Line, Column: syntaxErr.Input.Column, Offset: syntaxErr.Input.Offset}
+		}
+		if syntaxErr.Input != nil && syntaxErr.Input.SourceMapPresent {
+			detail.Column = max(detail.Column-1, 0)
+			if detail.EndColumn > 0 {
+				detail.EndColumn = max(detail.EndColumn-1, 0)
+			}
+		}
 	}
-	return Response{
-		OK:    false,
-		Error: detail,
-	}
+	return detail
 }

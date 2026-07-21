@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/csserrors"
+	"postcss-go/internal/pathutil"
 )
 
 type Position struct {
@@ -70,7 +71,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 		input.Document = opts.Document
 	}
 	if opts.From != "" {
-		if isSourceURI(opts.From) || isAbsoluteSourcePath(opts.From) {
+		if isSourceURI(opts.From) || pathutil.IsAbsoluteSourcePath(opts.From) {
 			input.File = opts.From
 		} else {
 			abs, err := filepath.Abs(opts.From)
@@ -92,7 +93,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 }
 
 func isSourceURI(value string) bool {
-	if isAbsoluteSourcePath(value) {
+	if pathutil.IsAbsoluteSourcePath(value) {
 		return false
 	}
 	u, err := url.Parse(value)
@@ -115,15 +116,33 @@ func (i *Input) SourceContentAvailable() bool {
 }
 
 func (i *Input) Error(message string, line, column int, plugin string) *csserrors.SyntaxError {
+	offset, _ := i.FromLineAndColumn(line, column)
+	return i.errorAtPosition(message, line, column, offset, plugin)
+}
+
+func (i *Input) errorAtPosition(message string, line, column, offset int, plugin string) *csserrors.SyntaxError {
+	inputInfo := &csserrors.InputInfo{Source: i.CSS, File: i.File, Line: line, Column: column, Offset: offset, SourceMapPresent: i.consumer != nil}
 	if source, mappedInput, mappedLine, mappedColumn, ok := i.origin(line, column); ok {
-		return csserrors.New(message, mappedLine, mappedColumn, source, mappedInput.File, plugin)
+		err := csserrors.New(message, mappedLine, mappedColumn, source, mappedInput.File, plugin)
+		inputInfo.SourceMapPresent = true
+		err.Input = inputInfo
+		return err
 	}
-	return csserrors.New(message, line, column, i.CSS, i.File, plugin)
+	err := csserrors.New(message, line, column, i.CSS, i.File, plugin)
+	err.Input = inputInfo
+	return err
 }
 
 func (i *Input) ErrorAtOffset(message string, offset int, plugin string) *csserrors.SyntaxError {
 	pos := i.FromOffset(offset)
-	return i.Error(message, pos.Line, pos.Column, plugin)
+	return i.errorAtPosition(message, pos.Line, pos.Column, offset, plugin)
+}
+
+// Origin maps a position in this input through its previous source map. The
+// returned input represents the original source when a mapping is available.
+// Lines and columns use PostCSS's one-based convention.
+func (i *Input) Origin(line, column int) (string, *Input, int, int, bool) {
+	return i.origin(line, column)
 }
 
 func (i *Input) FromOffset(offset int) Position {
@@ -293,17 +312,17 @@ func (i *Input) originContentAvailable(file string) bool {
 }
 
 func (i *Input) resolveOriginFile(file string) string {
-	if u, err := url.Parse(file); err == nil && u.Scheme != "" && !isWindowsDrivePath(file) {
+	if u, err := url.Parse(file); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(file) {
 		if u.Scheme == "file" {
 			return filepath.FromSlash(u.Path)
 		}
 		return file
 	}
-	if isAbsoluteSourcePath(file) {
+	if pathutil.IsAbsoluteSourcePath(file) {
 		return normalizeSourcePath(file)
 	}
 	mapURL := i.consumer.SourcemapURL()
-	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !isWindowsDrivePath(mapURL) {
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(mapURL) {
 		if u.Scheme != "file" {
 			return file
 		}
@@ -340,7 +359,7 @@ func sourceMapContentAvailability(raw []byte, mapURL, inputFile string) map[stri
 }
 
 func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
-	if u, err := url.Parse(source); err == nil && u.Scheme != "" && !isWindowsDrivePath(source) {
+	if u, err := url.Parse(source); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(source) {
 		return source
 	}
 	if sourceRoot != "" {
@@ -353,11 +372,11 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 			source = filepath.Join(sourceRoot, source)
 		}
 	}
-	if isAbsoluteSourcePath(source) {
+	if pathutil.IsAbsoluteSourcePath(source) {
 		return normalizeSourcePath(source)
 	}
 	base := filepath.Dir(mapURL)
-	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !isWindowsDrivePath(mapURL) {
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !pathutil.IsWindowsDrivePath(mapURL) {
 		base = filepath.Dir(filepath.FromSlash(u.Path))
 	} else if mapURL == "" && inputFile != "" {
 		base = filepath.Dir(inputFile)
@@ -369,26 +388,13 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 	return resolved
 }
 
-func isWindowsDrivePath(value string) bool {
-	return len(value) >= 3 &&
-		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
-		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
-}
-
-func isAbsoluteSourcePath(value string) bool {
-	return filepath.IsAbs(value) || strings.HasPrefix(value, "/") || isWindowsDrivePath(value)
-}
-
 func normalizeSourcePath(value string) string {
-	if isWindowsDrivePath(value) {
-		return filepath.FromSlash(strings.ReplaceAll(value, `\`, "/"))
-	}
-	return value
+	return pathutil.NormalizeSourcePath(value)
 }
 
 func sourcePathKey(value string) string {
 	normalized := normalizeSourcePath(value)
-	if isWindowsDrivePath(normalized) {
+	if pathutil.IsWindowsDrivePath(normalized) {
 		return strings.ToLower(filepath.Clean(normalized))
 	}
 	return normalized

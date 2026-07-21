@@ -11,7 +11,6 @@ import (
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
 	"postcss-go/internal/jsbridge"
-	postcss "postcss-go/internal/postcss"
 )
 
 type nopWriteCloser struct{}
@@ -48,19 +47,8 @@ type singleRequest struct {
 	Params json.RawMessage `json:"params"`
 }
 
-type singleError struct {
-	Code      int    `json:"code"`
-	Message   string `json:"message"`
-	Name      string `json:"name,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Line      int    `json:"line,omitempty"`
-	Column    int    `json:"column,omitempty"`
-	EndLine   int    `json:"endLine,omitempty"`
-	EndColumn int    `json:"endColumn,omitempty"`
-	Source    string `json:"source,omitempty"`
-	File      string `json:"file,omitempty"`
-	Plugin    string `json:"plugin,omitempty"`
-}
+type singleError = jsbridge.ErrorDTO
+type singleErrorInput = jsbridge.ErrorInputDTO
 
 type singleResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -109,20 +97,7 @@ func handleSingleRequest(data []byte) ([]byte, error) {
 }
 
 func singleErrorFrom(err error) *singleError {
-	response := &singleError{Code: -32000, Message: err.Error()}
-	var syntaxErr *postcss.CssSyntaxError
-	if errors.As(err, &syntaxErr) {
-		response.Name = "CssSyntaxError"
-		response.Reason = syntaxErr.Reason
-		response.Line = syntaxErr.Line
-		response.Column = syntaxErr.Column
-		response.EndLine = syntaxErr.EndLine
-		response.EndColumn = syntaxErr.EndColumn
-		response.Source = syntaxErr.Source
-		response.File = syntaxErr.File
-		response.Plugin = syntaxErr.Plugin
-	}
-	return response
+	return jsbridge.ErrorDTOFromError(err)
 }
 
 func runSingle() error {
