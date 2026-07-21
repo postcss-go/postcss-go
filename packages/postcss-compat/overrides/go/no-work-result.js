@@ -1,4 +1,5 @@
 'use strict';
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 let MapGenerator = require('./map-generator');
 let parse = require('./parse');
@@ -61,11 +62,8 @@ class NoWorkResult {
     let str = stringify;
     this.result = new Result(this._processor, undefined, this._opts);
     this.result.css = css;
-    let self = this;
     Object.defineProperty(this.result, 'root', {
-      get() {
-        return self.root;
-      },
+      get: () => this.root,
     });
 
     let map = new MapGenerator(str, undefined, this._opts, css);
