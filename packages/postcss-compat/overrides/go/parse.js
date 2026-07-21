@@ -4,6 +4,7 @@
 const AtRule = require('./at-rule');
 const Comment = require('./comment');
 const Container = require('./container');
+const CssSyntaxError = require('./css-syntax-error');
 const Declaration = require('./declaration');
 const Input = require('./input');
 const Root = require('./root');
@@ -84,6 +85,63 @@ function usablePreviousMap(input) {
   }
 }
 
+function syntaxErrorFromBridge(error) {
+  if (!error || error.name !== 'CssSyntaxError') return error;
+
+  const line = error.line;
+  const column = error.column === undefined && error.input?.sourceMapPresent ? 0 : error.column;
+  let reason = error.reason || error.message;
+  if (reason === 'Unclosed block: missing closing brace') {
+    reason = 'Unclosed block';
+  } else if (reason === 'Unknown word: expected declaration') {
+    const source = error.source || error.input?.source || '';
+    const offset = error.input?.offset ?? 0;
+    const word = source.slice(offset).match(/^[\w-]+/)?.[0] || '';
+    reason = word ? `Unknown word ${word}` : 'Unknown word';
+  }
+  const source = error.source ||
+    (error.input?.sourceMapPresent ? undefined : error.input?.source);
+  const syntaxError = new CssSyntaxError(
+    reason,
+    line,
+    column,
+    source,
+    error.file,
+    error.plugin,
+  );
+  if (error.endLine !== undefined) syntaxError.endLine = error.endLine;
+  if (error.endColumn !== undefined) syntaxError.endColumn = error.endColumn;
+  if (reason.startsWith('Unknown word') && syntaxError.endColumn === undefined) {
+    syntaxError.endLine = line;
+    syntaxError.endColumn = column + reason.slice('Unknown word '.length).length;
+  }
+  if (syntaxError.setMessage) syntaxError.setMessage();
+  if (error.input) {
+    const inputInfo = {
+      column: error.input.column,
+      endColumn: undefined,
+      endLine: undefined,
+      endOffset: undefined,
+      line: error.input.line,
+      offset: error.input.offset,
+      source: error.input.source,
+    };
+    if (syntaxError.endColumn !== undefined) {
+      inputInfo.endColumn = syntaxError.endColumn;
+      inputInfo.endLine = syntaxError.endLine;
+      inputInfo.endOffset = error.input.offset + syntaxError.endColumn - column;
+    }
+    if (error.input.file) {
+      inputInfo.file = error.input.file;
+      inputInfo.url = require('node:url').pathToFileURL(error.input.file).toString();
+    }
+    syntaxError.input = {
+      ...inputInfo,
+    };
+  }
+  return syntaxError;
+}
+
 module.exports = function parse(css, opts = {}) {
   const text = css == null ? css : css.toString();
   const input = new Input(text, opts);
@@ -92,14 +150,19 @@ module.exports = function parse(css, opts = {}) {
   // path so the standard annotation and source-map tests retain their raw
   // formatting semantics.
   const parseText = opts.syntax || opts.parser ? cssWithoutSourceMapAnnotation(text) : text;
-  const result = call('parse', {
-    css: parseText,
-    options: {
-      from: input.file || opts.from || '',
-      previousMap: usablePreviousMap(input),
-      previousMapUrl: input.map?.mapFile || input.file || '',
-    },
-  });
+  let result;
+  try {
+    result = call('parse', {
+      css: parseText,
+      options: {
+        from: input.file || opts.from || '',
+        previousMap: usablePreviousMap(input),
+        previousMapUrl: input.map?.mapFile || input.file || '',
+      },
+    });
+  } catch (error) {
+    throw syntaxErrorFromBridge(error);
+  }
   return nodeOf(result.root, input);
 };
 

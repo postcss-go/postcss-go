@@ -1,4 +1,5 @@
-package pathutil
+// Package utils contains small helpers shared across the Go engine packages.
+package utils
 
 import (
 	"net/url"

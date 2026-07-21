@@ -88,7 +88,7 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 		if endBlock {
 			if blockTrailing != "" {
 				if children := container.Children(); len(children) > 0 {
-					if atRule, ok := children[len(children)-1].(*ast.AtRule); ok && !atRule.Block {
+					if atRule, ok := children[len(children)-1].(*ast.AtRule); ok && !atRule.Block && !containerHasSemicolon(container) {
 						atRule.RawFormatting()["between"] = blockTrailing
 						blockTrailing = ""
 					} else if decl, ok := children[len(children)-1].(*ast.Declaration); ok && strings.HasPrefix(decl.Prop, "--") {
@@ -124,6 +124,11 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 		return p.syntaxError("Unclosed block: missing closing brace", p.blockStarts[container])
 	}
 	return nil
+}
+
+func containerHasSemicolon(container ast.Container) bool {
+	value, ok := container.RawFormattingReadOnly()["semicolon"].(bool)
+	return ok && value
 }
 
 func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, error) {

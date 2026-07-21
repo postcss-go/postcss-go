@@ -12,10 +12,10 @@ import (
 
 	"postcss-go/internal/ast"
 	"postcss-go/internal/parser"
-	"postcss-go/internal/pathutil"
 	"postcss-go/internal/result"
 	"postcss-go/internal/source"
 	"postcss-go/internal/stringifier"
+	"postcss-go/internal/utils"
 )
 
 type Options struct {
@@ -210,19 +210,19 @@ func sourceMapFile(annotation, from string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if parsed.Scheme != "" && !pathutil.IsWindowsDrivePath(annotation) {
+	if parsed.Scheme != "" && !utils.IsWindowsDrivePath(annotation) {
 		if parsed.Scheme != "file" {
 			return "", false
 		}
 		return filepath.FromSlash(parsed.Path), true
 	}
-	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" && !pathutil.IsWindowsDrivePath(from) {
+	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" && !utils.IsWindowsDrivePath(from) {
 		if fromURL.Scheme != "file" {
 			return "", false
 		}
 		from = filepath.FromSlash(fromURL.Path)
 	}
-	if pathutil.IsAbsoluteSourcePath(annotation) {
+	if utils.IsAbsoluteSourcePath(annotation) {
 		return annotation, true
 	}
 	if from == "" {

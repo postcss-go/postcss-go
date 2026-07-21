@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/csserrors"
-	"postcss-go/internal/pathutil"
+	"postcss-go/internal/utils"
 )
 
 type Position struct {
@@ -45,6 +45,7 @@ type Input struct {
 	originContent map[string]bool
 	contentKnown  bool
 	trackSource   bool
+	sourceMapped  bool
 }
 
 type sourceMapMetadata struct {
@@ -71,7 +72,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 		input.Document = opts.Document
 	}
 	if opts.From != "" {
-		if isSourceURI(opts.From) || pathutil.IsAbsoluteSourcePath(opts.From) {
+		if isSourceURI(opts.From) || utils.IsAbsoluteSourcePath(opts.From) {
 			input.File = opts.From
 		} else {
 			abs, err := filepath.Abs(opts.From)
@@ -93,7 +94,7 @@ func NewInput(css string, opts Options) (*Input, error) {
 }
 
 func isSourceURI(value string) bool {
-	if pathutil.IsAbsoluteSourcePath(value) {
+	if utils.IsAbsoluteSourcePath(value) {
 		return false
 	}
 	u, err := url.Parse(value)
@@ -102,6 +103,11 @@ func isSourceURI(value string) bool {
 
 func (i *Input) TracksSource() bool {
 	return i.File != "" || i.consumer != nil || i.trackSource
+}
+
+// HasSourceMap reports whether this input has a previous source map consumer.
+func (i *Input) HasSourceMap() bool {
+	return i.consumer != nil || i.sourceMapped
 }
 
 func (i *Input) From() string {
@@ -294,6 +300,7 @@ func (i *Input) cachedOriginInput(file, content string, contentKnown bool) *Inpu
 		File:          file,
 		originContent: map[string]bool{},
 		contentKnown:  contentKnown,
+		sourceMapped:  true,
 	}
 	input.buildLineIndex()
 	i.originCache[key] = input
@@ -312,17 +319,17 @@ func (i *Input) originContentAvailable(file string) bool {
 }
 
 func (i *Input) resolveOriginFile(file string) string {
-	if u, err := url.Parse(file); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(file) {
+	if u, err := url.Parse(file); err == nil && u.Scheme != "" && !utils.IsWindowsDrivePath(file) {
 		if u.Scheme == "file" {
 			return filepath.FromSlash(u.Path)
 		}
 		return file
 	}
-	if pathutil.IsAbsoluteSourcePath(file) {
+	if utils.IsAbsoluteSourcePath(file) {
 		return normalizeSourcePath(file)
 	}
 	mapURL := i.consumer.SourcemapURL()
-	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(mapURL) {
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme != "" && !utils.IsWindowsDrivePath(mapURL) {
 		if u.Scheme != "file" {
 			return file
 		}
@@ -359,7 +366,7 @@ func sourceMapContentAvailability(raw []byte, mapURL, inputFile string) map[stri
 }
 
 func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
-	if u, err := url.Parse(source); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(source) {
+	if u, err := url.Parse(source); err == nil && u.Scheme != "" && !utils.IsWindowsDrivePath(source) {
 		return source
 	}
 	if sourceRoot != "" {
@@ -372,11 +379,11 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 			source = filepath.Join(sourceRoot, source)
 		}
 	}
-	if pathutil.IsAbsoluteSourcePath(source) {
+	if utils.IsAbsoluteSourcePath(source) {
 		return normalizeSourcePath(source)
 	}
 	base := filepath.Dir(mapURL)
-	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !pathutil.IsWindowsDrivePath(mapURL) {
+	if u, err := url.Parse(mapURL); err == nil && u.Scheme == "file" && !utils.IsWindowsDrivePath(mapURL) {
 		base = filepath.Dir(filepath.FromSlash(u.Path))
 	} else if mapURL == "" && inputFile != "" {
 		base = filepath.Dir(inputFile)
@@ -389,12 +396,12 @@ func resolveMapSource(source, sourceRoot, mapURL, inputFile string) string {
 }
 
 func normalizeSourcePath(value string) string {
-	return pathutil.NormalizeSourcePath(value)
+	return utils.NormalizeSourcePath(value)
 }
 
 func sourcePathKey(value string) string {
 	normalized := normalizeSourcePath(value)
-	if pathutil.IsWindowsDrivePath(normalized) {
+	if utils.IsWindowsDrivePath(normalized) {
 		return strings.ToLower(filepath.Clean(normalized))
 	}
 	return normalized
