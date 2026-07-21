@@ -97,7 +97,7 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 	for _, plugin := range p.plugins {
 		active := plugin
 		if plugin.Prepare != nil {
-			active.Visitor = plugin.Prepare(res)
+			active.Visitor = mergeVisitors(plugin.Visitor, plugin.Prepare(res))
 		}
 		visitors = append(visitors, active)
 	}
@@ -246,6 +246,9 @@ func walk(node ast.Node, res *result.Result, plugins []Plugin) error {
 		if err := dispatchEnter(plugin, node, res); err != nil {
 			return err
 		}
+		if detached(node) {
+			return nil
+		}
 	}
 
 	container, ok := node.(ast.Container)
@@ -262,9 +265,96 @@ func walk(node ast.Node, res *result.Result, plugins []Plugin) error {
 		if err := dispatchExit(plugin, node, res); err != nil {
 			return err
 		}
+		if detached(node) {
+			return nil
+		}
 	}
 
 	return nil
+}
+
+func detached(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.Root, *ast.Document:
+		return false
+	default:
+		return node.Parent() == nil
+	}
+}
+
+func mergeVisitors(base, prepared Visitor) Visitor {
+	merged := base
+	if prepared.Once != nil {
+		merged.Once = prepared.Once
+	}
+	if prepared.OnceExit != nil {
+		merged.OnceExit = prepared.OnceExit
+	}
+	if prepared.Document != nil {
+		merged.Document = prepared.Document
+	}
+	if prepared.DocumentExit != nil {
+		merged.DocumentExit = prepared.DocumentExit
+	}
+	if prepared.Root != nil {
+		merged.Root = prepared.Root
+	}
+	if prepared.RootExit != nil {
+		merged.RootExit = prepared.RootExit
+	}
+	if prepared.Rule != nil {
+		merged.Rule = prepared.Rule
+	}
+	if prepared.RuleExit != nil {
+		merged.RuleExit = prepared.RuleExit
+	}
+	if prepared.AtRule != nil {
+		merged.AtRule = prepared.AtRule
+	}
+	if prepared.AtRuleNamed != nil {
+		merged.AtRuleNamed = prepared.AtRuleNamed
+	}
+	if prepared.AtRuleExit != nil {
+		merged.AtRuleExit = prepared.AtRuleExit
+	}
+	if prepared.AtRuleExitNamed != nil {
+		merged.AtRuleExitNamed = prepared.AtRuleExitNamed
+	}
+	if prepared.Declaration != nil {
+		merged.Declaration = prepared.Declaration
+	}
+	if prepared.DeclarationProp != nil {
+		merged.DeclarationProp = prepared.DeclarationProp
+	}
+	if prepared.DeclarationExit != nil {
+		merged.DeclarationExit = prepared.DeclarationExit
+	}
+	if prepared.DeclarationExitProp != nil {
+		merged.DeclarationExitProp = prepared.DeclarationExitProp
+	}
+	if prepared.Comment != nil {
+		merged.Comment = prepared.Comment
+	}
+	if prepared.CommentExit != nil {
+		merged.CommentExit = prepared.CommentExit
+	}
+	return merged
+}
+
+func namedVisitor[T any](visitors map[string]T, name string) T {
+	if visitor, ok := visitors["*"]; ok {
+		return visitor
+	}
+	if visitor, ok := visitors[strings.ToLower(name)]; ok {
+		return visitor
+	}
+	for key, visitor := range visitors {
+		if strings.EqualFold(key, name) {
+			return visitor
+		}
+	}
+	var zero T
+	return zero
 }
 
 func dispatchEnter(plugin Plugin, node ast.Node, res *result.Result) error {
@@ -288,7 +378,7 @@ func dispatchEnter(plugin Plugin, node ast.Node, res *result.Result) error {
 			}
 		}
 		if plugin.AtRuleNamed != nil {
-			if handler := plugin.AtRuleNamed[current.Name]; handler != nil {
+			if handler := namedVisitor(plugin.AtRuleNamed, current.Name); handler != nil {
 				return handler(current, res)
 			}
 		}
@@ -299,7 +389,7 @@ func dispatchEnter(plugin Plugin, node ast.Node, res *result.Result) error {
 			}
 		}
 		if plugin.DeclarationProp != nil {
-			if handler := plugin.DeclarationProp[current.Prop]; handler != nil {
+			if handler := namedVisitor(plugin.DeclarationProp, current.Prop); handler != nil {
 				return handler(current, res)
 			}
 		}
@@ -332,7 +422,7 @@ func dispatchExit(plugin Plugin, node ast.Node, res *result.Result) error {
 			}
 		}
 		if plugin.AtRuleExitNamed != nil {
-			if handler := plugin.AtRuleExitNamed[current.Name]; handler != nil {
+			if handler := namedVisitor(plugin.AtRuleExitNamed, current.Name); handler != nil {
 				return handler(current, res)
 			}
 		}
@@ -343,7 +433,7 @@ func dispatchExit(plugin Plugin, node ast.Node, res *result.Result) error {
 			}
 		}
 		if plugin.DeclarationExitProp != nil {
-			if handler := plugin.DeclarationExitProp[current.Prop]; handler != nil {
+			if handler := namedVisitor(plugin.DeclarationExitProp, current.Prop); handler != nil {
 				return handler(current, res)
 			}
 		}

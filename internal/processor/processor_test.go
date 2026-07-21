@@ -413,3 +413,95 @@ func TestProcessorDispatchesNamedVisitors(t *testing.T) {
 		t.Fatalf("unexpected named visitor events\nwant: %#v\ngot:  %#v", want, events)
 	}
 }
+
+func TestProcessorPrepareAugmentsBaseVisitors(t *testing.T) {
+	var events []string
+
+	p := New(Plugin{
+		Name: "prepared",
+		Visitor: Visitor{
+			Root: func(*ast.Root, *result.Result) error {
+				events = append(events, "base")
+				return nil
+			},
+			Declaration: func(*ast.Declaration, *result.Result) error {
+				events = append(events, "decl")
+				return nil
+			},
+		},
+		Prepare: func(*result.Result) Visitor {
+			return Visitor{
+				RootExit: func(*ast.Root, *result.Result) error {
+					events = append(events, "prepared-exit")
+					return nil
+				},
+			}
+		},
+	})
+
+	if _, err := p.Process("a { color: red; }"); err != nil {
+		t.Fatalf("process failed: %v", err)
+	}
+	if !reflect.DeepEqual(events, []string{"base", "decl", "prepared-exit"}) {
+		t.Fatalf("prepare should augment base visitors, got %#v", events)
+	}
+}
+
+func TestProcessorNamedVisitorsAreCaseInsensitiveAndSupportWildcard(t *testing.T) {
+	var events []string
+	p := New(Plugin{
+		Name: "named",
+		Visitor: Visitor{
+			AtRuleNamed: map[string]func(*ast.AtRule, *result.Result) error{
+				"MEDIA": func(rule *ast.AtRule, _ *result.Result) error {
+					events = append(events, "media")
+					return nil
+				},
+			},
+			DeclarationProp: map[string]func(*ast.Declaration, *result.Result) error{
+				"*": func(decl *ast.Declaration, _ *result.Result) error {
+					events = append(events, decl.Prop)
+					return nil
+				},
+			},
+		},
+	})
+
+	if _, err := p.Process("@media screen { a { color: red; } }"); err != nil {
+		t.Fatalf("process failed: %v", err)
+	}
+	if !reflect.DeepEqual(events, []string{"media", "color"}) {
+		t.Fatalf("unexpected named visitor events: %#v", events)
+	}
+}
+
+func TestProcessorStopsVisitingDetachedNodes(t *testing.T) {
+	var events []string
+	p := New(Plugin{
+		Name: "remove",
+		Visitor: Visitor{
+			Declaration: func(decl *ast.Declaration, _ *result.Result) error {
+				events = append(events, "enter:"+decl.Prop)
+				if decl.Prop == "color" {
+					decl.Remove()
+				}
+				return nil
+			},
+			DeclarationExit: func(decl *ast.Declaration, _ *result.Result) error {
+				events = append(events, "exit:"+decl.Prop)
+				return nil
+			},
+		},
+	})
+
+	res, err := p.Process("a { color: red; width: 1px; }")
+	if err != nil {
+		t.Fatalf("process failed: %v", err)
+	}
+	if !reflect.DeepEqual(events, []string{"enter:color", "enter:width", "exit:width"}) {
+		t.Fatalf("detached node should stop its event stack, got %#v", events)
+	}
+	if strings.Contains(res.CSS, "color") {
+		t.Fatalf("removed declaration remained in output: %q", res.CSS)
+	}
+}
