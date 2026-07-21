@@ -36,6 +36,8 @@ var sourceMapAnnotationPattern = regexp.MustCompile(`(?s)/\*\s*# sourceMappingUR
 type Visitor struct {
 	Once                func(*ast.Root, *result.Result) error
 	OnceExit            func(*ast.Root, *result.Result) error
+	Document            func(*ast.Document, *result.Result) error
+	DocumentExit        func(*ast.Document, *result.Result) error
 	Root                func(*ast.Root, *result.Result) error
 	RootExit            func(*ast.Root, *result.Result) error
 	Rule                func(*ast.Rule, *result.Result) error
@@ -267,6 +269,10 @@ func walk(node ast.Node, res *result.Result, plugins []Plugin) error {
 
 func dispatchEnter(plugin Plugin, node ast.Node, res *result.Result) error {
 	switch current := node.(type) {
+	case *ast.Document:
+		if plugin.Document != nil {
+			return plugin.Document(current, res)
+		}
 	case *ast.Root:
 		if plugin.Root != nil {
 			return plugin.Root(current, res)
@@ -307,6 +313,10 @@ func dispatchEnter(plugin Plugin, node ast.Node, res *result.Result) error {
 
 func dispatchExit(plugin Plugin, node ast.Node, res *result.Result) error {
 	switch current := node.(type) {
+	case *ast.Document:
+		if plugin.DocumentExit != nil {
+			return plugin.DocumentExit(current, res)
+		}
 	case *ast.Root:
 		if plugin.RootExit != nil {
 			return plugin.RootExit(current, res)

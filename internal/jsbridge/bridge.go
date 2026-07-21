@@ -215,6 +215,12 @@ func ToJSON(resp Response) ([]byte, error) {
 
 func ToDTO(node ast.Node) (*NodeDTO, error) {
 	switch current := node.(type) {
+	case *ast.Document:
+		nodes, err := childrenToDTO(current.Children())
+		if err != nil {
+			return nil, err
+		}
+		return &NodeDTO{Type: string(ast.NodeDocument), Nodes: nodes, Source: sourceToDTO(current.Source(), false, false, false), Raws: ast.CloneRaws(current.RawFormattingReadOnly())}, nil
 	case *ast.Root:
 		nodes, err := childrenToDTO(current.Children())
 		if err != nil {
@@ -274,6 +280,16 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 
 func FromDTO(dto *NodeDTO) (ast.Node, error) {
 	switch dto.Type {
+	case string(ast.NodeDocument):
+		node := ast.NewDocument()
+		children, err := childrenFromDTO(dto.Nodes)
+		if err != nil {
+			return nil, err
+		}
+		node.Append(children...)
+		node.SetSource(sourceFromDTO(dto.Source))
+		node.Raws = ast.CloneRaws(dto.Raws)
+		return node, nil
 	case string(ast.NodeRoot):
 		node := ast.NewRoot()
 		children, err := childrenFromDTO(dto.Nodes)

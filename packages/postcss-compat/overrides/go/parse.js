@@ -3,6 +3,7 @@
 
 const AtRule = require('./at-rule');
 const Comment = require('./comment');
+const Container = require('./container');
 const Declaration = require('./declaration');
 const Input = require('./input');
 const Root = require('./root');
@@ -71,3 +72,6 @@ module.exports = function parse(css, opts = {}) {
   const input = new Input(text, opts);
   return nodeOf(result.root, input);
 };
+
+module.exports.default = module.exports;
+Container.registerParse(module.exports);

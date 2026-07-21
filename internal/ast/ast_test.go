@@ -55,6 +55,26 @@ func TestContainerOperationsAndNodeHelpers(t *testing.T) {
 	}
 }
 
+func TestDocumentContainsRootsAndClones(t *testing.T) {
+	document := NewDocument()
+	first := NewRoot()
+	first.Append(NewRule("a"))
+	second := NewRoot()
+	second.Append(NewRule("b"))
+	document.Append(first, second)
+
+	if document.Type() != NodeDocument || len(document.Children()) != 2 {
+		t.Fatalf("unexpected document: type=%q children=%d", document.Type(), len(document.Children()))
+	}
+	if first.Parent() != document || second.Parent() != document {
+		t.Fatal("expected roots to point at their document parent")
+	}
+	clone := document.Clone().(*Document)
+	if len(clone.Children()) != 2 || clone.Children()[0] == first {
+		t.Fatal("expected document clone to deep copy roots")
+	}
+}
+
 func TestRuleSelectorsRootStringVariableAndClone(t *testing.T) {
 	root := NewRoot()
 	rule := NewRule(" .a, .b ")
