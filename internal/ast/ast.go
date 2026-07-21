@@ -796,12 +796,20 @@ func cloneAfter(node Node, overrides ...Node) (Node, error) {
 }
 
 func appendNodes(parent Container, dst *[]Node, nodes ...Node) {
-	prepared := prepareNodes(parent, nodes...)
+	var sample Node
+	if len(*dst) > 0 {
+		sample = (*dst)[len(*dst)-1]
+	}
+	prepared := prepareNodes(parent, sample, nodes...)
 	*dst = append(*dst, prepared...)
 }
 
 func prependNodes(parent Container, dst *[]Node, nodes ...Node) {
-	prepared := prepareNodes(parent, nodes...)
+	var sample Node
+	if len(*dst) > 0 {
+		sample = (*dst)[0]
+	}
+	prepared := prepareNodes(parent, sample, nodes...)
 	*dst = append(prepared, *dst...)
 	if tracked, ok := parent.(iteratorContainer); ok {
 		tracked.shiftIteratorsOnInsert(0, len(prepared), true)
@@ -813,7 +821,7 @@ func insertBefore(parent Container, dst *[]Node, target Node, nodes ...Node) err
 	if index < 0 {
 		return fmt.Errorf("target node not found")
 	}
-	prepared := prepareNodes(parent, nodes...)
+	prepared := prepareNodes(parent, target, nodes...)
 	*dst = append((*dst)[:index], append(prepared, (*dst)[index:]...)...)
 	if tracked, ok := parent.(iteratorContainer); ok {
 		tracked.shiftIteratorsOnInsert(index, len(prepared), true)
@@ -826,7 +834,7 @@ func insertAfter(parent Container, dst *[]Node, target Node, nodes ...Node) erro
 	if index < 0 {
 		return fmt.Errorf("target node not found")
 	}
-	prepared := prepareNodes(parent, nodes...)
+	prepared := prepareNodes(parent, target, nodes...)
 	pos := index + 1
 	*dst = append((*dst)[:pos], append(prepared, (*dst)[pos:]...)...)
 	if tracked, ok := parent.(iteratorContainer); ok {
@@ -858,7 +866,7 @@ func removeChildFrom(parent Container, dst *[]Node, target Node) error {
 	return nil
 }
 
-func prepareNodes(parent Container, nodes ...Node) []Node {
+func prepareNodes(parent Container, sample Node, nodes ...Node) []Node {
 	prepared := make([]Node, 0, len(nodes))
 	for _, node := range nodes {
 		if node == nil {
@@ -867,10 +875,41 @@ func prepareNodes(parent Container, nodes ...Node) []Node {
 		if currentParent := node.Parent(); currentParent != nil {
 			_ = currentParent.RemoveChild(node)
 		}
+		if sample != nil {
+			if _, ok := node.RawFormattingReadOnly()["before"]; !ok {
+				if before, ok := mutationBefore(sample); ok {
+					node.RawFormatting()["before"] = strings.Map(func(r rune) rune {
+						if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+							return r
+						}
+						return -1
+					}, before)
+				}
+			}
+		}
 		node.SetParent(parent)
 		prepared = append(prepared, node)
 	}
 	return prepared
+}
+
+// mutationBefore mirrors PostCSS's normalize(node, sample) formatting rule.
+// A multiline block carries its closing newline as the best separator for a
+// newly appended sibling; otherwise the sample's own leading whitespace is
+// used. Empty raw whitespace is meaningful and is preserved.
+func mutationBefore(sample Node) (string, bool) {
+	if before, ok := sample.RawFormattingReadOnly()["before"].(string); ok {
+		if before != "" {
+			return before, true
+		}
+		if container, ok := sample.(Container); ok {
+			if after, ok := container.RawFormattingReadOnly()["after"].(string); ok && strings.Contains(after, "\n") {
+				return after, true
+			}
+		}
+		return before, true
+	}
+	return "", false
 }
 
 func firstNode(nodes []Node) Node {

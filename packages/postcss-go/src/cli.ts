@@ -14,7 +14,7 @@ import slash from 'slash';
 import { glob } from 'tinyglobby';
 
 import { parseCliArgs } from './args.js';
-import createDependencyGraph, { type GraphMessage } from './DependencyGraph.js';
+import createDependencyGraph, { type GraphMessage } from './createDependencyGraph.js';
 import {
   assertGoCompatibility,
   createGoEngine,

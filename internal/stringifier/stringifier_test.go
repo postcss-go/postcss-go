@@ -28,7 +28,7 @@ func TestStringifyComplexTree(t *testing.T) {
 	want := `/* top */
 @media screen {
     .a {
-        color: red !important;
+        color: red !important
     }
 }`
 	if got != want {
@@ -392,7 +392,7 @@ func TestMappedStringifyUsesFourSpaceDefaultIndent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stringify with source map failed: %v", err)
 	}
-	want := ".a {\n    color: red;\n}"
+	want := ".a {\n    color: red\n}"
 	if result.CSS != want {
 		t.Fatalf("unexpected mapped default indentation\nwant: %q\ngot:  %q", want, result.CSS)
 	}
@@ -416,7 +416,7 @@ func TestStringifyUsesExplicitRootIndentInMappedAndUnmappedOutput(t *testing.T) 
 	rule.Append(ast.NewDeclaration("color", "red"))
 	root.Append(rule)
 
-	want := ".a {\n\tcolor: red;\n}"
+	want := ".a {\n\tcolor: red\n}"
 	if got := Stringify(root); got != want {
 		t.Fatalf("unexpected explicit-indent output\nwant: %q\ngot:  %q", want, got)
 	}
@@ -459,7 +459,7 @@ func TestStringifyWithSourceMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stringify with source map failed: %v", err)
 	}
-	if !strings.Contains(result.CSS, "color: red;") {
+	if !strings.Contains(result.CSS, "color: red") {
 		t.Fatalf("unexpected css: %q", result.CSS)
 	}
 

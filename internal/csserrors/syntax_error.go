@@ -14,7 +14,20 @@ type SyntaxError struct {
 	Column    int
 	EndLine   int
 	EndColumn int
+	Input     *InputInfo
 	message   string
+}
+
+// InputInfo describes the location in the input that produced the error.
+// It is kept as one value so callers do not have to infer whether the
+// position belongs to the mapped source or the current input.
+type InputInfo struct {
+	Source           string
+	File             string
+	Line             int
+	Column           int
+	Offset           int
+	SourceMapPresent bool
 }
 
 func New(reason string, line, column int, source, file, plugin string) *SyntaxError {

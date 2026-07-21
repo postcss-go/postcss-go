@@ -4,6 +4,7 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 let bridgeDir = null;
 let bridgeBinary = null;
@@ -38,6 +39,12 @@ function cleanup() {
   if (bridgeDir) fs.rmSync(bridgeDir, { recursive: true, force: true });
   bridgeDir = null;
   bridgeBinary = null;
+}
+
+function inputURL(file) {
+  if (!file) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(file)) return file;
+  return pathToFileURL(file).href;
 }
 
 function callSync(method, params) {
@@ -85,6 +92,19 @@ function createBridgeError(payload) {
     'plugin',
   ]) {
     if (payload[key] !== undefined) error[key] = payload[key];
+  }
+  if (payload.input) {
+    error.input = {
+      column: payload.input.column,
+      endColumn: undefined,
+      endLine: undefined,
+      endOffset: undefined,
+      file: payload.input.file,
+      line: payload.input.line,
+      offset: payload.input.offset,
+      source: payload.input.source,
+      url: inputURL(payload.input.file),
+    };
   }
   return error;
 }

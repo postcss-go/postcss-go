@@ -12,6 +12,7 @@ import (
 
 	"postcss-go/internal/ast"
 	"postcss-go/internal/parser"
+	"postcss-go/internal/pathutil"
 	"postcss-go/internal/result"
 	"postcss-go/internal/source"
 	"postcss-go/internal/stringifier"
@@ -209,35 +210,25 @@ func sourceMapFile(annotation, from string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if parsed.Scheme != "" && !isWindowsDrivePath(annotation) {
+	if parsed.Scheme != "" && !pathutil.IsWindowsDrivePath(annotation) {
 		if parsed.Scheme != "file" {
 			return "", false
 		}
 		return filepath.FromSlash(parsed.Path), true
 	}
-	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" && !isWindowsDrivePath(from) {
+	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" && !pathutil.IsWindowsDrivePath(from) {
 		if fromURL.Scheme != "file" {
 			return "", false
 		}
 		from = filepath.FromSlash(fromURL.Path)
 	}
-	if isAbsoluteSourcePath(annotation) {
+	if pathutil.IsAbsoluteSourcePath(annotation) {
 		return annotation, true
 	}
 	if from == "" {
 		return annotation, true
 	}
 	return filepath.Join(filepath.Dir(from), filepath.FromSlash(annotation)), true
-}
-
-func isWindowsDrivePath(value string) bool {
-	return len(value) >= 3 &&
-		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
-		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
-}
-
-func isAbsoluteSourcePath(value string) bool {
-	return filepath.IsAbs(value) || strings.HasPrefix(value, "/") || isWindowsDrivePath(value)
 }
 
 func walk(node ast.Node, res *result.Result, plugins []Plugin) error {

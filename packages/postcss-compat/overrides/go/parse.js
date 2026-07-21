@@ -66,10 +66,40 @@ function nodeOf(dto, input) {
   return node;
 }
 
+const trailingSourceMapAnnotation = /(?:\r?\n|\s)*\/\*#\s*sourceMappingURL=[\s\S]*?\*\/\s*$/;
+
+function cssWithoutSourceMapAnnotation(css) {
+  return css.replace(trailingSourceMapAnnotation, '');
+}
+
+function usablePreviousMap(input) {
+  const text = input.map?.text || '';
+  if (!text) return '';
+  try {
+    const map = JSON.parse(text);
+    if (typeof map.mappings === 'string') return map.mappings ? text : '';
+    return Array.isArray(map.sections) && map.sections.length ? text : '';
+  } catch {
+    return '';
+  }
+}
+
 module.exports = function parse(css, opts = {}) {
   const text = css == null ? css : css.toString();
-  const result = call('parse', { css: text, options: { from: opts.from || '' } });
   const input = new Input(text, opts);
+  // Custom syntax runs through the normal stringify path, where the
+  // annotation is removed by PostCSS's map generator. Keep it in the normal
+  // path so the standard annotation and source-map tests retain their raw
+  // formatting semantics.
+  const parseText = opts.syntax || opts.parser ? cssWithoutSourceMapAnnotation(text) : text;
+  const result = call('parse', {
+    css: parseText,
+    options: {
+      from: input.file || opts.from || '',
+      previousMap: usablePreviousMap(input),
+      previousMapUrl: input.map?.mapFile || input.file || '',
+    },
+  });
   return nodeOf(result.root, input);
 };
 

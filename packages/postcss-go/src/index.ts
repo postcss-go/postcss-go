@@ -7,7 +7,7 @@ export {
   type DependencyMessage,
   type DirDependencyMessage,
   type GraphMessage,
-} from './DependencyGraph.js';
+} from './createDependencyGraph.js';
 export {
   assertGoCompatibility,
   createGoEngine,

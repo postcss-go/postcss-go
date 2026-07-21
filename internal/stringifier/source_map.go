@@ -10,11 +10,16 @@ import (
 	"unicode/utf16"
 
 	"postcss-go/internal/ast"
+	"postcss-go/internal/pathutil"
 	"postcss-go/internal/source"
 )
 
 const vlqChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 const noSource = "<no source>"
+
+// isURI is retained as a package-local compatibility helper for tests and
+// callers in this package; the path classification lives in pathutil.
+func isURI(value string) bool { return pathutil.IsURI(value) }
 
 type sourceMapWriter struct {
 	builder            strings.Builder
@@ -115,23 +120,30 @@ func (w *sourceMapWriter) AddEndMapping(node ast.Node) {
 }
 
 func (w *sourceMapWriter) addLocationMapping(location *source.Location, position source.Position, genLine, genColumn int) {
-	sourceName := location.Input.From()
+	input := location.Input
+	if _, mappedInput, line, column, ok := input.Origin(position.Line, position.Column); ok {
+		input = mappedInput
+		position.Line = line
+		position.Column = column
+	}
+
+	sourceName := input.From()
 	if w.sourceOverride != "" {
 		sourceName = w.sourceOverride
 	}
 	if sourceName == "" || sourceName == "<css input>" {
 		sourceName = noSource
 	}
-	if sourceName != noSource && !isURI(sourceName) {
+	if sourceName != noSource && !pathutil.IsURI(sourceName) {
 		if strings.HasPrefix(sourceName, "/") {
 			sourceName = path.Clean(sourceName)
 		} else {
 			sourceName = filepath.Clean(sourceName)
 		}
 	}
-	content := location.Input.CSS
+	content := input.CSS
 	var sourceContent *string
-	if location.Input.SourceContentAvailable() {
+	if input.SourceContentAvailable() {
 		sourceContent = &content
 	}
 	w.addMappingAtGenerated(sourceName, sourceContent, max(position.Line-1, 0), max(position.Column-1, 0), genLine, genColumn)
@@ -202,23 +214,23 @@ func (w *sourceMapWriter) sourceMap(opts SourceMapOptions) (string, error) {
 }
 
 func sourcePath(source, mapDir string, absolute bool) string {
-	if source == noSource || isURI(source) {
+	if source == noSource || pathutil.IsURI(source) {
 		return source
 	}
 	if absolute {
 		return fileURL(source)
 	}
-	if isURI(mapDir) {
+	if pathutil.IsURI(mapDir) {
 		return (&url.URL{Path: filepath.ToSlash(source)}).EscapedPath()
 	}
 	return relativePath(mapDir, source)
 }
 
 func outputPath(outputFile, mapDir string) string {
-	if isURI(outputFile) {
+	if pathutil.IsURI(outputFile) {
 		return outputFile
 	}
-	if isURI(mapDir) {
+	if pathutil.IsURI(mapDir) {
 		return (&url.URL{Path: filepath.ToSlash(outputFile)}).EscapedPath()
 	}
 	return relativePath(mapDir, outputFile)
@@ -228,7 +240,7 @@ func pathDirectory(value string) string {
 	if strings.HasPrefix(value, "/") {
 		return path.Dir(value)
 	}
-	if u, err := url.Parse(value); err == nil && u.Scheme != "" && !isWindowsDrivePath(value) {
+	if u, err := url.Parse(value); err == nil && u.Scheme != "" && !pathutil.IsWindowsDrivePath(value) {
 		u.Path = filepath.ToSlash(filepath.Dir(filepath.FromSlash(u.Path)))
 		return u.String()
 	}
@@ -247,23 +259,6 @@ func fileURL(path string) string {
 		slashPath = "/" + slashPath
 	}
 	return (&url.URL{Scheme: "file", Path: slashPath}).String()
-}
-
-func isURI(value string) bool {
-	if filepath.IsAbs(value) {
-		return false
-	}
-	if isWindowsDrivePath(value) {
-		return false
-	}
-	u, err := url.Parse(value)
-	return err == nil && u.Scheme != ""
-}
-
-func isWindowsDrivePath(value string) bool {
-	return len(value) >= 3 &&
-		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
-		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
 }
 
 func relativePath(baseDir, target string) string {
