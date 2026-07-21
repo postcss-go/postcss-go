@@ -12,11 +12,13 @@ function dtoOf(node, includeInput = false) {
       start: { ...node.source.start },
       end: { ...node.source.end },
       file: input?.file || '',
-      ...(includeInput ? {
-        css: input?.css || '',
-        map: input?.map?.text || '',
-        mapUrl: input?.map?.mapFile || input?.file || '',
-      } : {}),
+      ...(includeInput
+        ? {
+            css: input?.css || '',
+            map: input?.map?.text || '',
+            mapUrl: input?.map?.mapFile || input?.file || '',
+          }
+        : {}),
     };
   }
   switch (node.type) {
