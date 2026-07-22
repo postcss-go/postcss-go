@@ -88,7 +88,20 @@ export interface RootNode {
   raws?: Raws;
 }
 
-export type AstNode = RootNode | RuleNode | AtRuleNode | DeclarationNode | CommentNode;
+export interface DocumentNode {
+  type: 'document';
+  nodes: RootNode[];
+  source?: SourceLocation;
+  raws?: Raws;
+}
+
+export type AstNode =
+  | RootNode
+  | DocumentNode
+  | RuleNode
+  | AtRuleNode
+  | DeclarationNode
+  | CommentNode;
 
 export type PreviousSourceMap =
   | false

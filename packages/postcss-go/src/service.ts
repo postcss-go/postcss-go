@@ -1,12 +1,22 @@
 import type { AstNode, ParseResult, ProcessOptions, ProcessResult } from './types.js';
 
+/**
+ * Transport-independent contract implemented by the Node and browser/WASM
+ * services. Implementations own their resources and must be closed by callers
+ * when they are no longer needed.
+ */
 export interface PostcssGoService {
+  /** Parse CSS into a serializable Go AST. */
   parse(css: string, options?: ProcessOptions): Promise<ParseResult>;
+  /** Process CSS through the Go parser/stringifier pipeline. */
   process(css: string, options?: ProcessOptions): Promise<ProcessResult>;
+  /** Stringify a serializable AST with the Go stringifier. */
   stringify(ast: AstNode): Promise<string>;
+  /** Release the underlying worker or bridge process. */
   close(): Promise<void>;
 }
 
+/** Error used when a service operation is unavailable in the current runtime. */
 export class UnsupportedServiceError extends Error {
   constructor(message: string) {
     super(message);

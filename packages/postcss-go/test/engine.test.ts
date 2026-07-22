@@ -252,6 +252,30 @@ test('assertGoCompatibility identifies custom config parser options', () => {
   ).toBe(false);
 });
 
+test('assertGoCompatibility allows explicit PostCSS default syntax delegates', () => {
+  expect(
+    assertGoCompatibility(
+      {},
+      {
+        options: {
+          parser: postcss.parse,
+          syntax: { parse: postcss.parse, stringify: postcss.stringify },
+          stringifier: postcss.stringify,
+        },
+      },
+    ),
+  ).toBe(true);
+});
+
+test('assertGoCompatibility still rejects a genuinely custom syntax', () => {
+  expect(
+    assertGoCompatibility(
+      {},
+      { options: { syntax: { parse: postcss.parse, stringify: () => '' } } },
+    ),
+  ).toBe(false);
+});
+
 test('isExternalSourceMap detects external map configurations', () => {
   expect(isExternalSourceMap(false)).toBe(false);
   expect(isExternalSourceMap({ inline: true })).toBe(false);

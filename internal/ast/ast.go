@@ -45,7 +45,10 @@ type Node interface {
 	SetSource(*source.Location)
 	RawFormatting() Raws
 	RawFormattingReadOnly() Raws
-	Root() *Root
+	// Root returns the nearest stylesheet root. For a node inside a Document it
+	// stops at that Document's child Root; for a detached node it returns the
+	// node itself, matching PostCSS's Node#root() semantics.
+	Root() Node
 	Next() Node
 	Prev() Node
 	Remove() Node
@@ -222,7 +225,7 @@ func (d *Document) Last() Node                      { return lastNode(d.Nodes) }
 func (d *Document) RemoveAll()                      { removeAllChildren(d, &d.Nodes) }
 func (d *Document) Some(fn func(Node) bool) bool    { return someNodes(d.Nodes, fn) }
 func (d *Document) Every(fn func(Node) bool) bool   { return everyNodes(d.Nodes, fn) }
-func (d *Document) Root() *Root                     { return nil }
+func (d *Document) Root() Node                      { return d }
 func (d *Document) Next() Node                      { return nextNode(d) }
 func (d *Document) Prev() Node                      { return prevNode(d) }
 func (d *Document) Remove() Node                    { return removeNode(d) }
@@ -277,7 +280,7 @@ func (r *Root) Every(fn func(Node) bool) bool {
 	return everyNodes(r.Nodes, fn)
 }
 
-func (r *Root) Root() *Root                     { return r }
+func (r *Root) Root() Node                      { return r }
 func (r *Root) Next() Node                      { return nextNode(r) }
 func (r *Root) Prev() Node                      { return prevNode(r) }
 func (r *Root) Remove() Node                    { return removeNode(r) }
@@ -347,7 +350,7 @@ func (r *Rule) Every(fn func(Node) bool) bool {
 	return everyNodes(r.Nodes, fn)
 }
 
-func (r *Rule) Root() *Root                     { return rootOf(r) }
+func (r *Rule) Root() Node                      { return rootOf(r) }
 func (r *Rule) Next() Node                      { return nextNode(r) }
 func (r *Rule) Prev() Node                      { return prevNode(r) }
 func (r *Rule) Remove() Node                    { return removeNode(r) }
@@ -421,7 +424,7 @@ func (r *AtRule) Every(fn func(Node) bool) bool {
 	return everyNodes(r.Nodes, fn)
 }
 
-func (r *AtRule) Root() *Root                     { return rootOf(r) }
+func (r *AtRule) Root() Node                      { return rootOf(r) }
 func (r *AtRule) Next() Node                      { return nextNode(r) }
 func (r *AtRule) Prev() Node                      { return prevNode(r) }
 func (r *AtRule) Remove() Node                    { return removeNode(r) }
@@ -455,7 +458,7 @@ func NewDeclaration(prop, value string) *Declaration {
 }
 
 func (d *Declaration) Type() NodeType                  { return NodeDecl }
-func (d *Declaration) Root() *Root                     { return rootOf(d) }
+func (d *Declaration) Root() Node                      { return rootOf(d) }
 func (d *Declaration) Next() Node                      { return nextNode(d) }
 func (d *Declaration) Prev() Node                      { return prevNode(d) }
 func (d *Declaration) Remove() Node                    { return removeNode(d) }
@@ -485,7 +488,7 @@ type Comment struct {
 func NewComment(text string) *Comment { return &Comment{Text: text} }
 
 func (c *Comment) Type() NodeType                  { return NodeComment }
-func (c *Comment) Root() *Root                     { return rootOf(c) }
+func (c *Comment) Root() Node                      { return rootOf(c) }
 func (c *Comment) Next() Node                      { return nextNode(c) }
 func (c *Comment) Prev() Node                      { return prevNode(c) }
 func (c *Comment) Remove() Node                    { return removeNode(c) }
@@ -661,7 +664,7 @@ func stringifyNode(node Node) string {
 	}
 }
 
-func rootOf(node Node) *Root {
+func rootOf(node Node) Node {
 	current := node
 	for current != nil && current.Parent() != nil {
 		if _, isDocumentChild := current.Parent().(*Document); isDocumentChild {
@@ -669,8 +672,7 @@ func rootOf(node Node) *Root {
 		}
 		current = current.Parent()
 	}
-	root, _ := current.(*Root)
-	return root
+	return current
 }
 
 func nextNode(node Node) Node {

@@ -206,7 +206,20 @@ function hasPlugins(plugins: CliConfig['plugins']): boolean {
 }
 
 function hasCustomSyntax(options?: ProcessFileOptions): boolean {
-  return Boolean(options?.parser || options?.syntax || options?.stringifier);
+  if (!options) return false;
+
+  // Explicit references to PostCSS's defaults do not change AST or output
+  // semantics and should not force the whole pipeline onto the fallback.
+  if (options.parser && options.parser !== postcss.parse) return true;
+  if (options.stringifier && options.stringifier !== postcss.stringify) return true;
+  if (options.syntax && !isDefaultSyntax(options.syntax)) return true;
+  return false;
+}
+
+function isDefaultSyntax(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const syntax = value as { parse?: unknown; stringify?: unknown };
+  return syntax.parse === postcss.parse && syntax.stringify === postcss.stringify;
 }
 
 function applySourceMapAnnotation(

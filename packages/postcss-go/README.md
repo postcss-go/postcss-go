@@ -32,7 +32,11 @@ The CLI always uses the Go engine. JS plugin chains run through the PostCSS runt
 
 Supports `postcss.config.js` / `.cjs` / `.mjs` via [postcss-load-config](https://github.com/postcss/postcss-load-config), including function configs with `ctx.file` and `ctx.env`.
 
-Source maps for standard CSS are generated from Go AST locations. Custom parsers, syntaxes, and stringifiers use the native PostCSS fallback.
+Source maps for standard CSS are generated from Go AST locations. A parser,
+syntax, or stringifier that merely delegates to PostCSS's defaults still uses
+the Go pipeline; implementations that change parsing or output semantics use
+the native PostCSS fallback because arbitrary JavaScript modules cannot run in
+the Go bridge.
 
 ## Development
 
