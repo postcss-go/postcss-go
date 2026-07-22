@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 func TestResultWarnWarningsAndString(t *testing.T) {
@@ -33,7 +33,7 @@ func TestResultWarnWarningsAndString(t *testing.T) {
 }
 
 func TestResultWarnAttachesNodePosition(t *testing.T) {
-	input, err := source.NewInput("a { color: red; }", source.Options{From: "fixtures/a.css"})
+	input, err := sourcemap.NewInput("a { color: red; }", sourcemap.Options{From: "fixtures/a.css"})
 	if err != nil {
 		t.Fatalf("input failed: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestResultWarnAttachesNodePosition(t *testing.T) {
 }
 
 func TestResultWarnSupportsWordRange(t *testing.T) {
-	input, err := source.NewInput("a { color: red; }", source.Options{})
+	input, err := sourcemap.NewInput("a { color: red; }", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("input failed: %v", err)
 	}

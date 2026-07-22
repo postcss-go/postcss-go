@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 func TestParseFixtureSimpleRule(t *testing.T) {
-	root, err := Parse(".a { color: black; }", source.Options{From: "a.css"})
+	root, err := Parse(".a { color: black; }", sourcemap.Options{From: "a.css"})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestParseFixtureSimpleRule(t *testing.T) {
 }
 
 func TestParseFixtureAtRuleBlock(t *testing.T) {
-	root, err := Parse("@media screen { .a { color: red; } }", source.Options{})
+	root, err := Parse("@media screen { .a { color: red; } }", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}

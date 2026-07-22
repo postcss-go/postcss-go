@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 type SourceMapOptions struct {
@@ -174,10 +174,10 @@ func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
 	writer.writeByte('}')
 }
 
-func declarationValuePosition(node *ast.Declaration) source.Position {
+func declarationValuePosition(node *ast.Declaration) sourcemap.Position {
 	location := node.Source()
 	if location == nil || location.Input == nil {
-		return source.Position{}
+		return sourcemap.Position{}
 	}
 	input := location.Input
 	start := max(location.Start.Offset, 0)

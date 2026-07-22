@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 type Warning struct {
@@ -28,8 +28,8 @@ type WarnOptions struct {
 	Index    int
 	EndIndex int
 	Word     string
-	Start    *source.Position
-	End      *source.Position
+	Start    *sourcemap.Position
+	End      *sourcemap.Position
 }
 
 type Result struct {
@@ -140,30 +140,30 @@ func applyWarningPosition(warning *Warning, opts WarnOptions) {
 	warning.EndColumn = end.Column
 }
 
-func astLocateWord(node ast.Node, word string) (source.Position, source.Position, bool) {
+func astLocateWord(node ast.Node, word string) (sourcemap.Position, sourcemap.Position, bool) {
 	location := node.Source()
 	if location == nil || location.Input == nil || word == "" {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 
 	nodeRange := node.Range()
 	if nodeRange.End < nodeRange.Start || nodeRange.Start < 0 || nodeRange.End > len(location.Input.CSS) {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	text := location.Input.CSS[nodeRange.Start:nodeRange.End]
 	index := strings.Index(text, word)
 	if index < 0 {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	start := location.Input.FromOffset(nodeRange.Start + index)
 	end := location.Input.FromOffset(nodeRange.Start + index + len(word))
 	return start, end, true
 }
 
-func astLocateIndex(node ast.Node, index, endIndex int) (source.Position, source.Position, bool) {
+func astLocateIndex(node ast.Node, index, endIndex int) (sourcemap.Position, sourcemap.Position, bool) {
 	location := node.Source()
 	if location == nil || location.Input == nil {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	nodeRange := node.Range()
 	if index < 0 {

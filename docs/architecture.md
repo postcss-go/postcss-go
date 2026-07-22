@@ -97,7 +97,7 @@ The Go core is split by responsibility so the hot path stays independent from in
 | `internal/parser`      | Statement classification, AST construction, source ranges, and parse errors | Plugin execution or CSS output       |
 | `internal/ast`         | Node types, parent/child invariants, mutation, cloning, and traversal       | Parsing or serialization             |
 | `internal/processor`   | Plugin registration, visitor lifecycle, results, and process orchestration  | Node representation or tokenization  |
-| `internal/source`      | Input files, offsets, locations, source content, and previous source maps   | AST traversal or plugin behavior     |
+| `internal/sourcemap`   | Input files, offsets, locations, source content, and previous source maps   | AST traversal or plugin behavior     |
 | `internal/stringifier` | CSS output, raw formatting, and generated source maps                       | AST mutation or plugin dispatch      |
 | `internal/result`      | CSS, root, maps, warnings, and active-plugin context                        | Error parsing or transport           |
 | `internal/csserrors`   | Structured syntax errors with source context                                | Recovery or process orchestration    |

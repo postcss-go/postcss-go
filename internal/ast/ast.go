@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	csserrors "postcss-go/internal/csserrors"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 type NodeType string
@@ -41,11 +41,14 @@ type Node interface {
 	SetParent(Container)
 	Range() SourceRange
 	SetRange(SourceRange)
-	Source() *source.Location
-	SetSource(*source.Location)
+	Source() *sourcemap.Location
+	SetSource(*sourcemap.Location)
 	RawFormatting() Raws
 	RawFormattingReadOnly() Raws
-	Root() *Root
+	// Root returns the nearest stylesheet root. For a node inside a Document it
+	// stops at that Document's child Root; for a detached node it returns the
+	// node itself, matching PostCSS's Node#root() semantics.
+	Root() Node
 	Next() Node
 	Prev() Node
 	Remove() Node
@@ -77,7 +80,7 @@ type Container interface {
 type BaseNode struct {
 	parent       Container
 	rng          SourceRange
-	src          *source.Location
+	src          *sourcemap.Location
 	Raws         Raws
 	lastIterator int
 	iterators    map[int]int
@@ -88,8 +91,8 @@ type ErrorOptions struct {
 	Index    int
 	EndIndex int
 	Word     string
-	Start    *source.Position
-	End      *source.Position
+	Start    *sourcemap.Position
+	End      *sourcemap.Position
 }
 
 func (n *BaseNode) Parent() Container {
@@ -108,11 +111,11 @@ func (n *BaseNode) SetRange(rng SourceRange) {
 	n.rng = rng
 }
 
-func (n *BaseNode) Source() *source.Location {
+func (n *BaseNode) Source() *sourcemap.Location {
 	return n.src
 }
 
-func (n *BaseNode) SetSource(src *source.Location) {
+func (n *BaseNode) SetSource(src *sourcemap.Location) {
 	n.src = src
 }
 
@@ -222,7 +225,7 @@ func (d *Document) Last() Node                      { return lastNode(d.Nodes) }
 func (d *Document) RemoveAll()                      { removeAllChildren(d, &d.Nodes) }
 func (d *Document) Some(fn func(Node) bool) bool    { return someNodes(d.Nodes, fn) }
 func (d *Document) Every(fn func(Node) bool) bool   { return everyNodes(d.Nodes, fn) }
-func (d *Document) Root() *Root                     { return nil }
+func (d *Document) Root() Node                      { return d }
 func (d *Document) Next() Node                      { return nextNode(d) }
 func (d *Document) Prev() Node                      { return prevNode(d) }
 func (d *Document) Remove() Node                    { return removeNode(d) }
@@ -277,7 +280,7 @@ func (r *Root) Every(fn func(Node) bool) bool {
 	return everyNodes(r.Nodes, fn)
 }
 
-func (r *Root) Root() *Root                     { return r }
+func (r *Root) Root() Node                      { return r }
 func (r *Root) Next() Node                      { return nextNode(r) }
 func (r *Root) Prev() Node                      { return prevNode(r) }
 func (r *Root) Remove() Node                    { return removeNode(r) }
@@ -347,7 +350,7 @@ func (r *Rule) Every(fn func(Node) bool) bool {
 	return everyNodes(r.Nodes, fn)
 }
 
-func (r *Rule) Root() *Root                     { return rootOf(r) }
+func (r *Rule) Root() Node                      { return rootOf(r) }
 func (r *Rule) Next() Node                      { return nextNode(r) }
 func (r *Rule) Prev() Node                      { return prevNode(r) }
 func (r *Rule) Remove() Node                    { return removeNode(r) }
@@ -421,7 +424,7 @@ func (r *AtRule) Every(fn func(Node) bool) bool {
 	return everyNodes(r.Nodes, fn)
 }
 
-func (r *AtRule) Root() *Root                     { return rootOf(r) }
+func (r *AtRule) Root() Node                      { return rootOf(r) }
 func (r *AtRule) Next() Node                      { return nextNode(r) }
 func (r *AtRule) Prev() Node                      { return prevNode(r) }
 func (r *AtRule) Remove() Node                    { return removeNode(r) }
@@ -455,7 +458,7 @@ func NewDeclaration(prop, value string) *Declaration {
 }
 
 func (d *Declaration) Type() NodeType                  { return NodeDecl }
-func (d *Declaration) Root() *Root                     { return rootOf(d) }
+func (d *Declaration) Root() Node                      { return rootOf(d) }
 func (d *Declaration) Next() Node                      { return nextNode(d) }
 func (d *Declaration) Prev() Node                      { return prevNode(d) }
 func (d *Declaration) Remove() Node                    { return removeNode(d) }
@@ -485,7 +488,7 @@ type Comment struct {
 func NewComment(text string) *Comment { return &Comment{Text: text} }
 
 func (c *Comment) Type() NodeType                  { return NodeComment }
-func (c *Comment) Root() *Root                     { return rootOf(c) }
+func (c *Comment) Root() Node                      { return rootOf(c) }
 func (c *Comment) Next() Node                      { return nextNode(c) }
 func (c *Comment) Prev() Node                      { return prevNode(c) }
 func (c *Comment) Remove() Node                    { return removeNode(c) }
@@ -661,7 +664,7 @@ func stringifyNode(node Node) string {
 	}
 }
 
-func rootOf(node Node) *Root {
+func rootOf(node Node) Node {
 	current := node
 	for current != nil && current.Parent() != nil {
 		if _, isDocumentChild := current.Parent().(*Document); isDocumentChild {
@@ -669,8 +672,7 @@ func rootOf(node Node) *Root {
 		}
 		current = current.Parent()
 	}
-	root, _ := current.(*Root)
-	return root
+	return current
 }
 
 func nextNode(node Node) Node {
@@ -954,29 +956,29 @@ func everyNodes(nodes []Node, fn func(Node) bool) bool {
 	return true
 }
 
-func locateWord(node Node, word string) (source.Position, source.Position, bool) {
+func locateWord(node Node, word string) (sourcemap.Position, sourcemap.Position, bool) {
 	location := node.Source()
 	if location == nil || location.Input == nil || word == "" {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	nodeRange := node.Range()
 	if nodeRange.End < nodeRange.Start || nodeRange.Start < 0 || nodeRange.End > len(location.Input.CSS) {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	text := location.Input.CSS[nodeRange.Start:nodeRange.End]
 	index := strings.Index(text, word)
 	if index < 0 {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	start := location.Input.FromOffset(nodeRange.Start + index)
 	end := location.Input.FromOffset(nodeRange.Start + index + len(word))
 	return start, end, true
 }
 
-func locateIndex(node Node, index, endIndex int) (source.Position, source.Position, bool) {
+func locateIndex(node Node, index, endIndex int) (sourcemap.Position, sourcemap.Position, bool) {
 	location := node.Source()
 	if location == nil || location.Input == nil {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	nodeRange := node.Range()
 	if index < 0 {

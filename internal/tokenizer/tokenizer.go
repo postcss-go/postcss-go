@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 type Options struct {
@@ -37,7 +37,7 @@ type Tokenizer struct {
 	buffer       []Token
 	lastBadParen int
 	ignore       bool
-	source       *source.Input
+	source       *sourcemap.Input
 }
 
 func New(input string, opts Options) *Tokenizer {
@@ -45,7 +45,7 @@ func New(input string, opts Options) *Tokenizer {
 		input:        input,
 		ignore:       opts.IgnoreErrors,
 		lastBadParen: -1,
-		source:       &source.Input{CSS: input, File: opts.File},
+		source:       &sourcemap.Input{CSS: input, File: opts.File},
 	}
 }
 

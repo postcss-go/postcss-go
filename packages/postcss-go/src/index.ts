@@ -1,4 +1,17 @@
-export { parse, process } from './api.js';
+export { parse, parseAst, process, stringifyAst, toResult, type DocumentResult } from './api.js';
+export {
+  AtRule,
+  Comment,
+  Container,
+  Declaration,
+  Document,
+  Node,
+  Root,
+  Rule,
+  fromAst,
+  fromJSON,
+  toAst,
+} from './ast.js';
 export { parseCliArgs, type CliArgv } from './args.js';
 export { runCLI } from './cli.js';
 export {
@@ -36,6 +49,7 @@ export type {
   AtRuleNode,
   CommentNode,
   DeclarationNode,
+  DocumentNode,
   ParseResult,
   ProcessOptions,
   ProcessResult,

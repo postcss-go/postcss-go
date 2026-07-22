@@ -6,7 +6,7 @@ import (
 	"postcss-go/internal/parser"
 	"postcss-go/internal/processor"
 	"postcss-go/internal/result"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 	"postcss-go/internal/stringifier"
 )
 
@@ -16,8 +16,8 @@ type NodeType = ast.NodeType
 type SourceRange = ast.SourceRange
 type Raws = ast.Raws
 type RawValue = ast.RawValue
-type Position = source.Position
-type SourceLocation = source.Location
+type Position = sourcemap.Position
+type SourceLocation = sourcemap.Location
 
 const (
 	NodeRoot     = ast.NodeRoot
@@ -36,7 +36,7 @@ type Declaration = ast.Declaration
 type Comment = ast.Comment
 
 type ProcessOptions = processor.Options
-type ParseOptions = source.Options
+type ParseOptions = sourcemap.Options
 type ErrorOptions = ast.ErrorOptions
 type Processor = processor.Processor
 type Plugin = processor.Plugin
@@ -44,14 +44,14 @@ type Visitor = processor.Visitor
 type Result = result.Result
 type Warning = result.Warning
 type CssSyntaxError = csserrors.SyntaxError
-type Input = source.Input
+type Input = sourcemap.Input
 
 func New(plugins ...Plugin) *Processor {
 	return processor.New(plugins...)
 }
 
 func Parse(css string) (*Root, error) {
-	return parser.Parse(css, source.Options{})
+	return parser.Parse(css, sourcemap.Options{})
 }
 
 func ParseWithOptions(css string, opts ParseOptions) (*Root, error) {
@@ -87,7 +87,7 @@ func NewComment(text string) *Comment {
 }
 
 func NewInput(css string, opts ParseOptions) (*Input, error) {
-	return source.NewInput(css, opts)
+	return sourcemap.NewInput(css, opts)
 }
 
 func Walk(node Node, fn func(Node) error) error {

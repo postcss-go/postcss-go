@@ -6,6 +6,7 @@ const Comment = require('./comment');
 const Container = require('./container');
 const CssSyntaxError = require('./css-syntax-error');
 const Declaration = require('./declaration');
+const Document = require('./document');
 const Input = require('./input');
 const Root = require('./root');
 const Rule = require('./rule');
@@ -34,6 +35,9 @@ function nodeOf(dto, input) {
   switch (dto.type) {
     case 'root':
       node = new Root(defaults);
+      break;
+    case 'document':
+      node = new Document(defaults);
       break;
     case 'rule':
       node = new Rule({ ...defaults, selector: dto.selector || '' });

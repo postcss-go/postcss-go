@@ -73,6 +73,9 @@ func TestDocumentContainsRootsAndClones(t *testing.T) {
 	if len(clone.Children()) != 2 || clone.Children()[0] == first {
 		t.Fatal("expected document clone to deep copy roots")
 	}
+	if document.Root() != document || first.Root() != first || first.First().Root() != first {
+		t.Fatal("expected Root() to stop at Document children")
+	}
 }
 
 func TestRuleSelectorsRootStringVariableAndClone(t *testing.T) {

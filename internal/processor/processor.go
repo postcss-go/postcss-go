@@ -13,7 +13,7 @@ import (
 	"postcss-go/internal/ast"
 	"postcss-go/internal/parser"
 	"postcss-go/internal/result"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 	"postcss-go/internal/stringifier"
 	"postcss-go/internal/utils"
 )
@@ -83,7 +83,7 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 	if err != nil {
 		return nil, err
 	}
-	root, err := parser.Parse(css, source.Options{
+	root, err := parser.Parse(css, sourcemap.Options{
 		From:         opts.From,
 		SourceMap:    []byte(previousMap),
 		SourceMapURL: previousMapURL,

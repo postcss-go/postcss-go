@@ -2,18 +2,70 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type PostcssGoService } from './service.js';
+import type { PostcssGoService } from './service.js';
 import type {
   AstNode,
   ParseResult,
   ProcessOptions,
   ProcessResult,
   SourceMapOptions,
+  Warning,
 } from './types.js';
 
+type BridgeMethod = 'parse' | 'process' | 'stringify';
+
+type BridgeParams = { css: string; options?: ProcessOptions } | { ast: AstNode };
+
+type BridgeCommand = { command: string; args: string[]; cwd: string };
+
+type PendingRequest = {
+  resolve: (value: BridgeSuccessResponse) => void;
+  reject: (error: Error) => void;
+};
+
+type BridgeResult = {
+  css?: string;
+  map?: string;
+  root?: ParseResult['root'];
+  messages?: Warning[];
+};
+
+type JsonRpcRequest<TParams> = {
+  jsonrpc: '2.0';
+  id: number;
+  method: BridgeMethod;
+  params: TParams;
+};
+
+type JsonRpcError = {
+  code: number;
+  message: string;
+  name?: string;
+  reason?: string;
+  line?: number;
+  column?: number;
+  endLine?: number;
+  endColumn?: number;
+  source?: string;
+  file?: string;
+  plugin?: string;
+};
+
+type JsonRpcResponse<TResult> = {
+  jsonrpc: '2.0';
+  id: number | null;
+  result?: TResult;
+  error?: JsonRpcError;
+};
+
+type BridgeSuccessResponse = { jsonrpc: '2.0'; id: number; result?: BridgeResult };
+
 export interface NodePostcssGoServiceOptions {
+  /** Explicit bridge executable. Defaults to the bundled bridge or `go run`. */
   binPath?: string;
+  /** Arguments passed to `binPath`. */
   binArgs?: string[];
+  /** Working directory used when starting the bridge. */
   workingDirectory?: string;
 }
 
@@ -26,82 +78,69 @@ export class NodePostcssGoService implements PostcssGoService {
   readonly binArgs?: string[];
   readonly workingDirectory?: string;
 
-  private child: ChildProcessWithoutNullStreams | null = null;
-  private nextId = 1;
-  private readonly pending = new Map<
-    number,
-    {
-      resolve: (value: BridgeSuccessResponse) => void;
-      reject: (error: Error) => void;
-    }
-  >();
-  private stdoutBuffer = '';
-  private stderrBuffer = '';
+  private readonly bridge: BridgeTransport;
   private closed = false;
-  private closePromise: Promise<void> | null = null;
 
   constructor(options: NodePostcssGoServiceOptions = {}) {
     this.binPath = options.binPath;
     this.binArgs = options.binArgs;
     this.workingDirectory = options.workingDirectory;
+    this.bridge = new BridgeTransport(() => resolveBridgeCommand(this));
   }
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
-    const response = await this.invoke('parse', { css, options });
-    if (!response.result?.root) {
-      throw new Error('postcss-go bridge parse response is missing root');
-    }
-    return { root: response.result.root };
+    const response = await this.request('parse', { css, options });
+    const root = response.result?.root;
+    if (!root) throw new Error('postcss-go bridge parse response is missing root');
+    return { root };
   }
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
-    const { bridgeOptions, mapOptions } = normalizeProcessOptions(options);
-    const response = await this.invoke('process', { css, options: bridgeOptions });
-    if (!response.result?.root || typeof response.result.css !== 'string') {
-      throw new Error('postcss-go bridge process response is incomplete');
-    }
-    const result: ProcessResult = {
-      css: response.result.css,
-      map: response.result.map,
-      root: response.result.root,
-      messages: response.result.messages ?? [],
-    };
-    return applySourceMapOutput(result, options, mapOptions);
+    const normalized = normalizeProcessOptions(options);
+    const response = await this.request('process', {
+      css,
+      options: normalized.bridgeOptions,
+    });
+    const result = readProcessResult(response.result);
+    return applySourceMapOutput(result, options, normalized.mapOptions);
   }
 
   async stringify(ast: AstNode): Promise<string> {
-    const response = await this.invoke('stringify', { ast });
-    if (typeof response.result?.css !== 'string') {
+    const response = await this.request('stringify', { ast });
+    const css = response.result?.css;
+    if (typeof css !== 'string') {
       throw new Error('postcss-go bridge stringify response is missing css');
     }
-    return response.result.css;
+    return css;
   }
 
   async close(): Promise<void> {
+    if (this.closed) return;
     this.closed = true;
-    if (this.closePromise) {
-      return this.closePromise;
-    }
-    if (!this.child) {
-      return;
-    }
-
-    const child = this.child;
-    this.closePromise = new Promise<void>((resolvePromise) => {
-      child.once('close', () => resolvePromise());
-      child.kill();
-    }).finally(() => {
-      this.rejectAllPending(new Error('postcss-go bridge closed'));
-      this.child = null;
-      this.closePromise = null;
-      this.stdoutBuffer = '';
-      this.stderrBuffer = '';
-    });
-
-    return this.closePromise;
+    await this.bridge.close();
   }
 
-  private async invoke(method: BridgeMethod, params: BridgeParams): Promise<BridgeSuccessResponse> {
+  private async request(
+    method: BridgeMethod,
+    params: BridgeParams,
+  ): Promise<BridgeSuccessResponse> {
+    if (this.closed) throw new Error('postcss-go bridge service is closed');
+    return this.bridge.request(method, params);
+  }
+}
+
+class BridgeTransport {
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private nextId = 1;
+  private readonly pending = new Map<number, PendingRequest>();
+  private stdoutBuffer = '';
+  private stderrBuffer = '';
+  private closePromise: Promise<void> | null = null;
+  private closed = false;
+
+  constructor(private readonly commandFactory: () => BridgeCommand) {}
+
+  request(method: BridgeMethod, params: BridgeParams): Promise<BridgeSuccessResponse> {
     const child = this.ensureChild();
     const id = this.nextId++;
     const request: JsonRpcRequest<BridgeParams> = {
@@ -111,90 +150,92 @@ export class NodePostcssGoService implements PostcssGoService {
       params,
     };
 
-    const responsePromise = new Promise<BridgeSuccessResponse>((resolvePromise, rejectPromise) => {
-      this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise });
+    const response = new Promise<BridgeSuccessResponse>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
     });
 
     try {
       child.stdin.write(`${JSON.stringify(request)}\n`, 'utf8');
     } catch (error) {
       this.pending.delete(id);
-      throw new Error(`postcss-go bridge write failed: ${String(error)}`, { cause: error });
+      throw bridgeError('write', error);
     }
-    return responsePromise;
+    return response;
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    if (this.closePromise) return this.closePromise;
+    if (!this.child) {
+      this.rejectPending(new Error('postcss-go bridge closed'));
+      return;
+    }
+
+    const child = this.child;
+    this.closePromise = new Promise<void>((resolveClose) => {
+      child.once('close', () => resolveClose());
+      child.kill();
+    }).finally(() => {
+      this.rejectPending(new Error('postcss-go bridge closed'));
+      this.resetBuffers();
+      this.child = null;
+      this.closePromise = null;
+    });
+    return this.closePromise;
   }
 
   private ensureChild(): ChildProcessWithoutNullStreams {
-    if (this.closed) {
-      throw new Error('postcss-go bridge service is closed');
-    }
-    if (this.child) {
-      return this.child;
-    }
+    if (this.closed) throw new Error('postcss-go bridge is closed');
+    if (this.child) return this.child;
 
-    const { command, args, cwd } = this.resolveCommand();
-    const env = { ...process.env };
-    if (command === 'go') {
-      env.GOFLAGS = process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod';
-    }
-    const child = spawn(command, args, {
-      cwd,
-      stdio: 'pipe',
+    const command = this.commandFactory();
+    const env =
+      command.command === 'go'
+        ? { ...process.env, GOFLAGS: withModFlag(process.env.GOFLAGS) }
+        : process.env;
+    const child = spawn(command.command, command.args, {
+      cwd: command.cwd,
       env,
+      stdio: 'pipe',
     });
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
-
-    child.stdout.on('data', (chunk: string) => this.handleStdout(chunk));
-    child.stdin.on('error', (error) => {
-      this.rejectAllPending(
-        new Error(`postcss-go bridge write failed: ${error.message}`, { cause: error }),
-      );
-    });
+    child.stdout.on('data', (chunk: string) => this.consumeStdout(chunk));
     child.stderr.on('data', (chunk: string) => {
       this.stderrBuffer += chunk;
     });
-    child.on('error', (error) => {
-      this.rejectAllPending(
-        new Error(`postcss-go bridge process error: ${error.message}`, { cause: error }),
-      );
-    });
+    child.stdin.on('error', (error) => this.fail(bridgeError('write', error)));
+    child.on('error', (error) => this.fail(bridgeError('process', error)));
     child.on('close', (code, signal) => {
       const detail =
         this.stderrBuffer.trim() || `exit code ${code ?? 'unknown'} signal ${signal ?? 'none'}`;
-      this.rejectAllPending(new Error(`postcss-go bridge exited: ${detail}`));
+      this.fail(new Error(`postcss-go bridge exited: ${detail}`));
       this.child = null;
-      this.stdoutBuffer = '';
-      this.stderrBuffer = '';
+      this.resetBuffers();
     });
 
     this.child = child;
     return child;
   }
 
-  private handleStdout(chunk: string): void {
+  private consumeStdout(chunk: string): void {
     this.stdoutBuffer += chunk;
     while (true) {
-      const newlineIndex = this.stdoutBuffer.indexOf('\n');
-      if (newlineIndex < 0) {
-        return;
-      }
-      const line = this.stdoutBuffer.slice(0, newlineIndex).trim();
-      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
-      if (!line) {
-        continue;
-      }
-      this.handleMessage(line);
+      const newline = this.stdoutBuffer.indexOf('\n');
+      if (newline < 0) return;
+      const line = this.stdoutBuffer.slice(0, newline).trim();
+      this.stdoutBuffer = this.stdoutBuffer.slice(newline + 1);
+      if (line) this.handleResponse(line);
     }
   }
 
-  private handleMessage(line: string): void {
+  private handleResponse(line: string): void {
     let message: JsonRpcResponse<BridgeResult>;
     try {
       message = JSON.parse(line) as JsonRpcResponse<BridgeResult>;
     } catch (error) {
-      this.rejectAllPending(
+      this.fail(
         new Error(`postcss-go bridge returned invalid JSON-RPC: ${String(error)}\n${line}`, {
           cause: error,
         }),
@@ -202,52 +243,27 @@ export class NodePostcssGoService implements PostcssGoService {
       return;
     }
 
-    if (typeof message.id !== 'number') {
-      return;
-    }
-
-    const pending = this.pending.get(message.id);
-    if (!pending) {
-      return;
-    }
+    if (typeof message.id !== 'number') return;
+    const request = this.pending.get(message.id);
+    if (!request) return;
     this.pending.delete(message.id);
 
-    if (message.error) {
-      pending.reject(createBridgeError(message.error));
-      return;
-    }
-
-    pending.resolve({
-      jsonrpc: '2.0',
-      id: message.id,
-      result: message.result,
-    });
+    if (message.error) request.reject(createBridgeError(message.error));
+    else request.resolve({ jsonrpc: '2.0', id: message.id, result: message.result });
   }
 
-  private rejectAllPending(error: Error): void {
-    for (const pending of this.pending.values()) {
-      pending.reject(error);
-    }
+  private fail(error: Error): void {
+    this.rejectPending(error);
+  }
+
+  private rejectPending(error: Error): void {
+    for (const request of this.pending.values()) request.reject(error);
     this.pending.clear();
   }
 
-  private resolveCommand(): { command: string; args: string[]; cwd: string } {
-    const binPath = this.binPath ?? process.env.POSTCSS_GO_NODE_API_BIN;
-
-    if (binPath) {
-      return {
-        command: binPath,
-        args: this.binArgs ?? [],
-        cwd: this.workingDirectory ?? process.cwd(),
-      };
-    }
-
-    const cwd = this.workingDirectory ?? resolve(defaultRepositoryRoot());
-    return {
-      command: 'go',
-      args: ['run', '-mod=mod', './cmd/api'],
-      cwd,
-    };
+  private resetBuffers(): void {
+    this.stdoutBuffer = '';
+    this.stderrBuffer = '';
   }
 }
 
@@ -255,9 +271,7 @@ function normalizeProcessOptions(options: ProcessOptions): {
   bridgeOptions: ProcessOptions;
   mapOptions?: SourceMapOptions;
 } {
-  if (!options.map || typeof options.map === 'boolean') {
-    return { bridgeOptions: options };
-  }
+  if (!options.map || typeof options.map === 'boolean') return { bridgeOptions: options };
 
   const mapOptions = options.map;
   const bridgeOptions: ProcessOptions = {
@@ -270,13 +284,9 @@ function normalizeProcessOptions(options: ProcessOptions): {
   };
   const previous =
     typeof mapOptions.prev === 'function' ? mapOptions.prev(options.from) : mapOptions.prev;
-  if (previous === false) {
-    bridgeOptions.previousMapDisabled = true;
-  } else if (typeof previous === 'string') {
-    bridgeOptions.previousMap = previous;
-  } else if (previous) {
-    bridgeOptions.previousMap = JSON.stringify(previous);
-  }
+  if (previous === false) bridgeOptions.previousMapDisabled = true;
+  else if (typeof previous === 'string') bridgeOptions.previousMap = previous;
+  else if (previous) bridgeOptions.previousMap = JSON.stringify(previous);
   if (bridgeOptions.previousMap && !bridgeOptions.previousMapUrl) {
     bridgeOptions.previousMapUrl = `${options.from ?? options.to ?? 'to.css'}.map`;
   }
@@ -293,9 +303,10 @@ function applySourceMapOutput(
 ): ProcessResult {
   if (!result.map || !mapOptions) return result;
   if (mapOptions.inline === true) {
+    const encoded = Buffer.from(result.map).toString('base64');
     return {
       ...result,
-      css: `${result.css}\n/*# sourceMappingURL=data:application/json;base64,${Buffer.from(result.map).toString('base64')} */`,
+      css: `${result.css}\n/*# sourceMappingURL=data:application/json;base64,${encoded} */`,
       map: undefined,
     };
   }
@@ -310,43 +321,45 @@ function applySourceMapOutput(
   return { ...result, css: `${result.css}\n/*# sourceMappingURL=${annotation} */` };
 }
 
-type BridgeMethod = 'parse' | 'process' | 'stringify';
+function readProcessResult(result?: BridgeResult): ProcessResult {
+  if (!result?.root || typeof result.css !== 'string') {
+    throw new Error('postcss-go bridge process response is incomplete');
+  }
+  return {
+    css: result.css,
+    map: result.map,
+    root: result.root,
+    messages: result.messages ?? [],
+  };
+}
 
-type BridgeParams =
-  | {
-      css: string;
-      options?: ProcessOptions;
-    }
-  | {
-      ast: AstNode;
+function resolveBridgeCommand(options: NodePostcssGoService): BridgeCommand {
+  const binPath = options.binPath ?? process.env.POSTCSS_GO_NODE_API_BIN;
+  if (binPath) {
+    return {
+      command: binPath,
+      args: options.binArgs ?? [],
+      cwd: options.workingDirectory ?? process.cwd(),
     };
+  }
 
-interface BridgeResult {
-  css?: string;
-  map?: string;
-  root?: ParseResult['root'];
-  messages?: ProcessResult['messages'];
+  return {
+    command: 'go',
+    args: ['run', '-mod=mod', './cmd/api'],
+    cwd: options.workingDirectory ?? resolve(defaultRepositoryRoot()),
+  };
 }
 
-interface JsonRpcRequest<TParams> {
-  jsonrpc: '2.0';
-  id: number;
-  method: string;
-  params: TParams;
+function defaultRepositoryRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), '../../../');
 }
 
-interface JsonRpcError {
-  code: number;
-  message: string;
-  name?: string;
-  reason?: string;
-  line?: number;
-  column?: number;
-  endLine?: number;
-  endColumn?: number;
-  source?: string;
-  file?: string;
-  plugin?: string;
+function withModFlag(flags?: string): string {
+  return flags?.includes('-mod=mod') ? flags : `${flags ? `${flags} ` : ''}-mod=mod`;
+}
+
+function bridgeError(operation: string, error: unknown): Error {
+  return new Error(`postcss-go bridge ${operation} failed: ${String(error)}`, { cause: error });
 }
 
 function createBridgeError(payload: JsonRpcError): Error {
@@ -364,31 +377,12 @@ function createBridgeError(payload: JsonRpcError): Error {
     'file',
     'plugin',
   ] as const) {
-    if (payload[key] !== undefined) {
+    if (payload[key] !== undefined)
       Object.defineProperty(error, key, {
         configurable: true,
         enumerable: true,
         value: payload[key],
       });
-    }
   }
   return error;
-}
-
-interface JsonRpcResponse<TResult> {
-  jsonrpc: '2.0';
-  id: number | null;
-  result?: TResult;
-  error?: JsonRpcError;
-}
-
-interface BridgeSuccessResponse {
-  jsonrpc: '2.0';
-  id: number;
-  result?: BridgeResult;
-}
-
-function defaultRepositoryRoot(): string {
-  const filePath = fileURLToPath(import.meta.url);
-  return resolve(dirname(filePath), '../../../');
 }
