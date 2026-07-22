@@ -27,6 +27,7 @@ go.work.sum
 # Node / pnpm workspace
 node_modules/
 dist/
+**/.astro/
 .tmp/
 coverage/
 **/coverage/

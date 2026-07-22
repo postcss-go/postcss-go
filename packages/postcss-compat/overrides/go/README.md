@@ -33,7 +33,4 @@ Stringifier internals and plugin processing retain their upstream contracts.
 ## Validation
 
 - Go engine: `go test ./...`
-- Upstream tokenizer suite with this override applied: `pnpm test:upstream:go`
-- Upstream parse suite through Go parse: `pnpm --filter @postcss-go/compat test:upstream:go:parse`
-- Upstream stringify suite through Go parse/stringify: `pnpm test:upstream:go:stringify`
-- Root shortcuts: `pnpm test:upstream:go:parse` and `pnpm test:upstream:go:stringify`
+- Full upstream compatibility suite with this override applied: `pnpm test:upstream:go`

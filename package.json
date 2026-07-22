@@ -46,8 +46,6 @@
     "prepare:upstream-compat": "node ./scripts/prepare-upstream-compat.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
-    "test:upstream:go:parse": "pnpm --filter @postcss-go/compat test:upstream:go:parse",
-    "test:upstream:go:stringify": "pnpm --filter @postcss-go/compat test:upstream:go:stringify",
     "check:all": "pnpm format:check && pnpm format:go:check && pnpm lint && pnpm lint:go && pnpm check:upstream && pnpm test && pnpm test:go && pnpm test:upstream && pnpm build",
     "bench": "node scripts/compare-benchmarks.mjs",
     "bench:go": "go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5",

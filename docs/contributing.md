@@ -33,8 +33,6 @@ The repository vendors the upstream PostCSS test suite. Check and run the compat
 pnpm check:upstream
 pnpm test:upstream
 pnpm test:upstream:go
-pnpm test:upstream:go:parse
-pnpm test:upstream:go:stringify
 ```
 
 Refresh the vendored snapshot only when needed:
