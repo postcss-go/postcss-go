@@ -9,8 +9,6 @@
     "prepare:go": "POSTCSS_COMPAT_MODE=go node ../../scripts/prepare-upstream-compat.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/run-upstream-tests.mjs",
     "test:upstream:go": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='\\.test\\.(ts|js)$' node ../../scripts/run-upstream-tests.mjs",
-    "test:upstream:go:parse": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='parse\\.test\\.ts$' node ../../scripts/run-upstream-tests.mjs",
-    "test:upstream:go:stringify": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='stringify\\.test\\.ts$' node ../../scripts/run-upstream-tests.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },

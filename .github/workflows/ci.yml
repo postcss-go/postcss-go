@@ -208,14 +208,8 @@ jobs:
       - name: Run full upstream PostCSS unit suite
         run: pnpm test:upstream
 
-      - name: Run Go compat tokenizer suite
+      - name: Run full Go compatibility suite
         run: pnpm test:upstream:go
-
-      - name: Run Go compat parse suite
-        run: pnpm test:upstream:go:parse
-
-      - name: Run Go compat stringify suite
-        run: pnpm test:upstream:go:stringify
 
   go-tests:
     name: Go Tests (${{ matrix.os }})

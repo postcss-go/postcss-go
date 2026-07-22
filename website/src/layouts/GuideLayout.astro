@@ -1,0 +1,132 @@
+---
+import '../styles/global.css';
+import SiteNav from '../components/SiteNav.astro';
+
+interface Props {
+  title: string;
+  section?: string;
+}
+
+const { title, section = '' } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const links = [
+  { label: 'Get started', href: `${base}guide/get-started/`, key: 'get-started' },
+  { label: 'CLI reference', href: `${base}guide/cli-reference/`, key: 'cli-reference' },
+  { label: 'JavaScript API', href: `${base}guide/javascript-api/`, key: 'javascript-api' },
+  { label: 'Go API', href: `${base}guide/go-api/`, key: 'go-api' },
+];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={title} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>{title} · postcss-go</title>
+    <script is:inline>
+      (() => {
+        const system = window.matchMedia('(prefers-color-scheme: light)').matches
+          ? 'light'
+          : 'dark';
+        try {
+          document.documentElement.dataset.theme =
+            localStorage.getItem('postcss-go-theme') || system;
+        } catch {
+          document.documentElement.dataset.theme = system;
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="fixed inset-0 -z-10 grid-bg"></div>
+    <div class="fixed inset-0 -z-10 noise"></div>
+    <SiteNav />
+    <main class="guide-shell mx-auto max-w-7xl px-6 pb-24 pt-8 lg:px-10 lg:pt-16">
+      <aside class="guide-sidebar" aria-label="Guide navigation">
+        <div class="guide-sidebar__eyebrow">Documentation</div>
+        <nav class="guide-sidebar__links">
+          {
+            links.map((link) => (
+              <a
+                class:list={['guide-sidebar__link', section === link.key && 'text-acid!']}
+                href={link.href}
+                aria-current={section === link.key ? 'page' : undefined}
+              >
+                {link.label}
+              </a>
+            ))
+          }
+        </nav>
+      </aside>
+      <article class="progress-content guide-content">
+        <slot />
+      </article>
+    </main>
+    <script>
+      async function copyText(value: string, button: HTMLButtonElement) {
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          const target =
+            button.closest('[data-code-sample], [data-install-panel]')?.querySelector('code') ||
+            button.parentElement?.querySelector('code');
+          if (target) {
+            range.selectNodeContents(target);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+            document.execCommand('copy');
+            selection?.removeAllRanges();
+          }
+        }
+        button.textContent = 'Copied';
+        window.setTimeout(() => {
+          button.textContent = 'Copy';
+        }, 1400);
+      }
+
+      document.querySelectorAll<HTMLElement>('[data-code-sample]').forEach((sample) => {
+        const button = sample.querySelector<HTMLButtonElement>('[data-copy-code]');
+        const code = sample.querySelector('code');
+        if (!button || !code) return;
+
+        button.addEventListener('click', async () => {
+          await copyText(code.textContent || '', button);
+        });
+      });
+
+      document.querySelectorAll<HTMLElement>('[data-install-tabs]').forEach((tabs) => {
+        const buttons = Array.from(tabs.querySelectorAll<HTMLButtonElement>('[data-install-tab]'));
+        const panels = Array.from(tabs.querySelectorAll<HTMLElement>('[data-install-panel]'));
+        buttons.forEach((button, index) => {
+          button.addEventListener('click', () => {
+            const selected = button.dataset.installTab;
+            if (!selected) return;
+            buttons.forEach((item) => {
+              const active = item === button;
+              item.setAttribute('aria-selected', String(active));
+              item.tabIndex = active ? 0 : -1;
+            });
+            panels.forEach((panel) => {
+              panel.hidden = panel.dataset.installPanel !== selected;
+            });
+          });
+          button.addEventListener('keydown', (event) => {
+            if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+            event.preventDefault();
+            const direction = event.key === 'ArrowRight' ? 1 : -1;
+            buttons[(index + direction + buttons.length) % buttons.length]?.focus();
+          });
+        });
+        tabs.querySelectorAll<HTMLButtonElement>('[data-install-copy]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const code = button.parentElement?.querySelector('code');
+            await copyText(code?.textContent || '', button);
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

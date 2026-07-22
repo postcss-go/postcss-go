@@ -1,0 +1,83 @@
+---
+const base = import.meta.env.BASE_URL;
+const pathname = Astro.url.pathname;
+const homeHref = base;
+const architectureHref = `${base}architecture/`;
+const progressHref = `${base}progress/`;
+const guideHref = `${base}guide/get-started/`;
+const isProgress = pathname === `${base}progress/` || pathname === `${base}progress`;
+const isGuide = pathname.startsWith(`${base}guide`);
+const isArchitecture = pathname === `${base}architecture/` || pathname === `${base}architecture`;
+const navLink = 'rounded-full border border-transparent px-3 py-2 transition hover:text-acid';
+const activeNavLink = `${navLink} text-acid`;
+---
+
+<nav class="site-nav mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
+  <a href={homeHref} class="flex items-center gap-3 font-mono text-sm font-bold tracking-tight">
+    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-acid text-ink">›_</span>
+    postcss-go
+    <span
+      class="hidden rounded border border-white/15 px-2 py-1 text-[10px] font-normal uppercase tracking-[.18em] text-white/50 sm:block"
+      >experimental</span
+    >
+  </a>
+  <div class="site-nav__links hidden items-center gap-2 text-xs font-medium text-white/55 md:flex">
+    <a
+      class:list={[isGuide ? activeNavLink : navLink, 'site-nav__link']}
+      href={guideHref}
+      aria-current={isGuide ? 'page' : undefined}>Guide</a
+    >
+    <a
+      class:list={[isProgress ? activeNavLink : navLink, 'site-nav__link']}
+      href={progressHref}
+      aria-current={isProgress ? 'page' : undefined}>Progress</a
+    >
+    <a
+      class:list={[isArchitecture ? activeNavLink : navLink, 'site-nav__link']}
+      href={architectureHref}
+      aria-current={isArchitecture ? 'page' : undefined}>Architecture</a
+    >
+    <button
+      id="theme-toggle"
+      class="theme-toggle site-nav__link rounded-full border border-transparent px-3 py-2 transition hover:text-acid"
+      type="button"
+      aria-label="Toggle color theme"
+      title="Toggle color theme">☼</button
+    >
+    <a
+      class="site-nav__github rounded-full border border-white/20 px-4 py-2 text-white transition hover:text-acid"
+      href="https://github.com/eryue0220/postcss-go"
+      target="_blank"
+      rel="noreferrer">GitHub ↗</a
+    >
+  </div>
+</nav>
+
+<script>
+  const themeToggle = document.querySelector<HTMLButtonElement>('#theme-toggle');
+  const root = document.documentElement;
+
+  function updateThemeButton() {
+    const isLight = root.dataset.theme === 'light';
+    if (themeToggle) {
+      themeToggle.textContent = isLight ? '☾' : '☼';
+      themeToggle.setAttribute(
+        'aria-label',
+        isLight ? 'Switch to dark mode' : 'Switch to light mode',
+      );
+      themeToggle.setAttribute('title', isLight ? 'Switch to dark mode' : 'Switch to light mode');
+    }
+  }
+
+  updateThemeButton();
+  themeToggle?.addEventListener('click', () => {
+    const nextTheme = root.dataset.theme === 'light' ? 'dark' : 'light';
+    root.dataset.theme = nextTheme;
+    try {
+      localStorage.setItem('postcss-go-theme', nextTheme);
+    } catch {
+      // Private browsing modes may disable localStorage; the current page still updates.
+    }
+    updateThemeButton();
+  });
+</script>

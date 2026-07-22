@@ -1,0 +1,47 @@
+---
+import '../styles/global.css';
+import SiteNav from '../components/SiteNav.astro';
+
+interface Props {
+  title: string;
+  variant?: 'default' | 'api';
+}
+
+const { title, variant = 'default' } = Astro.props;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={title} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>{title} · postcss-go</title>
+    <script is:inline>
+      (() => {
+        const system = window.matchMedia('(prefers-color-scheme: light)').matches
+          ? 'light'
+          : 'dark';
+        try {
+          document.documentElement.dataset.theme =
+            localStorage.getItem('postcss-go-theme') || system;
+        } catch {
+          document.documentElement.dataset.theme = system;
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="fixed inset-0 -z-10 grid-bg"></div>
+    <div class="fixed inset-0 -z-10 noise"></div>
+    <SiteNav />
+    <main
+      class:list={[
+        'progress-content mx-auto max-w-5xl px-6 pb-24 pt-12 lg:px-10 lg:pt-20',
+        variant === 'api' && 'api-content',
+      ]}
+    >
+      <slot />
+    </main>
+  </body>
+</html>

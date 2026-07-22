@@ -1,0 +1,152 @@
+---
+import '../styles/global.css';
+import SiteNav from '../components/SiteNav.astro';
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={title} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>{title} · postcss-go</title>
+    <script is:inline>
+      (() => {
+        const system = window.matchMedia('(prefers-color-scheme: light)').matches
+          ? 'light'
+          : 'dark';
+        try {
+          document.documentElement.dataset.theme =
+            localStorage.getItem('postcss-go-theme') || system;
+        } catch {
+          document.documentElement.dataset.theme = system;
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="fixed inset-0 -z-10 grid-bg"></div>
+    <div class="fixed inset-0 -z-10 noise"></div>
+    <SiteNav />
+    <main class="progress-content mx-auto max-w-5xl px-6 pb-24 pt-12 lg:px-10 lg:pt-20">
+      <section class="progress-breakdown" aria-labelledby="breakdown-title">
+        <div class="progress-breakdown__heading">
+          <div><p>MODULE BREAKDOWN</p><h1 id="breakdown-title">Where the work lives.</h1></div><span
+            >4 surfaces / 1 engine</span
+          >
+        </div>
+        <div class="progress-breakdown__grid">
+          <div class="progress-breakdown__card">
+            <div>
+              <span>01</span><strong>Syntax</strong><small>Tokenizer · parser · AST · errors</small>
+            </div><b class="is-complete">100%</b><i><em style="width: 100%"></em></i>
+          </div>
+          <div class="progress-breakdown__card">
+            <div>
+              <span>02</span><strong>Output</strong><small>Stringifier · raws · source maps</small>
+            </div><b class="is-complete">100%</b><i><em style="width: 100%"></em></i>
+          </div>
+          <div class="progress-breakdown__card">
+            <div>
+              <span>03</span><strong>Node API</strong><small>Mutation · traversal · cloning</small>
+            </div><b>88%</b><i><em style="width: 88%"></em></i>
+          </div>
+          <div class="progress-breakdown__card">
+            <div>
+              <span>04</span><strong>JS runtime</strong><small
+                >Plugins · lazy result · callbacks</small
+              >
+            </div><b class="is-frontier">42%</b><i><em style="width: 42%"></em></i>
+          </div>
+        </div>
+      </section>
+      <div class="progress-doc-meta">
+        <span>BASELINE / POSTCSS 8.5.15</span><span
+          >UPSTREAM / <a
+            href="https://github.com/eryue0220/postcss-go/commit/eae46db765d752cf8f40c4fa2b0b85030079c43d"
+            target="_blank"
+            rel="noreferrer"><code>eae46db7</code> ↗</a
+          ></span
+        >
+      </div>
+      <div class="progress-tabs" role="tablist" aria-label="Progress sections">
+        <button
+          class="progress-tabs__tab"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          data-progress-tab="current">Current status</button
+        >
+        <button
+          class="progress-tabs__tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          data-progress-tab="compatibility">PostCSS parity work</button
+        >
+        <button
+          class="progress-tabs__tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          data-progress-tab="completion">Completion criteria</button
+        >
+        <button
+          class="progress-tabs__tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          data-progress-tab="plan">Implementation plan</button
+        >
+      </div>
+      <slot />
+    </main>
+    <script>
+      const progressContent = document.querySelector<HTMLElement>('.progress-content');
+      const progressHeadings = progressContent
+        ? Array.from(progressContent.children).filter((element) => element.tagName === 'H2')
+        : [];
+
+      if (progressContent && progressHeadings.length) {
+        const groupFor = (id: string) => {
+          if (id === 'current-status') return 'current';
+          if (id === 'postcss-parity-work') return 'compatibility';
+          if (id === 'scope-and-completion-criteria') return 'completion';
+          return 'plan';
+        };
+        let activeGroup: string | undefined;
+
+        Array.from(progressContent.children).forEach((element) => {
+          if (element.tagName === 'H2') activeGroup = groupFor(element.id);
+          if (activeGroup) element.dataset.progressGroup = activeGroup;
+        });
+
+        progressContent
+          .querySelectorAll<HTMLButtonElement>('[data-progress-tab]')
+          .forEach((button) => {
+            const key = button.dataset.progressTab;
+            if (!key) return;
+            button.addEventListener('click', () => {
+              document.querySelectorAll<HTMLButtonElement>('.progress-tabs__tab').forEach((tab) => {
+                tab.setAttribute('aria-selected', String(tab === button));
+              });
+              progressContent
+                .querySelectorAll<HTMLElement>('[data-progress-group]')
+                .forEach((item) => {
+                  item.hidden = item.dataset.progressGroup !== key;
+                });
+            });
+          });
+        progressContent.querySelectorAll<HTMLElement>('[data-progress-group]').forEach((item) => {
+          item.hidden = item.dataset.progressGroup !== 'current';
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,832 @@
+@import 'tailwindcss';
+@config '../../tailwind.config.ts';
+
+/*
+ * Keep this file as Tailwind's global entry point. Page and component styling
+ * is composed with Tailwind through @apply; plain CSS is limited to theme
+ * tokens, generated Markdown selectors, pseudo-elements, and visual effects.
+ */
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --canvas: #0a0b0d;
+    --foreground: #f5f5f0;
+    --copy: rgba(245, 245, 240, 0.72);
+    --copy-strong: rgba(245, 245, 240, 0.84);
+    --copy-muted: rgba(245, 245, 240, 0.52);
+    --copy-faint: rgba(245, 245, 240, 0.42);
+    --line: rgba(255, 255, 255, 0.12);
+    --line-soft: rgba(255, 255, 255, 0.08);
+    --surface: rgba(255, 255, 255, 0.035);
+    --surface-soft: rgba(255, 255, 255, 0.025);
+    --accent: #c8ff3d;
+    --accent-readable: #c8ff3d;
+    --violet-readable: #9676ff;
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --canvas: #f5f5f0;
+    --foreground: #0a0b0d;
+    --copy: rgba(10, 11, 13, 0.78);
+    --copy-strong: rgba(10, 11, 13, 0.86);
+    --copy-muted: rgba(10, 11, 13, 0.62);
+    --copy-faint: rgba(10, 11, 13, 0.52);
+    --line: rgba(10, 11, 13, 0.16);
+    --line-soft: rgba(10, 11, 13, 0.1);
+    --surface: rgba(10, 11, 13, 0.035);
+    --surface-soft: rgba(10, 11, 13, 0.025);
+    --accent-readable: #527800;
+    --violet-readable: #6847c6;
+  }
+
+  * {
+    @apply box-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply m-0 font-sans;
+    background: var(--canvas);
+    color: var(--foreground);
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
+
+  ::selection {
+    @apply bg-acid text-ink;
+  }
+}
+
+@layer components {
+  .progress-content {
+    color: var(--copy);
+  }
+
+  .progress-content h1,
+  .progress-content h2,
+  .progress-content h3 {
+    @apply tracking-[-0.04em];
+    color: var(--foreground);
+  }
+
+  .progress-content h1 {
+    @apply mb-10 mt-0 text-[clamp(2.5rem,6vw,5rem)] leading-[.95];
+  }
+
+  .progress-content h2 {
+    @apply mb-4 mt-4 text-[2rem];
+  }
+
+  .progress-content h3 {
+    @apply mb-3 mt-8 text-xl;
+  }
+
+  .progress-content p {
+    @apply my-4 leading-[1.8];
+  }
+
+  .progress-content ul {
+    @apply mb-6 mt-4 pl-6;
+  }
+
+  .progress-content li {
+    @apply my-[.55rem] leading-[1.7];
+  }
+
+  .progress-content li::marker {
+    color: var(--accent-readable);
+  }
+
+  .progress-content code {
+    @apply rounded-[.3rem] border px-[.35rem] py-[.12rem] font-mono text-[.9em];
+    border-color: var(--line);
+    background: var(--surface);
+    color: var(--accent-readable);
+  }
+
+  .progress-content blockquote {
+    @apply mb-12 mt-0 border-l-2 py-1 pl-4;
+    border-color: var(--accent-readable);
+    color: var(--copy-muted);
+  }
+
+  .progress-doc-meta {
+    @apply mb-8 flex flex-wrap gap-x-4 gap-y-[.55rem] font-mono text-[.68rem] tracking-[.1em];
+    color: var(--copy-muted);
+  }
+
+  .progress-doc-meta span {
+    @apply rounded-full border px-[.7rem] py-[.45rem];
+    border-color: var(--line);
+  }
+
+  .progress-doc-meta a {
+    @apply text-inherit transition-colors duration-150;
+  }
+
+  .progress-doc-meta a:hover {
+    color: var(--accent-readable);
+  }
+
+  .progress-lede {
+    @apply mb-16 mt-0! max-w-3xl text-[clamp(1.15rem,2vw,1.45rem)] leading-[1.55]! tracking-[-.02em];
+    color: var(--copy-strong);
+  }
+
+  .progress-tabs {
+    @apply mb-4 flex gap-[.3rem] overflow-x-auto border-b pb-[.45rem];
+    border-color: var(--line);
+  }
+
+  .progress-tabs__tab,
+  .install-tabs__tab {
+    @apply shrink-0 cursor-pointer rounded-lg border-0 bg-transparent px-[.85rem] py-[.65rem] font-mono text-[.72rem] transition-colors duration-150;
+    color: var(--copy-muted);
+  }
+
+  .progress-tabs__tab:hover,
+  .progress-tabs__tab[aria-selected='true'],
+  .install-tabs__tab:hover,
+  .install-tabs__tab[aria-selected='true'] {
+    background: color-mix(in srgb, var(--accent-readable) 10%, transparent);
+    color: var(--accent-readable);
+  }
+
+  .progress-tabs__tab:focus-visible,
+  .install-tabs__tab:focus-visible {
+    @apply outline-2 outline-offset-[-2px];
+    outline-color: var(--accent-readable);
+  }
+
+  .home-progress-card {
+    @apply rounded-2xl border p-[clamp(1.25rem,4vw,2rem)];
+    border-color: color-mix(in srgb, var(--accent-readable) 28%, transparent);
+    background: var(--surface);
+  }
+
+  .home-progress-card__top,
+  .home-progress-card__bottom {
+    @apply flex items-center justify-between gap-4 font-mono;
+  }
+
+  .home-progress-card__top {
+    @apply text-[.68rem] tracking-[.14em];
+    color: var(--copy-muted);
+  }
+
+  .home-progress-card__top strong {
+    @apply text-[clamp(2.5rem,7vw,4.5rem)] leading-[.8] tracking-[-.08em];
+    color: var(--accent-readable);
+  }
+
+  .home-progress-card__top strong span {
+    @apply text-[.45em];
+    opacity: 0.68;
+  }
+
+  .home-progress-card__track {
+    @apply my-6 h-[.65rem] overflow-hidden rounded-full border bg-black/25;
+    border-color: var(--line);
+  }
+
+  .home-progress-card__track div {
+    @apply h-full rounded-[inherit] bg-gradient-to-r from-acid to-[#e5ff9a];
+  }
+
+  .home-progress-card__bottom {
+    @apply text-[.68rem];
+    color: var(--copy-faint);
+  }
+
+  .home-progress-card__bottom a {
+    @apply transition-colors duration-150;
+    color: var(--accent-readable);
+  }
+
+  .home-progress-card__bottom a:hover {
+    color: var(--foreground);
+  }
+
+  .progress-breakdown {
+    @apply mb-8 border-t pt-8;
+    border-color: var(--line);
+  }
+
+  .progress-breakdown__heading {
+    @apply mb-6 flex items-end justify-between gap-4 max-sm:flex-col max-sm:items-start;
+  }
+
+  .progress-breakdown__heading p {
+    @apply mb-[.65rem] mt-0 font-mono text-[.68rem] tracking-[.14em];
+    color: var(--violet-readable);
+  }
+
+  .progress-breakdown__heading h1 {
+    @apply m-0 text-[clamp(1.8rem,4vw,2.8rem)] leading-none tracking-[-.06em];
+    color: var(--foreground);
+  }
+
+  .progress-breakdown__heading > span {
+    @apply font-mono text-[.68rem];
+    color: var(--copy-faint);
+  }
+
+  .progress-breakdown__grid {
+    @apply grid grid-cols-2 gap-[.65rem] max-sm:grid-cols-1;
+  }
+
+  .progress-breakdown__card {
+    @apply grid grid-cols-[minmax(0,1fr)_auto] gap-4 rounded-[.65rem] border p-[.9rem];
+    border-color: var(--line-soft);
+    background: var(--surface-soft);
+  }
+
+  .progress-breakdown__card span,
+  .progress-breakdown__card small {
+    @apply block font-mono text-[.62rem];
+    color: var(--copy-faint);
+  }
+
+  .progress-breakdown__card strong {
+    @apply mb-[.2rem] mt-[.35rem] block font-mono text-[.78rem];
+    color: var(--foreground);
+  }
+
+  .progress-breakdown__card b {
+    @apply font-mono text-[1.3rem];
+    color: var(--violet-readable);
+  }
+
+  .progress-breakdown__card b.is-complete {
+    color: var(--accent-readable);
+  }
+
+  .progress-breakdown__card b.is-frontier {
+    @apply text-orange-300;
+  }
+
+  .progress-breakdown__card i {
+    @apply col-span-full h-[.3rem] overflow-hidden rounded-full;
+    background: var(--line-soft);
+  }
+
+  .progress-breakdown__card i em {
+    @apply block h-full rounded-[inherit];
+    background: var(--violet-readable);
+  }
+
+  .progress-breakdown__card b.is-complete ~ i em {
+    background: var(--accent-readable);
+  }
+
+  .progress-breakdown__card b.is-frontier ~ i em {
+    @apply bg-orange-300;
+  }
+
+  .progress-content > h2 {
+    @apply flex items-baseline justify-between gap-4 pt-2;
+  }
+
+  .progress-content > .progress-tabs ~ h2 {
+    @apply hidden;
+  }
+
+  .progress-content ul:has(input[type='checkbox']) {
+    @apply mb-10 mt-6 grid list-none gap-[.6rem] p-0;
+  }
+
+  .progress-content li:has(input[type='checkbox']) {
+    @apply m-0 rounded-[.55rem] border px-[.8rem] py-[.65rem] transition duration-150 hover:translate-x-[.2rem];
+    border-color: var(--line-soft);
+    background: var(--surface);
+  }
+
+  .progress-content li:has(input[type='checkbox']):hover {
+    border-color: color-mix(in srgb, var(--accent-readable) 42%, transparent);
+    background: color-mix(in srgb, var(--accent-readable) 6%, transparent);
+  }
+
+  .progress-content input[type='checkbox'] {
+    @apply mr-[.65rem];
+    accent-color: var(--accent-readable);
+  }
+
+  .guide-shell {
+    @apply grid grid-cols-[15rem_minmax(0,1fr)] gap-[clamp(3.5rem,9vw,8rem)] max-[760px]:block;
+  }
+
+  .guide-sidebar {
+    @apply sticky top-8 self-start max-[760px]:static max-[760px]:mb-10;
+  }
+
+  .guide-sidebar__eyebrow {
+    @apply mb-4 font-mono text-[.68rem] uppercase tracking-[.14em];
+    color: var(--accent-readable);
+  }
+
+  .guide-sidebar__links {
+    @apply grid gap-[.45rem] border-l pl-4 max-[760px]:flex max-[760px]:gap-5 max-[760px]:overflow-x-auto max-[760px]:whitespace-nowrap max-[760px]:border-l-0 max-[760px]:border-t max-[760px]:px-0 max-[760px]:pb-[.35rem] max-[760px]:pt-[.95rem];
+    border-color: var(--line);
+  }
+
+  .guide-sidebar__link {
+    @apply py-[.35rem] text-[.9rem] leading-normal transition-colors duration-150;
+    color: var(--copy-muted);
+  }
+
+  .guide-sidebar__link:hover,
+  .guide-sidebar__link[aria-current='page'] {
+    color: var(--accent-readable) !important;
+  }
+
+  .guide-content {
+    @apply min-w-0 max-w-[52rem] max-[760px]:max-w-none;
+  }
+
+  .guide-content > h1 {
+    @apply mb-10 mt-0 text-[clamp(3rem,6vw,5.5rem)] leading-[.92];
+  }
+
+  .guide-content > p {
+    @apply max-w-[46rem] leading-[1.85];
+  }
+
+  .guide-content > h2 {
+    @apply mb-[1.4rem] mt-14 block border-t pt-[1.2rem];
+    border-color: var(--line);
+  }
+
+  .guide-content > h3 {
+    @apply mb-4 mt-12;
+  }
+
+  .guide-content > ul,
+  .guide-content > ol {
+    @apply mb-8 mt-5 leading-[1.85];
+  }
+
+  .guide-content > table {
+    @apply mb-12 mt-7;
+  }
+
+  .guide-content table {
+    @apply block w-full overflow-x-auto rounded-[.85rem] border whitespace-normal;
+    border-color: var(--line);
+    border-spacing: 0;
+  }
+
+  .guide-content th,
+  .guide-content td {
+    @apply min-w-32 border-b px-4 py-[.9rem] text-left align-top leading-[1.6];
+    border-color: var(--line-soft);
+  }
+
+  .guide-content tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .guide-content th {
+    @apply font-mono text-[.68rem] uppercase tracking-[.1em];
+    color: var(--copy-muted);
+  }
+
+  .guide-content td:first-child {
+    @apply font-mono text-[.84rem];
+    color: var(--accent-readable);
+  }
+
+  .guide-content td:nth-child(2) {
+    color: var(--copy-strong);
+  }
+
+  .guide-content td:last-child {
+    color: var(--copy-muted);
+  }
+
+  .install-tabs {
+    @apply mb-10 mt-7 overflow-hidden rounded-[.85rem] border;
+    border-color: var(--line);
+    background: var(--surface);
+  }
+
+  .install-tabs__list {
+    @apply flex gap-[.2rem] overflow-x-auto border-b p-[.45rem];
+    border-color: var(--line-soft);
+  }
+
+  .install-tabs__tab {
+    @apply text-xs;
+  }
+
+  .install-tabs__panel {
+    @apply flex items-center justify-between gap-4 overflow-x-auto px-[1.4rem] py-5;
+  }
+
+  .install-tabs__panel code {
+    @apply whitespace-nowrap border-0 bg-transparent p-0 text-[.9rem];
+    color: var(--foreground);
+  }
+
+  .install-tabs__panel .code-sample__copy {
+    @apply shrink-0;
+  }
+
+  .guide-content > pre {
+    @apply mb-12 mt-7;
+  }
+
+  .guide-content pre,
+  .guide-content .code {
+    @apply relative mb-12 mt-7 overflow-x-auto rounded-[.85rem] border bg-transparent px-[1.4rem] pb-[1.4rem] pt-[3.25rem] leading-[1.8];
+    border-color: var(--line);
+    color: var(--foreground);
+  }
+
+  .guide-content pre::before,
+  .guide-content .code::before {
+    @apply absolute inset-x-0 top-0 border-b px-[1.4rem] py-[.65rem] font-mono text-[.65rem] tracking-[.14em];
+    border-color: var(--line-soft);
+    color: var(--copy-faint);
+    content: 'EXAMPLE';
+  }
+
+  .guide-content pre code,
+  .guide-content .code code {
+    @apply rounded-none border-0 bg-transparent p-0 text-[.9rem] leading-[inherit] text-inherit;
+  }
+
+  .code-sample {
+    @apply mb-12 mt-7 overflow-hidden rounded-[.85rem] border bg-transparent;
+    border-color: var(--line);
+  }
+
+  .code-sample__header {
+    @apply flex items-center justify-between gap-4 border-b px-[1.1rem] py-[.7rem];
+    border-color: var(--line-soft);
+  }
+
+  .code-sample__file {
+    @apply font-mono text-[.68rem] tracking-[.08em];
+    color: var(--copy-muted);
+  }
+
+  .code-sample__copy {
+    @apply cursor-pointer rounded-full border bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] transition-colors duration-150;
+    border-color: var(--line);
+    color: var(--copy);
+  }
+
+  .code-sample__copy:hover,
+  .code-sample__copy:focus-visible {
+    @apply outline-none;
+    border-color: var(--accent-readable);
+    color: var(--accent-readable);
+  }
+
+  .cli-command-list {
+    @apply mb-12 mt-7 grid gap-[.6rem];
+  }
+
+  .cli-command {
+    @apply m-0 flex items-center justify-between gap-4 px-4 py-[.9rem];
+  }
+
+  .cli-command code {
+    @apply min-w-0 overflow-x-auto whitespace-nowrap border-0 bg-transparent p-0 text-[.86rem] leading-normal;
+    color: var(--foreground);
+  }
+
+  .code-sample pre {
+    @apply m-0 rounded-none border-0 px-[1.1rem] py-5;
+  }
+
+  .code-sample pre::before,
+  .architecture-code::before {
+    @apply hidden;
+  }
+
+  .code-sample pre code {
+    @apply select-text whitespace-pre;
+  }
+
+  .architecture-hero {
+    @apply mb-14 border-b pb-12;
+    border-color: color-mix(in srgb, var(--violet-readable) 38%, transparent);
+  }
+
+  .architecture-hero__eyebrow {
+    @apply mb-6 font-mono text-[.68rem] uppercase tracking-[.16em];
+    color: var(--violet-readable);
+  }
+
+  .architecture-hero h1 {
+    @apply m-0 text-[clamp(3.5rem,9vw,7rem)] leading-[.86] tracking-[-.08em];
+    color: var(--foreground);
+  }
+
+  .architecture-hero h1 span {
+    color: var(--violet-readable);
+  }
+
+  .architecture-hero p {
+    @apply mb-0 mt-6 max-w-[42rem] text-[1.1rem] leading-[1.7];
+    color: var(--copy);
+  }
+
+  .architecture-grid {
+    @apply mb-16 grid grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)] items-stretch gap-8 max-[760px]:grid-cols-1;
+  }
+
+  .architecture-copy {
+    @apply flex items-center;
+  }
+
+  .architecture-points {
+    @apply grid gap-6;
+  }
+
+  .architecture-points > div {
+    @apply flex gap-[.85rem];
+  }
+
+  .architecture-point {
+    @apply mt-[.4rem] h-[.55rem] w-[.55rem] shrink-0 rounded-full;
+  }
+
+  .architecture-point--acid,
+  .architecture-layer--acid {
+    @apply bg-acid;
+  }
+
+  .architecture-point--violet,
+  .architecture-layer--violet {
+    @apply bg-violet;
+  }
+
+  .architecture-point--orange,
+  .architecture-layer--orange {
+    @apply bg-orange-300;
+  }
+
+  .architecture-layer--blue {
+    @apply bg-cyan-300;
+  }
+
+  .architecture-points p {
+    @apply m-0 text-[.9rem] leading-[1.65];
+    color: var(--copy-muted);
+  }
+
+  .architecture-points strong {
+    @apply mb-1 block font-mono text-xs tracking-[.04em];
+    color: var(--foreground);
+  }
+
+  .architecture-code {
+    @apply min-h-[25rem] pt-[1.4rem]! max-[760px]:min-h-0;
+  }
+
+  .architecture-boundaries,
+  .architecture-flow {
+    @apply mt-20 max-[760px]:mt-16;
+  }
+
+  .architecture-section-heading {
+    @apply mb-6;
+  }
+
+  .architecture-section-heading > span {
+    @apply font-mono text-[.68rem] uppercase tracking-[.14em];
+    color: var(--violet-readable);
+  }
+
+  .architecture-section-heading h2 {
+    @apply mb-[.8rem] mt-[.7rem] text-[clamp(2rem,5vw,3.5rem)] leading-[.95] tracking-[-.06em];
+    color: var(--foreground);
+  }
+
+  .architecture-section-heading p {
+    @apply m-0 max-w-[38rem] leading-[1.7];
+    color: var(--copy-muted);
+  }
+
+  .architecture-boundaries__table {
+    @apply overflow-x-auto rounded-[.85rem] border;
+    border-color: var(--line);
+  }
+
+  .architecture-boundaries table {
+    @apply w-full text-left;
+    border-spacing: 0;
+  }
+
+  .architecture-boundaries th,
+  .architecture-boundaries td {
+    @apply border-b px-[1.1rem] py-4 align-top leading-[1.6];
+    border-color: var(--line-soft);
+  }
+
+  .architecture-boundaries tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .architecture-boundaries th {
+    @apply text-left font-mono text-[.68rem] uppercase tracking-[.12em];
+    color: var(--copy-faint);
+  }
+
+  .architecture-boundaries td:first-child {
+    @apply w-[34%] font-mono text-[.82rem];
+    color: var(--foreground);
+  }
+
+  .architecture-boundaries td:last-child {
+    color: var(--copy-muted);
+  }
+
+  .architecture-layer {
+    @apply mr-[.65rem] inline-block h-2 w-2 rounded-full;
+  }
+
+  .architecture-flow__track {
+    @apply grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] items-center gap-x-5 gap-y-[.65rem] max-[760px]:grid-cols-1 max-[760px]:gap-2;
+  }
+
+  .architecture-flow__node {
+    @apply min-h-36 rounded-[.85rem] border p-4 max-[760px]:min-h-0;
+    border-color: var(--line);
+    background: var(--surface);
+  }
+
+  .architecture-flow__node > span {
+    @apply font-mono text-[.68rem] tracking-[.1em];
+    color: var(--violet-readable);
+  }
+
+  .architecture-flow__node strong {
+    @apply mt-[1.7rem] block font-mono text-[.8rem] max-[760px]:mt-[.8rem];
+    color: var(--foreground);
+  }
+
+  .architecture-flow__node small {
+    @apply mt-[.45rem] block text-[.72rem] leading-normal;
+    color: var(--copy-muted);
+  }
+
+  .architecture-flow__node--engine {
+    border-color: color-mix(in srgb, var(--accent-readable) 38%, transparent);
+  }
+
+  .architecture-flow__node--engine > span,
+  .architecture-flow__node--engine strong {
+    color: var(--accent-readable);
+  }
+
+  .architecture-flow__connector {
+    @apply grid justify-items-center gap-[.35rem] font-mono text-[.58rem] uppercase tracking-[.08em] max-[760px]:ml-[1.2rem] max-[760px]:grid-cols-[auto_1fr] max-[760px]:items-center max-[760px]:justify-items-start;
+    color: var(--copy-faint);
+  }
+
+  .architecture-flow__connector i {
+    @apply relative block h-px w-[2.4rem] max-[760px]:h-[1.2rem] max-[760px]:w-px;
+    background: color-mix(in srgb, var(--accent-readable) 48%, transparent);
+  }
+
+  .architecture-flow__connector i::after {
+    @apply absolute right-0 top-[-.2rem] h-[.4rem] w-[.4rem] rotate-45 border-r border-t content-[''] max-[760px]:bottom-0 max-[760px]:right-[-.2rem] max-[760px]:top-auto max-[760px]:-rotate-45 max-[760px]:border-l max-[760px]:border-r-0;
+    border-color: var(--accent-readable);
+  }
+}
+
+@layer utilities {
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, black 0%, transparent 90%);
+  }
+
+  .noise {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.12) 0.55px, transparent 0.55px);
+    background-size: 5px 5px;
+    opacity: 0.12;
+  }
+
+  .glow {
+    box-shadow:
+      0 0 80px rgba(200, 255, 61, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .code {
+    counter-reset: code;
+  }
+
+  .code-line {
+    counter-increment: code;
+  }
+
+  .code-line::before {
+    @apply mr-[18px] inline-block w-7 text-right text-[#56606b];
+    content: counter(code, decimal-leading-zero);
+  }
+
+  .bracket {
+    color: var(--violet-readable);
+  }
+
+  .token {
+    color: var(--accent-readable);
+  }
+
+  .muted {
+    color: var(--copy-muted);
+  }
+}
+
+/* Existing utility classes use white/acid values in markup; map them to the
+ * readable theme tokens when light mode is active. */
+html[data-theme='light'] .grid-bg {
+  background-image:
+    linear-gradient(rgba(10, 11, 13, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 11, 13, 0.07) 1px, transparent 1px);
+}
+
+html[data-theme='light'] .noise {
+  opacity: 0.04;
+}
+
+html[data-theme='light'] body [class~='text-white'],
+html[data-theme='light'] body [class*='text-white/'] {
+  color: #182018 !important;
+}
+
+html[data-theme='light'] body [class~='text-acid'],
+html[data-theme='light'] body [class*='text-acid/'] {
+  color: var(--accent-readable) !important;
+}
+
+html[data-theme='light'] body [class~='text-violet'],
+html[data-theme='light'] body [class*='text-violet/'] {
+  color: var(--violet-readable) !important;
+}
+
+html[data-theme='light'] [class*='bg-white/'] {
+  background-color: var(--surface) !important;
+}
+
+html[data-theme='light'] [class*='border-white/'],
+html[data-theme='light'] [class*='divide-white/'] > :not(:last-child) {
+  border-color: var(--line) !important;
+}
+
+html[data-theme='light'] [class*='bg-[#'] {
+  background-color: #fff !important;
+}
+
+html[data-theme='light'] .code {
+  background: #101214 !important;
+  color: #f5f5f0 !important;
+}
+
+html[data-theme='light'] .code [class~='text-white'],
+html[data-theme='light'] .code [class*='text-white/'] {
+  color: #f5f5f0 !important;
+}
+
+html[data-theme='light'] .code .muted {
+  color: #aeb7bd;
+}
+
+html[data-theme='light'] .site-nav__links {
+  color: rgba(10, 11, 13, 0.68);
+}
+
+html[data-theme='light'] .site-nav__link,
+html[data-theme='light'] .site-nav__github {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+.site-nav__link[aria-current='page'] {
+  color: var(--accent-readable) !important;
+}
+
+html[data-theme='light'] .site-nav__link:hover,
+html[data-theme='light'] .site-nav__link[aria-current='page'],
+html[data-theme='light'] .site-nav__github:hover {
+  color: var(--accent-readable) !important;
+}
+
+html[data-theme='light'] .site-nav__github {
+  border-color: rgba(10, 11, 13, 0.2) !important;
+}
