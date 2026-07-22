@@ -9,7 +9,7 @@ on:
       - 'website/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
-      - '.github/workflows/deploy-website.yml'
+      - '.github/workflows/page.yml'
   workflow_dispatch:
 
 permissions:
