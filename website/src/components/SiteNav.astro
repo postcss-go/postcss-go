@@ -45,10 +45,15 @@ const activeNavLink = `${navLink} text-acid`;
       title="Toggle color theme">☼</button
     >
     <a
-      class="site-nav__github rounded-full border border-white/20 px-4 py-2 text-white transition hover:text-acid"
+      class="site-nav__github flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-white transition hover:text-acid"
       href="https://github.com/eryue0220/postcss-go"
       target="_blank"
-      rel="noreferrer">GitHub ↗</a
+      rel="noreferrer"
+      ><span>GitHub ↗</span><span class="text-white/25" aria-hidden="true">·</span><span
+        class="flex items-center gap-1 font-mono text-[10px]"
+        aria-label="GitHub stars"
+        ><span aria-hidden="true">★</span><span id="github-star-count">—</span></span
+      ></a
     >
   </div>
 </nav>
@@ -80,4 +85,42 @@ const activeNavLink = `${navLink} text-acid`;
     }
     updateThemeButton();
   });
+
+  const starCount = document.querySelector<HTMLElement>('#github-star-count');
+  const starCacheKey = 'postcss-go-github-stars';
+  const formatStars = (count: number) =>
+    new Intl.NumberFormat('en', {
+      notation: count >= 1000 ? 'compact' : 'standard',
+      maximumFractionDigits: 1,
+    }).format(count);
+
+  async function updateGitHubStars() {
+    if (!starCount) return;
+
+    try {
+      const cached = sessionStorage.getItem(starCacheKey);
+      if (cached) {
+        const count = Number(cached);
+        if (Number.isFinite(count)) {
+          starCount.textContent = formatStars(count);
+          return;
+        }
+      }
+
+      const response = await fetch('https://api.github.com/repos/eryue0220/postcss-go', {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
+
+      const repository = (await response.json()) as { stargazers_count?: number };
+      if (typeof repository.stargazers_count !== 'number') return;
+
+      sessionStorage.setItem(starCacheKey, String(repository.stargazers_count));
+      starCount.textContent = formatStars(repository.stargazers_count);
+    } catch {
+      starCount.textContent = 'Star';
+    }
+  }
+
+  void updateGitHubStars();
 </script>
