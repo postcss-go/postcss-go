@@ -10,7 +10,7 @@ import (
 	"unicode/utf16"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 	"postcss-go/internal/utils"
 )
 
@@ -97,7 +97,7 @@ func (w *sourceMapWriter) AddMapping(node ast.Node) {
 	w.addLocationMapping(location, location.Start, w.line, w.column)
 }
 
-func (w *sourceMapWriter) AddMappingAt(node ast.Node, position source.Position) {
+func (w *sourceMapWriter) AddMappingAt(node ast.Node, position sourcemap.Position) {
 	location := node.Source()
 	if location == nil || location.Input == nil {
 		w.addMapping(noSource, nil, 0, 0)
@@ -119,7 +119,7 @@ func (w *sourceMapWriter) AddEndMapping(node ast.Node) {
 	w.addLocationMapping(location, position, w.line, max(w.column-1, 0))
 }
 
-func (w *sourceMapWriter) addLocationMapping(location *source.Location, position source.Position, genLine, genColumn int) {
+func (w *sourceMapWriter) addLocationMapping(location *sourcemap.Location, position sourcemap.Position, genLine, genColumn int) {
 	input := location.Input
 	if _, mappedInput, line, column, ok := input.Origin(position.Line, position.Column); ok {
 		input = mappedInput

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	csserrors "postcss-go/internal/csserrors"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 type NodeType string
@@ -41,8 +41,8 @@ type Node interface {
 	SetParent(Container)
 	Range() SourceRange
 	SetRange(SourceRange)
-	Source() *source.Location
-	SetSource(*source.Location)
+	Source() *sourcemap.Location
+	SetSource(*sourcemap.Location)
 	RawFormatting() Raws
 	RawFormattingReadOnly() Raws
 	// Root returns the nearest stylesheet root. For a node inside a Document it
@@ -80,7 +80,7 @@ type Container interface {
 type BaseNode struct {
 	parent       Container
 	rng          SourceRange
-	src          *source.Location
+	src          *sourcemap.Location
 	Raws         Raws
 	lastIterator int
 	iterators    map[int]int
@@ -91,8 +91,8 @@ type ErrorOptions struct {
 	Index    int
 	EndIndex int
 	Word     string
-	Start    *source.Position
-	End      *source.Position
+	Start    *sourcemap.Position
+	End      *sourcemap.Position
 }
 
 func (n *BaseNode) Parent() Container {
@@ -111,11 +111,11 @@ func (n *BaseNode) SetRange(rng SourceRange) {
 	n.rng = rng
 }
 
-func (n *BaseNode) Source() *source.Location {
+func (n *BaseNode) Source() *sourcemap.Location {
 	return n.src
 }
 
-func (n *BaseNode) SetSource(src *source.Location) {
+func (n *BaseNode) SetSource(src *sourcemap.Location) {
 	n.src = src
 }
 
@@ -956,29 +956,29 @@ func everyNodes(nodes []Node, fn func(Node) bool) bool {
 	return true
 }
 
-func locateWord(node Node, word string) (source.Position, source.Position, bool) {
+func locateWord(node Node, word string) (sourcemap.Position, sourcemap.Position, bool) {
 	location := node.Source()
 	if location == nil || location.Input == nil || word == "" {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	nodeRange := node.Range()
 	if nodeRange.End < nodeRange.Start || nodeRange.Start < 0 || nodeRange.End > len(location.Input.CSS) {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	text := location.Input.CSS[nodeRange.Start:nodeRange.End]
 	index := strings.Index(text, word)
 	if index < 0 {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	start := location.Input.FromOffset(nodeRange.Start + index)
 	end := location.Input.FromOffset(nodeRange.Start + index + len(word))
 	return start, end, true
 }
 
-func locateIndex(node Node, index, endIndex int) (source.Position, source.Position, bool) {
+func locateIndex(node Node, index, endIndex int) (sourcemap.Position, sourcemap.Position, bool) {
 	location := node.Source()
 	if location == nil || location.Input == nil {
-		return source.Position{}, source.Position{}, false
+		return sourcemap.Position{}, sourcemap.Position{}, false
 	}
 	nodeRange := node.Range()
 	if index < 0 {

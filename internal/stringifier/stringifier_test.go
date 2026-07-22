@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-sourcemap/sourcemap"
+	githubSourcemap "github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/ast"
 	"postcss-go/internal/parser"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 )
 
 func TestStringifyComplexTree(t *testing.T) {
@@ -46,7 +46,7 @@ func TestStringifyAtRuleWithoutBlock(t *testing.T) {
 
 func TestParseStringifyPreservesPostCSSRaws(t *testing.T) {
 	css := "/*x*/\n.a{color:red!important;\n  background :  blue  ;}\n"
-	root, err := parser.Parse(css, source.Options{From: "input.css"})
+	root, err := parser.Parse(css, sourcemap.Options{From: "input.css"})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestParseStringifyPreservesRawSpacingAroundBlocksAndAtRules(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root, err := parser.Parse(test.css, source.Options{})
+			root, err := parser.Parse(test.css, sourcemap.Options{})
 			if err != nil {
 				t.Fatalf("parse failed: %v", err)
 			}
@@ -80,7 +80,7 @@ func TestParseStringifyPreservesRawSpacingAroundBlocksAndAtRules(t *testing.T) {
 }
 
 func TestStringifyInfersBeforeFromFormattedSibling(t *testing.T) {
-	root, err := parser.Parse(".a {\n  color: red;\n}\n.b {\n  color: blue;\n}", source.Options{})
+	root, err := parser.Parse(".a {\n  color: red;\n}\n.b {\n  color: blue;\n}", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestParsePreservesCommentsAsASTNodes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root, err := parser.Parse(test.css, source.Options{})
+			root, err := parser.Parse(test.css, sourcemap.Options{})
 			if err != nil {
 				t.Fatalf("parse failed: %v", err)
 			}
@@ -144,7 +144,7 @@ func TestParsePreservesCommentsAsASTNodes(t *testing.T) {
 
 func TestParseStringifyPreservesAtRuleOnlyCommentSpacing(t *testing.T) {
 	css := "@media /*x*/ {a{}}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestParseStringifyPreservesAtRuleOnlyCommentSpacing(t *testing.T) {
 }
 
 func TestParseAtRuleCommentParamsExposeSemanticAndRawValues(t *testing.T) {
-	root, err := parser.Parse("@media /*c*/ screen {}", source.Options{})
+	root, err := parser.Parse("@media /*c*/ screen {}", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestParseStringifyPreservesTrailingAtRuleComments(t *testing.T) {
 		"@media screen /*c*/ {a{}}",
 		"@import screen /*c*/ ;",
 	} {
-		root, err := parser.Parse(css, source.Options{})
+		root, err := parser.Parse(css, sourcemap.Options{})
 		if err != nil {
 			t.Fatalf("parse %q failed: %v", css, err)
 		}
@@ -190,7 +190,7 @@ func TestParseStringifyPreservesTrailingAtRuleComments(t *testing.T) {
 
 func TestParseStringifyPreservesDeclarationValueComments(t *testing.T) {
 	css := "a{color: /*c*/ red}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestParseStringifyPreservesDeclarationValueComments(t *testing.T) {
 
 func TestParseStringifyPreservesColonAdjacentCommentsInBetween(t *testing.T) {
 	css := "a{color:/*c*/red}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestParseStringifyPreservesColonAdjacentCommentsInBetween(t *testing.T) {
 
 func TestParseStringifyPreservesPropSideColonComments(t *testing.T) {
 	css := "a{color/**/:red}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestParseStringifyPreservesPropSideColonComments(t *testing.T) {
 
 func TestParsePreservesOwnSemicolon(t *testing.T) {
 	css := ".a {} ;"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestParsePreservesOwnSemicolon(t *testing.T) {
 
 func TestParseTrailingValueCommentBecomesSiblingNode(t *testing.T) {
 	css := "a{color:red/*c*/}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestParseTrailingValueCommentBecomesSiblingNode(t *testing.T) {
 
 func TestParseLeadingBlockCommentBecomesSiblingNode(t *testing.T) {
 	css := "a{\n  /*c*/\n  color:red\n}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestParseLeadingBlockCommentBecomesSiblingNode(t *testing.T) {
 
 func TestParseImportantWithInternalSpaces(t *testing.T) {
 	css := "a{color:red ! important}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestParseImportantWithInternalSpaces(t *testing.T) {
 }
 
 func TestStringifyAppendedAtRuleInfersNewlineWithoutSemicolon(t *testing.T) {
-	root, err := parser.Parse(".a {\n  color: red;\n}", source.Options{})
+	root, err := parser.Parse(".a {\n  color: red;\n}", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestStringifyAppendedAtRuleInfersNewlineWithoutSemicolon(t *testing.T) {
 
 func TestParseStringifyPreservesImportantTrailingSpacing(t *testing.T) {
 	css := "a{color : blue !important ;}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestParseStringifyPreservesImportantTrailingSpacing(t *testing.T) {
 
 func TestParseStringifyPreservesCustomPropertyComments(t *testing.T) {
 	css := "a{--x: /*c*/ foo  ;}"
-	root, err := parser.Parse(css, source.Options{})
+	root, err := parser.Parse(css, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestMappedStringifyPreservesOwnSemicolon(t *testing.T) {
 }
 
 func TestMappedStringifyMatchesCompressedFormatting(t *testing.T) {
-	root, err := parser.Parse("a{color:red;width:1px}", source.Options{From: "input.css"})
+	root, err := parser.Parse("a{color:red;width:1px}", sourcemap.Options{From: "input.css"})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestStringifyUsesExplicitRootIndentInMappedAndUnmappedOutput(t *testing.T) 
 }
 
 func TestStringifyInfersDeclarationBetweenFromSibling(t *testing.T) {
-	root, err := parser.Parse("a{color:red}", source.Options{})
+	root, err := parser.Parse("a{color:red}", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestStringifyInfersDeclarationBetweenFromSibling(t *testing.T) {
 }
 
 func TestStringifyWithSourceMap(t *testing.T) {
-	input, err := source.NewInput(".a { color: red; }", source.Options{From: "input.css"})
+	input, err := sourcemap.NewInput(".a { color: red; }", sourcemap.Options{From: "input.css"})
 	if err != nil {
 		t.Fatalf("new input failed: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestStringifyWithSourceMap(t *testing.T) {
 }
 
 func TestStringifySourceMapNodeBoundaries(t *testing.T) {
-	root, err := parser.Parse(".a { color: red; }", source.Options{From: "input.css"})
+	root, err := parser.Parse(".a { color: red; }", sourcemap.Options{From: "input.css"})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestStringifySourceMapNodeBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stringify with source map failed: %v", err)
 	}
-	consumer, err := sourcemap.Parse("out.css.map", []byte(result.Map))
+	consumer, err := githubSourcemap.Parse("out.css.map", []byte(result.Map))
 	if err != nil {
 		t.Fatalf("parse source map: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestStringifySourceMapNoSourceNodeBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stringify with source map failed: %v", err)
 	}
-	consumer, err := sourcemap.Parse("out.css.map", []byte(result.Map))
+	consumer, err := githubSourcemap.Parse("out.css.map", []byte(result.Map))
 	if err != nil {
 		t.Fatalf("parse source map: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestStringifySourceMapPathsAreRelativeToMapFile(t *testing.T) {
 	inputFile := filepath.Join(tempDir, "src", "input.css")
 	outputFile := filepath.Join(tempDir, "dist", "output.css")
 	mapFile := filepath.Join(tempDir, "dist", "maps", "output.css.map")
-	input, err := source.NewInput(".a {}", source.Options{From: inputFile})
+	input, err := sourcemap.NewInput(".a {}", sourcemap.Options{From: inputFile})
 	if err != nil {
 		t.Fatalf("new input failed: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestSourceMapWriterUsesUTF16GeneratedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate source map: %v", err)
 	}
-	consumer, err := sourcemap.Parse("out.css.map", []byte(encoded))
+	consumer, err := githubSourcemap.Parse("out.css.map", []byte(encoded))
 	if err != nil {
 		t.Fatalf("parse source map: %v", err)
 	}
@@ -593,7 +593,7 @@ func TestStringifyEmptyTreeProducesConsumableSourceMap(t *testing.T) {
 	if result.CSS != "" {
 		t.Fatalf("expected empty CSS, got %q", result.CSS)
 	}
-	consumer, err := sourcemap.Parse("out.css.map", []byte(result.Map))
+	consumer, err := githubSourcemap.Parse("out.css.map", []byte(result.Map))
 	if err != nil {
 		t.Fatalf("empty output map must be consumable: %v", err)
 	}
@@ -604,7 +604,7 @@ func TestStringifyEmptyTreeProducesConsumableSourceMap(t *testing.T) {
 }
 
 func TestSourceMapMetadataOptions(t *testing.T) {
-	input, err := source.NewInput("a{}", source.Options{From: "/src/a.css"})
+	input, err := sourcemap.NewInput("a{}", sourcemap.Options{From: "/src/a.css"})
 	if err != nil {
 		t.Fatalf("new input: %v", err)
 	}

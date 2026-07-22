@@ -5,12 +5,12 @@ import (
 	"testing"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 	"postcss-go/internal/tokenizer"
 )
 
 func TestParseBuildsSourceRangesAndNodes(t *testing.T) {
-	root, err := Parse("@media screen { .a { color: red !important; } }", source.Options{From: "a.css"})
+	root, err := Parse("@media screen { .a { color: red !important; } }", sourcemap.Options{From: "a.css"})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestParseBuildsSourceRangesAndNodes(t *testing.T) {
 }
 
 func TestParseCommentOnly(t *testing.T) {
-	root, err := Parse("/* c */", source.Options{})
+	root, err := Parse("/* c */", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -49,22 +49,22 @@ func TestParseCommentOnly(t *testing.T) {
 }
 
 func TestParseErrors(t *testing.T) {
-	if _, err := Parse("}", source.Options{}); err == nil || !strings.Contains(err.Error(), "unexpected closing brace") {
+	if _, err := Parse("}", sourcemap.Options{}); err == nil || !strings.Contains(err.Error(), "unexpected closing brace") {
 		t.Fatalf("expected unexpected closing brace error, got %v", err)
 	}
-	if _, err := Parse(".a { color: red;", source.Options{}); err == nil || !strings.Contains(err.Error(), "missing closing brace") {
+	if _, err := Parse(".a { color: red;", sourcemap.Options{}); err == nil || !strings.Contains(err.Error(), "missing closing brace") {
 		t.Fatalf("expected missing closing brace error, got %v", err)
 	}
-	if _, err := Parse("color red;", source.Options{}); err == nil || !strings.Contains(err.Error(), "expected declaration") {
+	if _, err := Parse("color red;", sourcemap.Options{}); err == nil || !strings.Contains(err.Error(), "expected declaration") {
 		t.Fatalf("expected declaration parse error, got %v", err)
 	}
-	if _, err := Parse(`color: "unterminated`, source.Options{}); err == nil || !strings.Contains(err.Error(), "Unclosed string") {
+	if _, err := Parse(`color: "unterminated`, sourcemap.Options{}); err == nil || !strings.Contains(err.Error(), "Unclosed string") {
 		t.Fatalf("expected tokenizer error to propagate, got %v", err)
 	}
 }
 
 func TestParseCustomPropertyBlockAsDeclaration(t *testing.T) {
-	root, err := Parse(":root { --size: {\n  width: 0;\n}; }", source.Options{})
+	root, err := Parse(":root { --size: {\n  width: 0;\n}; }", sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestParseCustomPropertyBlockAsDeclaration(t *testing.T) {
 }
 
 func TestParseNestedBracesInsideAtRuleParams(t *testing.T) {
-	root, err := Parse(`@supports (--element("x", { "width": 1 })) { * { color: red; } }`, source.Options{})
+	root, err := Parse(`@supports (--element("x", { "width": 1 })) { * { color: red; } }`, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestParseNestedBracesInsideAtRuleParams(t *testing.T) {
 }
 
 func TestParseAtRuleWithoutSemicolonAtEOF(t *testing.T) {
-	root, err := Parse(`@import"test.css"`, source.Options{})
+	root, err := Parse(`@import"test.css"`, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestParseAtRuleWithoutSemicolonAtEOF(t *testing.T) {
 }
 
 func TestParseEmptyRule(t *testing.T) {
-	root, err := Parse(`{}`, source.Options{})
+	root, err := Parse(`{}`, sourcemap.Options{})
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestParseEmptyRule(t *testing.T) {
 }
 
 func TestParseDeclarationSourceIncludesSemicolon(t *testing.T) {
-	root, err := Parse("a{color: black;}", source.Options{TrackSource: true})
+	root, err := Parse("a{color: black;}", sourcemap.Options{TrackSource: true})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestParseWithSourceMapMapsLocations(t *testing.T) {
 		"mappings": "AAAA"
 	}`
 
-	root, err := Parse(".gen { color: red; }", source.Options{
+	root, err := Parse(".gen { color: red; }", sourcemap.Options{
 		From:         "generated.css",
 		SourceMapURL: "generated.css.map",
 		SourceMap:    []byte(sourceMap),

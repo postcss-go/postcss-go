@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"postcss-go/internal/ast"
-	"postcss-go/internal/source"
+	"postcss-go/internal/sourcemap"
 	"postcss-go/internal/tokenizer"
 )
 
@@ -12,15 +12,15 @@ type Parser struct {
 	input       string
 	tok         *tokenizer.Tokenizer
 	root        *ast.Root
-	src         *source.Input
+	src         *sourcemap.Input
 	stmtBuf     []tokenizer.Token
 	trackSource bool
 	pending     map[ast.Container]string
 	blockStarts map[ast.Container]int
 }
 
-func Parse(css string, opts source.Options) (*ast.Root, error) {
-	input, err := source.NewInput(css, opts)
+func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
+	input, err := sourcemap.NewInput(css, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -1056,6 +1056,6 @@ func (p *Parser) syntaxError(message string, offset int) error {
 	return p.src.ErrorAtOffset(message, offset, "")
 }
 
-func (p *Parser) location(start, end int) *source.Location {
+func (p *Parser) location(start, end int) *sourcemap.Location {
 	return p.src.Location(p.src.FromOffset(start), p.src.FromOffset(end))
 }
