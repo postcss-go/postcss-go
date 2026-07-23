@@ -5,14 +5,23 @@ title: postcss-go architecture
 
 <section class="architecture-hero" aria-labelledby="architecture-title">
   <div class="architecture-hero__eyebrow">SYSTEM DESIGN / CURRENT SHAPE</div>
-  <h1 id="architecture-title">Fast where<br /><span>it matters.</span></h1>
+  <h1 id="architecture-title">
+    Fast where<br />
+    <span>it matters.</span>
+  </h1>
   <p>The hot path lives in Go. Runtime bridges keep the ecosystem familiar while the project closes the remaining compatibility gaps.</p>
 </section>
 
 <section class="architecture-grid" aria-label="postcss-go architecture">
   <div class="architecture-copy">
     <div class="architecture-points">
-      <div><span class="architecture-point architecture-point--acid"></span><p><strong>Go owns the data path</strong>Parse, AST mutation, traversal, stringify, and source maps run in the native engine.</p></div>
+      <div>
+        <span class="architecture-point architecture-point--acid"></span>
+        <p>
+          <strong>Go owns the data path</strong>
+          Parse, AST mutation, traversal, stringify, and source maps run in the native engine.
+        </p>
+      </div>
       <div><span class="architecture-point architecture-point--violet"></span><p><strong>JSON-RPC keeps runtimes aligned</strong>Node and WASM share a structured contract for AST, locations, maps, errors, and messages.</p></div>
       <div><span class="architecture-point architecture-point--orange"></span><p><strong>The plugin ABI is the frontier</strong>JavaScript plugins still execute at the host boundary while the persistent bridge is being completed.</p></div>
     </div>
@@ -71,7 +80,11 @@ title: postcss-go architecture
 </section>
 
 <section class="architecture-flow" aria-labelledby="flow-title">
-  <div class="architecture-section-heading"><span>03 / RUNTIME PATH</span><h2 id="flow-title">Request flow</h2><p>A single request crosses the bridge once, then returns with all the data needed by the host runtime.</p></div>
+  <div class="architecture-section-heading">
+    <span>03 / RUNTIME PATH</span>
+    <h2 id="flow-title">Request flow</h2>
+    <p>A single request crosses the bridge once, then returns with all the data needed by the host runtime.</p>
+  </div>
   <div class="architecture-flow__track">
     <div class="architecture-flow__node architecture-flow__node--source"><span>01</span><strong>Node / WASM caller</strong><small>parse · process · stringify</small></div>
     <div class="architecture-flow__connector"><i></i><span>request</span></div>
@@ -82,7 +95,3 @@ title: postcss-go architecture
     <div class="architecture-flow__node architecture-flow__node--result"><span>04</span><strong>Result payload</strong><small>CSS · map · messages · AST</small></div>
   </div>
 </section>
-
-The architecture is intentionally split: performance-sensitive CSS operations
-stay native, while runtime-specific compatibility remains close to the host
-ecosystem until the plugin ABI is complete.

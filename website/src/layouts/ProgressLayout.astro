@@ -37,9 +37,15 @@ const { title } = Astro.props;
     <main class="progress-content mx-auto max-w-5xl px-6 pb-24 pt-12 lg:px-10 lg:pt-20">
       <section class="progress-breakdown" aria-labelledby="breakdown-title">
         <div class="progress-breakdown__heading">
-          <div><p>MODULE BREAKDOWN</p><h1 id="breakdown-title">Where the work lives.</h1></div><span
-            >4 surfaces / 1 engine</span
-          >
+          <div>
+            <p>MODULE BREAKDOWN</p>
+            <h1 id="breakdown-title">Where the work lives.</h1>
+          </div>
+          <div class="flex items-center justify-between gap-2 text-xs text-[#0a0b0d85] dark:text-white/50">
+            <p>4 surfaces / 1 engine</p>
+            <p aria-hidden="true">·</p>
+            <p>BASELINE / POSTCSS 8.5.15</p>
+          </div>
         </div>
         <div class="progress-breakdown__grid">
           <div class="progress-breakdown__card">
@@ -66,15 +72,7 @@ const { title } = Astro.props;
           </div>
         </div>
       </section>
-      <div class="progress-doc-meta">
-        <span>BASELINE / POSTCSS 8.5.15</span><span
-          >UPSTREAM / <a
-            href="https://github.com/eryue0220/postcss-go/commit/eae46db765d752cf8f40c4fa2b0b85030079c43d"
-            target="_blank"
-            rel="noreferrer"><code>eae46db7</code> ↗</a
-          ></span
-        >
-      </div>
+
       <div class="progress-tabs" role="tablist" aria-label="Progress sections">
         <button
           class="progress-tabs__tab"
