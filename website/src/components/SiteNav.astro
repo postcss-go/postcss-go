@@ -10,6 +10,46 @@ const isGuide = pathname.startsWith(`${base}guide`);
 const isArchitecture = pathname === `${base}architecture/` || pathname === `${base}architecture`;
 const navLink = 'rounded-full border border-transparent px-3 py-2 transition hover:text-acid';
 const activeNavLink = `${navLink} text-acid`;
+
+function formatStars(count: number) {
+  return new Intl.NumberFormat('en', {
+    notation: count >= 1000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(count);
+}
+
+// Build-time fetch so the star count is in the HTML (no client flash of "—").
+// Cached across pages that include SiteNav during a single build.
+const githubStars = await (async () => {
+  const globalKey = '__postcssGoGithubStars';
+  const cache = globalThis as typeof globalThis & { [globalKey]?: Promise<string> };
+  if (!cache[globalKey]) {
+    cache[globalKey] = (async () => {
+      try {
+        const headers: Record<string, string> = {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'postcss-go-website',
+        };
+        const token = import.meta.env.GITHUB_TOKEN;
+        if (typeof token === 'string' && token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const response = await fetch('https://api.github.com/repos/eryue0220/postcss-go', {
+          headers,
+        });
+        if (!response.ok) return 'Star';
+
+        const repository = (await response.json()) as { stargazers_count?: number };
+        if (typeof repository.stargazers_count !== 'number') return 'Star';
+        return formatStars(repository.stargazers_count);
+      } catch {
+        return 'Star';
+      }
+    })();
+  }
+  return cache[globalKey];
+})();
 ---
 
 <nav class="site-nav mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
@@ -52,7 +92,7 @@ const activeNavLink = `${navLink} text-acid`;
       ><span>GitHub ↗</span><span class="text-white/25" aria-hidden="true">·</span><span
         class="flex items-center gap-1 font-mono text-[10px]"
         aria-label="GitHub stars"
-        ><span aria-hidden="true">★</span><span id="github-star-count">—</span></span
+        ><span aria-hidden="true">★</span><span id="github-star-count">{githubStars}</span></span
       ></a
     >
   </div>
@@ -85,42 +125,4 @@ const activeNavLink = `${navLink} text-acid`;
     }
     updateThemeButton();
   });
-
-  const starCount = document.querySelector<HTMLElement>('#github-star-count');
-  const starCacheKey = 'postcss-go-github-stars';
-  const formatStars = (count: number) =>
-    new Intl.NumberFormat('en', {
-      notation: count >= 1000 ? 'compact' : 'standard',
-      maximumFractionDigits: 1,
-    }).format(count);
-
-  async function updateGitHubStars() {
-    if (!starCount) return;
-
-    try {
-      const cached = sessionStorage.getItem(starCacheKey);
-      if (cached) {
-        const count = Number(cached);
-        if (Number.isFinite(count)) {
-          starCount.textContent = formatStars(count);
-          return;
-        }
-      }
-
-      const response = await fetch('https://api.github.com/repos/eryue0220/postcss-go', {
-        headers: { Accept: 'application/vnd.github+json' },
-      });
-      if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
-
-      const repository = (await response.json()) as { stargazers_count?: number };
-      if (typeof repository.stargazers_count !== 'number') return;
-
-      sessionStorage.setItem(starCacheKey, String(repository.stargazers_count));
-      starCount.textContent = formatStars(repository.stargazers_count);
-    } catch {
-      starCount.textContent = 'Star';
-    }
-  }
-
-  void updateGitHubStars();
 </script>
