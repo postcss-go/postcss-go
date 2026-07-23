@@ -224,8 +224,7 @@
   }
 
   .progress-breakdown__heading p {
-    @apply mb-[.65rem] mt-0 font-mono text-[.68rem] tracking-[.14em];
-    color: var(--violet-readable);
+    @apply mt-0 font-mono text-[.68rem] tracking-[.14em];
   }
 
   .progress-breakdown__heading h1 {
@@ -355,7 +354,7 @@
   }
 
   .guide-content > p {
-    @apply max-w-[46rem] leading-[1.85];
+    @apply leading-[1.85];
   }
 
   .guide-content > h2 {
@@ -590,7 +589,7 @@
   }
 
   .architecture-code {
-    @apply min-h-[25rem] pt-[1.4rem]! max-[760px]:min-h-0;
+    @apply pt-[1.4rem]! max-[760px]:min-h-0;
   }
 
   .architecture-boundaries,
@@ -613,7 +612,7 @@
   }
 
   .architecture-section-heading p {
-    @apply m-0 max-w-[38rem] leading-[1.7];
+    @apply m-0 leading-[1.7];
     color: var(--copy-muted);
   }
 
