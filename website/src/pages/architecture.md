@@ -18,14 +18,40 @@ title: postcss-go architecture
     </div>
   </div>
   <div class="code architecture-code overflow-hidden rounded-2xl border border-white/10 bg-[#08090a] p-5 font-mono text-[11px] leading-7 text-white/60 shadow-2xl md:p-8 md:text-sm">
-    <div class="mb-6 flex gap-2"><span class="h-2 w-2 rounded-full bg-red-400/70"></span><span class="h-2 w-2 rounded-full bg-yellow-300/70"></span><span class="h-2 w-2 rounded-full bg-acid/70"></span></div>
-    <div class="code-line"><span class="bracket">CSS</span><span class="muted">→</span><span class="token">Tokenizer</span></div>
-    <div class="code-line"><span class="muted"> ↓</span></div>
-    <div class="code-line"><span class="token">Parser</span><span class="muted">→</span><span class="bracket">AST</span></div>
-    <div class="code-line"><span class="muted"> ↓</span></div>
-    <div class="code-line"><span class="token">Plugin visitors</span><span class="muted">→</span><span class="bracket">Mutation</span></div>
-    <div class="code-line"><span class="muted"> ↓</span></div>
-    <div class="code-line"><span class="token">Stringifier</span><span class="muted">→</span><span class="bracket">CSS + source map</span></div>
+    <div class="mb-6 flex gap-2">
+    <span class="h-2 w-2 rounded-full bg-red-400/70"></span>
+    <span class="h-2 w-2 rounded-full bg-yellow-300/70"></span>
+    <span class="h-2 w-2 rounded-full bg-acid/70"></span>
+  </div>
+    <div class="code-line">
+      <span class="bracket">CSS</span>
+      <span class="muted">→</span>
+      <span class="token">Tokenizer</span>
+    </div>
+    <div class="code-line">
+      <span class="muted"> ↓</span>
+    </div>
+    <div class="code-line">
+      <span class="token">Parser</span>
+      <span class="muted">→</span>
+      <span class="bracket">AST</span>
+    </div>
+    <div class="code-line">
+      <span class="muted"> ↓</span>
+    </div>
+    <div class="code-line">
+      <span class="token">Plugin visitors</span>
+      <span class="muted">→</span>
+      <span class="bracket">Mutation</span>
+    </div>
+    <div class="code-line">
+      <span class="muted"> ↓</span>
+    </div>
+    <div class="code-line">
+      <span class="token">Stringifier</span>
+      <span class="muted">→</span>
+      <span class="bracket">CSS + source map</span>
+    </div>
   </div>
 </section>
 

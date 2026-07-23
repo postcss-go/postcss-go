@@ -590,7 +590,7 @@
   }
 
   .architecture-code {
-    @apply min-h-[25rem] pt-[1.4rem]! max-[760px]:min-h-0;
+    @apply pt-[1.4rem]! max-[760px]:min-h-0;
   }
 
   .architecture-boundaries,
