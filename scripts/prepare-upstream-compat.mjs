@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const targetLib =
   process.env.POSTCSS_COMPAT_TARGET_LIB ?? path.join(repoRoot, 'vendor', 'postcss', 'lib');
 const overridesDir = path.join(repoRoot, 'packages', 'postcss-compat', 'overrides');
+const goDistDir = path.join(repoRoot, 'packages', 'postcss-compat', 'dist');
 const mode = process.env.POSTCSS_COMPAT_MODE ?? 'upstream';
 
 if (!fs.existsSync(targetLib) || !fs.statSync(targetLib).isDirectory()) {
@@ -33,12 +35,12 @@ switch (mode) {
     applyOverridesFrom(path.join(overridesDir, 'upstream'));
     break;
   case 'go': {
-    const goDir = path.join(overridesDir, 'go');
-    if (!fs.existsSync(goDir) || !fs.statSync(goDir).isDirectory()) {
-      console.error(`Missing Go compat overrides at ${goDir}`);
+    if (!fs.existsSync(goDistDir) || !fs.statSync(goDistDir).isDirectory()) {
+      console.error(`Missing Go compat build output at ${goDistDir}`);
+      console.error('Run `pnpm --filter @postcss-go/compat build` first.');
       process.exit(1);
     }
-    applyOverridesFrom(goDir);
+    applyOverridesFrom(goDistDir);
     break;
   }
   default:

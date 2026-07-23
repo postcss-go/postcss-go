@@ -1,23 +1,32 @@
-'use strict';
-/* eslint-disable @typescript-eslint/no-require-imports */
+// Sibling PostCSS lib modules exist only after these files are copied into
+// vendor/postcss/lib by the upstream compat prepare script.
+const load = (id: string): any => require(id);
+const MapGenerator = load('./map-generator');
+const parse = load('./parse');
+const Result = load('./result');
+const stringify = load('./stringify');
+const warnOnce = load('./warn-once');
 
-let MapGenerator = require('./map-generator');
-let parse = require('./parse');
-let Result = require('./result');
-let stringify = require('./stringify');
-let warnOnce = require('./warn-once');
-
-function hasSourceMapAnnotation(css) {
+function hasSourceMapAnnotation(css: string) {
   return /\/\*#\s*sourceMappingURL=/.test(css);
 }
 
-function normalizeGeneratedCSS(css, hadAnnotation, mapped) {
+function normalizeGeneratedCSS(css: string, hadAnnotation: boolean, mapped: boolean) {
   if (!hadAnnotation) return css;
   if (!mapped) return css.replace(/\n+$/, '');
   return css.replace(/\n{2}(\/\*#\s*sourceMappingURL=)/, '\n$1');
 }
 
 class NoWorkResult {
+  stringified: boolean;
+  _processor: unknown;
+  _css: string;
+  _opts: Record<string, unknown>;
+  _map: unknown;
+  _root?: unknown;
+  error?: unknown;
+  result: any;
+
   get content() {
     return this.result.css;
   }
@@ -38,7 +47,7 @@ class NoWorkResult {
   }
   get root() {
     if (this._root) return this._root;
-    let parser = parse;
+    const parser = parse;
     try {
       this._root = parser(this._css, this._opts);
     } catch (error) {
@@ -51,24 +60,24 @@ class NoWorkResult {
     return 'NoWorkResult';
   }
 
-  constructor(processor, css, opts) {
-    css = css.toString();
+  constructor(processor: unknown, css: { toString(): string }, opts: Record<string, unknown>) {
+    const cssText = css.toString();
     this.stringified = false;
     this._processor = processor;
-    this._css = css;
+    this._css = cssText;
     this._opts = opts;
     this._map = undefined;
-    const hadAnnotation = hasSourceMapAnnotation(css);
-    let str = stringify;
+    const hadAnnotation = hasSourceMapAnnotation(cssText);
+    const str = stringify;
     this.result = new Result(this._processor, undefined, this._opts);
-    this.result.css = css;
+    this.result.css = cssText;
     Object.defineProperty(this.result, 'root', {
       get: () => this.root,
     });
 
-    let map = new MapGenerator(str, undefined, this._opts, css);
+    const map = new MapGenerator(str, undefined, this._opts, cssText);
     if (map.isMap()) {
-      let [generatedCSS, generatedMap] = map.generate();
+      const [generatedCSS, generatedMap] = map.generate();
       if (generatedCSS) this.result.css = generatedCSS;
       if (generatedMap) this.result.map = generatedMap;
       this.result.css = normalizeGeneratedCSS(this.result.css, hadAnnotation, true);
@@ -81,17 +90,17 @@ class NoWorkResult {
   async() {
     return this.error ? Promise.reject(this.error) : Promise.resolve(this.result);
   }
-  catch(onRejected) {
+  catch(onRejected: (reason: unknown) => unknown) {
     return this.async().catch(onRejected);
   }
-  finally(onFinally) {
+  finally(onFinally: () => unknown) {
     return this.async().then(onFinally, onFinally);
   }
   sync() {
     if (this.error) throw this.error;
     return this.result;
   }
-  then(onFulfilled, onRejected) {
+  then(onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) {
     if (process.env.NODE_ENV !== 'production' && !('from' in this._opts)) {
       warnOnce(
         'Without `from` option PostCSS could generate wrong source map and will not find Browserslist config. Set it to CSS file path or to `undefined` to prevent this warning.',
@@ -107,5 +116,5 @@ class NoWorkResult {
   }
 }
 
-module.exports = NoWorkResult;
-NoWorkResult.default = NoWorkResult;
+(NoWorkResult as any).default = NoWorkResult;
+export = NoWorkResult;

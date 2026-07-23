@@ -24,10 +24,11 @@ type Token struct {
 }
 
 func (token Token) Text(input string) string {
-	if token.Start < 0 || token.End < token.Start || token.End+1 > len(input) {
+	if token.Start < 0 || token.End < token.Start || token.Start >= len(input) {
 		return ""
 	}
-	return input[token.Start : token.End+1]
+	end := min(token.End+1, len(input))
+	return input[token.Start:end]
 }
 
 type Tokenizer struct {
@@ -100,7 +101,9 @@ func (t *Tokenizer) Next(opts NextOptions) (Token, error) {
 				if !t.ignore && !opts.IgnoreUnclosed {
 					return Token{}, t.unclosed("comment", start)
 				}
-				end = len(t.input) - start - 1
+				// PostCSS's ignored-unclosed comment token uses an end offset one
+				// past the input length; preserve that legacy range here.
+				end = len(t.input)
 			} else {
 				end = start + 2 + end + 1
 			}
@@ -134,7 +137,7 @@ func (t *Tokenizer) parenthesis(start int, ignoreUnclosed bool) (Token, error) {
 			if !t.ignore && !ignoreUnclosed {
 				return Token{}, t.unclosed("bracket", start)
 			}
-			return Token{Kind: "(", Start: start, End: start}, nil
+			return Token{Kind: "brackets", Start: start, End: start}, nil
 		}
 		return Token{Kind: "brackets", Start: start, End: end}, nil
 	}
@@ -160,7 +163,7 @@ func (t *Tokenizer) stringToken(start int, quote rune, ignoreUnclosed bool) (Tok
 		if !t.ignore && !ignoreUnclosed {
 			return Token{}, t.unclosed("string", start)
 		}
-		return Token{Kind: "string", Start: start, End: min(start+1, len(t.input)-1)}, nil
+		return Token{Kind: "string", Start: start, End: start + 1}, nil
 	}
 	return Token{Kind: "string", Start: start, End: end}, nil
 }

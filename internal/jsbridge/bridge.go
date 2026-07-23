@@ -10,6 +10,7 @@ import (
 	"github.com/creachadair/jrpc2/handler"
 	"postcss-go/internal/ast"
 	postcss "postcss-go/internal/postcss"
+	"postcss-go/internal/stringifier"
 )
 
 type Request struct {
@@ -124,11 +125,13 @@ type ProcessResult struct {
 }
 
 type StringifyParams struct {
-	AST *NodeDTO `json:"ast"`
+	AST     *NodeDTO `json:"ast"`
+	Builder bool     `json:"builder,omitempty"`
 }
 
 type StringifyResult struct {
-	CSS string `json:"css"`
+	CSS   string                    `json:"css"`
+	Parts []stringifier.BuilderPart `json:"parts"`
 }
 
 func Assigner() handler.Map {
@@ -222,7 +225,11 @@ func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, 
 	if err != nil {
 		return nil, err
 	}
-	return &StringifyResult{CSS: postcss.Stringify(node)}, nil
+	result := &StringifyResult{CSS: postcss.Stringify(node)}
+	if params.Builder {
+		result.Parts = stringifier.StringifyWithBuilder(node)
+	}
+	return result, nil
 }
 
 func ToJSON(resp Response) ([]byte, error) {

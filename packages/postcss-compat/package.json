@@ -5,12 +5,13 @@
   "description": "PostCSS upstream test harness and Go-backed compat overrides.",
   "type": "module",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "prepare:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/prepare-upstream-compat.mjs",
-    "prepare:go": "POSTCSS_COMPAT_MODE=go node ../../scripts/prepare-upstream-compat.mjs",
+    "prepare:go": "pnpm build && POSTCSS_COMPAT_MODE=go node ../../scripts/prepare-upstream-compat.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/run-upstream-tests.mjs",
-    "test:upstream:go": "POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='\\.test\\.(ts|js)$' node ../../scripts/run-upstream-tests.mjs",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:upstream:go": "pnpm build && POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='\\.test\\.(ts|js)$' node ../../scripts/run-upstream-tests.mjs",
+    "test": "pnpm build && vitest run",
+    "test:coverage": "pnpm build && vitest run --coverage"
   },
   "dependencies": {
     "@postcss-go/core": "workspace:*",

@@ -84,6 +84,12 @@ func handleSingleRequest(data []byte) ([]byte, error) {
 		if callErr == nil {
 			result, callErr = jsbridge.StringifyRPC(context.Background(), params)
 		}
+	case "tokenize":
+		var params jsbridge.TokenizeBatchParams
+		callErr = json.Unmarshal(request.Params, &params)
+		if callErr == nil {
+			result, callErr = jsbridge.TokenizeBatchRPC(context.Background(), params)
+		}
 	default:
 		callErr = fmt.Errorf("unsupported method %q in single-request mode", request.Method)
 	}
