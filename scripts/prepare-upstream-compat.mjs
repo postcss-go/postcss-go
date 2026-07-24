@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const targetLib =
-  process.env.POSTCSS_COMPAT_TARGET_LIB ?? path.join(repoRoot, 'vendor', 'postcss', 'lib');
+const vendorLib = path.join(repoRoot, 'vendor', 'postcss', 'lib');
+const targetLib = process.env.POSTCSS_COMPAT_TARGET_LIB ?? vendorLib;
 const overridesDir = path.join(repoRoot, 'packages', 'postcss-compat', 'overrides');
 const goDistDir = path.join(repoRoot, 'packages', 'postcss-compat', 'dist');
 const mode = process.env.POSTCSS_COMPAT_MODE ?? 'upstream';
@@ -14,6 +14,18 @@ const mode = process.env.POSTCSS_COMPAT_MODE ?? 'upstream';
 if (!fs.existsSync(targetLib) || !fs.statSync(targetLib).isDirectory()) {
   console.error(`Missing vendored upstream lib at ${targetLib}`);
   console.error('Run `node ./scripts/sync-upstream-postcss-tests.mjs` first.');
+  process.exit(1);
+}
+
+// Go overrides must only land on a temp copy (see run-upstream-tests.mjs). Writing
+// them into vendor/postcss/lib permanently breaks POSTCSS_COMPAT_MODE=upstream.
+if (
+  mode === 'go' &&
+  path.resolve(targetLib) === path.resolve(vendorLib) &&
+  process.env.POSTCSS_COMPAT_ALLOW_VENDOR_WRITE !== '1'
+) {
+  console.error('Refusing to apply Go overrides directly to vendor/postcss/lib.');
+  console.error('Use `pnpm test:upstream:go` (temp copy) or set POSTCSS_COMPAT_TARGET_LIB.');
   process.exit(1);
 }
 

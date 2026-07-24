@@ -1,174 +1,42 @@
-"use strict";
-const node_url_1 = require("node:url");
-const bridge_1 = require("./bridge");
-// Sibling PostCSS lib modules exist only after these files are copied into
-// vendor/postcss/lib by the upstream compat prepare script.
-const load = (id) => require(id);
-const AtRule = load('./at-rule');
-const Comment = load('./comment');
-const Container = load('./container');
-const CssSyntaxError = load('./css-syntax-error');
-const Declaration = load('./declaration');
-const Document = load('./document');
-const Input = load('./input');
-const Root = load('./root');
-const Rule = load('./rule');
-function sourceOf(dto, input) {
-    if (!dto)
-        return undefined;
-    return {
-        start: { ...dto.start },
-        end: { ...dto.end },
-        input,
-    };
-}
-function nodeOf(dto, input) {
-    const defaults = { raws: dto.raws || {} };
-    if (dto.source) {
-        defaults.source = sourceOf(dto.source, input);
-        if (dto.type === 'atrule' &&
-            !dto.params &&
-            dto.source.start.offset === dto.source.end.offset) {
-            delete defaults.source.end;
+'use strict'
+
+let Container = require('./container')
+let Input = require('./input')
+let Parser = require('./parser')
+
+function parse(css, opts) {
+  let input = new Input(css, opts)
+  let parser = new Parser(input)
+  try {
+    parser.parse()
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') {
+      if (e.name === 'CssSyntaxError' && opts && opts.from) {
+        if (/\.scss$/i.test(opts.from)) {
+          e.message +=
+            '\nYou tried to parse SCSS with ' +
+            'the standard CSS parser; ' +
+            'try again with the postcss-scss parser'
+        } else if (/\.sass/i.test(opts.from)) {
+          e.message +=
+            '\nYou tried to parse Sass with ' +
+            'the standard CSS parser; ' +
+            'try again with the postcss-sass parser'
+        } else if (/\.less$/i.test(opts.from)) {
+          e.message +=
+            '\nYou tried to parse Less with ' +
+            'the standard CSS parser; ' +
+            'try again with the postcss-less parser'
         }
+      }
     }
-    let node;
-    switch (dto.type) {
-        case 'root':
-            node = new Root(defaults);
-            break;
-        case 'document':
-            node = new Document(defaults);
-            break;
-        case 'rule':
-            node = new Rule({ ...defaults, selector: dto.selector || '' });
-            break;
-        case 'atrule':
-            node = new AtRule({
-                ...defaults,
-                name: dto.name,
-                params: dto.params || '',
-                ...(dto.block ? { nodes: [] } : {}),
-            });
-            break;
-        case 'decl':
-            node = new Declaration({
-                ...defaults,
-                prop: dto.prop,
-                value: dto.value,
-                important: dto.important,
-            });
-            break;
-        case 'comment':
-            node = new Comment({ ...defaults, text: dto.text });
-            break;
-        default:
-            throw new Error(`Unsupported Go AST node type: ${dto.type}`);
-    }
-    if (dto.nodes && dto.nodes.length) {
-        node.append(dto.nodes.map((child) => nodeOf(child, input)));
-    }
-    return node;
+    throw e
+  }
+
+  return parser.root
 }
-const trailingSourceMapAnnotation = /(?:\r?\n|\s)*\/\*#\s*sourceMappingURL=[\s\S]*?\*\/\s*$/;
-function cssWithoutSourceMapAnnotation(css) {
-    return css.replace(trailingSourceMapAnnotation, '');
-}
-function usablePreviousMap(input) {
-    const text = input.map?.text || '';
-    if (!text)
-        return '';
-    try {
-        const map = JSON.parse(text);
-        if (typeof map.mappings === 'string')
-            return map.mappings ? text : '';
-        return Array.isArray(map.sections) && map.sections.length ? text : '';
-    }
-    catch {
-        return '';
-    }
-}
-function syntaxErrorFromBridge(error) {
-    const bridgeError = error;
-    if (!bridgeError || bridgeError.name !== 'CssSyntaxError')
-        return error;
-    const line = bridgeError.line;
-    const column = bridgeError.column === undefined && bridgeError.input?.sourceMapPresent
-        ? 0
-        : bridgeError.column;
-    let reason = bridgeError.reason || bridgeError.message;
-    if (reason === 'Unclosed block: missing closing brace') {
-        reason = 'Unclosed block';
-    }
-    else if (reason === 'Unknown word: expected declaration') {
-        const source = bridgeError.source || bridgeError.input?.source || '';
-        const offset = bridgeError.input?.offset ?? 0;
-        const word = source.slice(offset).match(/^[\w-]+/)?.[0] || '';
-        reason = word ? `Unknown word ${word}` : 'Unknown word';
-    }
-    const source = bridgeError.source ||
-        (bridgeError.input?.sourceMapPresent ? undefined : bridgeError.input?.source);
-    const syntaxError = new CssSyntaxError(reason, line, column, source, bridgeError.file, bridgeError.plugin);
-    if (bridgeError.endLine !== undefined)
-        syntaxError.endLine = bridgeError.endLine;
-    if (bridgeError.endColumn !== undefined)
-        syntaxError.endColumn = bridgeError.endColumn;
-    if (reason.startsWith('Unknown word') && syntaxError.endColumn === undefined) {
-        syntaxError.endLine = line;
-        syntaxError.endColumn = (column ?? 0) + reason.slice('Unknown word '.length).length;
-    }
-    if (syntaxError.setMessage)
-        syntaxError.setMessage();
-    if (bridgeError.input) {
-        const inputInfo = {
-            column: bridgeError.input.column,
-            endColumn: undefined,
-            endLine: undefined,
-            endOffset: undefined,
-            line: bridgeError.input.line,
-            offset: bridgeError.input.offset,
-            source: bridgeError.input.source,
-        };
-        if (syntaxError.endColumn !== undefined) {
-            inputInfo.endColumn = syntaxError.endColumn;
-            inputInfo.endLine = syntaxError.endLine;
-            inputInfo.endOffset =
-                (bridgeError.input.offset ?? 0) + syntaxError.endColumn - (column ?? 0);
-        }
-        if (bridgeError.input.file) {
-            inputInfo.file = bridgeError.input.file;
-            inputInfo.url = (0, node_url_1.pathToFileURL)(bridgeError.input.file).toString();
-        }
-        syntaxError.input = {
-            ...inputInfo,
-        };
-    }
-    return syntaxError;
-}
-function parse(css, opts = {}) {
-    const text = css == null ? css : css.toString();
-    const input = new Input(text, opts);
-    // Custom syntax runs through the normal stringify path, where the
-    // annotation is removed by PostCSS's map generator. Keep it in the normal
-    // path so the standard annotation and source-map tests retain their raw
-    // formatting semantics.
-    const parseText = opts.syntax || opts.parser ? cssWithoutSourceMapAnnotation(String(text ?? '')) : text;
-    let result;
-    try {
-        result = (0, bridge_1.call)('parse', {
-            css: parseText,
-            options: {
-                from: input.file || opts.from || '',
-                previousMap: usablePreviousMap(input),
-                previousMapUrl: input.map?.mapFile || input.file || '',
-            },
-        });
-    }
-    catch (error) {
-        throw syntaxErrorFromBridge(error);
-    }
-    return nodeOf(result.root, input);
-}
-parse.default = parse;
-Container.registerParse(parse);
-module.exports = parse;
+
+module.exports = parse
+parse.default = parse
+
+Container.registerParse(parse)
