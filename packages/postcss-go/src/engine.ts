@@ -128,7 +128,11 @@ export async function processWithGoEngine(
     // normalizeProcessOptions at the bridge boundary.
     let mapForService: ProcessOptions['map'] = mapForServiceBase;
 
-    if (pluginResult && mapEnabled && mapDefersInlineMode(mapForService as MapOptions | boolean | undefined)) {
+    if (
+      pluginResult &&
+      mapEnabled &&
+      mapDefersInlineMode(mapForService as MapOptions | boolean | undefined)
+    ) {
       const inputMap = (
         pluginResult.root.source?.input as unknown as
           | {

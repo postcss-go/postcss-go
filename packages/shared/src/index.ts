@@ -9,8 +9,4 @@ export {
   type ProcessFileOptions,
   type ResolveAnnotationPath,
 } from './map-options.js';
-export {
-  getMapfile,
-  joinMapAnnotationPath,
-  toSourceMapPath,
-} from './map-path.js';
+export { getMapfile, joinMapAnnotationPath, toSourceMapPath } from './map-path.js';

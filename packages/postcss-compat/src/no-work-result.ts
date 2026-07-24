@@ -4,12 +4,14 @@ import {
   type MapOptions,
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
-import { call } from './bridge';
+import { createRequire } from 'node:module';
 import path from 'node:path';
+import { call } from './bridge';
 
 // Sibling PostCSS lib modules exist only after these files are copied into
 // vendor/postcss/lib by the upstream compat prepare script.
-const load = (id: string): any => require(id);
+const nodeRequire = createRequire(__filename);
+const load = (id: string): any => nodeRequire(id);
 const parse = load('./parse');
 const Result = load('./result');
 const { SourceMapConsumer, SourceMapGenerator } = load('source-map-js');

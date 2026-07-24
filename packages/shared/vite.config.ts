@@ -16,8 +16,7 @@ export default defineConfig({
         'map-path': resolve(root, 'src/map-path.ts'),
       },
       formats: ['es', 'cjs'],
-      fileName: (format, entryName) =>
-        format === 'es' ? `${entryName}.js` : `${entryName}.cjs`,
+      fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),
     },
     rollupOptions: {
       output: {

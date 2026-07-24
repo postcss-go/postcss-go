@@ -1,9 +1,11 @@
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { call } from './bridge';
 
 // Sibling PostCSS lib modules exist only after these files are copied into
 // vendor/postcss/lib by the upstream compat prepare script.
-const load = (id: string): any => require(id);
+const nodeRequire = createRequire(__filename);
+const load = (id: string): any => nodeRequire(id);
 const AtRule = load('./at-rule');
 const Comment = load('./comment');
 const Container = load('./container');
@@ -67,11 +69,7 @@ function nodeOf(dto: NodeDto, input: unknown): any {
   const defaults: Record<string, unknown> = { raws: dto.raws || {} };
   if (dto.source) {
     defaults.source = sourceOf(dto.source, input);
-    if (
-      dto.type === 'atrule' &&
-      !dto.params &&
-      dto.source.start.offset === dto.source.end.offset
-    ) {
+    if (dto.type === 'atrule' && !dto.params && dto.source.start.offset === dto.source.end.offset) {
       delete (defaults.source as { end?: unknown }).end;
     }
   }
@@ -183,8 +181,7 @@ function syntaxErrorFromBridge(error: unknown) {
     if (syntaxError.endColumn !== undefined) {
       inputInfo.endColumn = syntaxError.endColumn;
       inputInfo.endLine = syntaxError.endLine;
-      inputInfo.endOffset =
-        (bridgeError.input.offset ?? 0) + syntaxError.endColumn - (column ?? 0);
+      inputInfo.endOffset = (bridgeError.input.offset ?? 0) + syntaxError.endColumn - (column ?? 0);
     }
     if (bridgeError.input.file) {
       inputInfo.file = bridgeError.input.file;

@@ -44,10 +44,23 @@ function dtoOf(
   if (!node.source && node.type === 'decl' && dto.raws.between === ': ') {
     delete dto.raws.between;
   }
-  if (!node.source && node.type === 'rule' && node.parent && (node.parent as PostCSSNode).type === 'atrule' && typeof dto.raws.before === 'string' && dto.raws.before.trim() === '') {
+  if (
+    !node.source &&
+    node.type === 'rule' &&
+    node.parent &&
+    (node.parent as PostCSSNode).type === 'atrule' &&
+    typeof dto.raws.before === 'string' &&
+    dto.raws.before.trim() === ''
+  ) {
     delete dto.raws.before;
   }
-  if (!node.source && node.type === 'rule' && node.selector === 'from' && (node.parent as PostCSSNode | undefined)?.type === 'atrule' && (node.parent as PostCSSNode).name === 'keyframes') {
+  if (
+    !node.source &&
+    node.type === 'rule' &&
+    node.selector === 'from' &&
+    (node.parent as PostCSSNode | undefined)?.type === 'atrule' &&
+    (node.parent as PostCSSNode).name === 'keyframes'
+  ) {
     dto.raws.before = '\n';
     dto.raws.between = '';
   }
@@ -58,7 +71,13 @@ function dtoOf(
     const materializeSpacing = materializeRaw !== 'afterOnly';
     if (materializeRaw === 'afterOnly') {
       const rawKeys = Object.keys(node.raws || {});
-      if (rawKeys.length <= 1 && (!node.nodes || node.nodes.length === 0) && !('after' in dto.raws) && node.parent && Array.isArray((node.parent as PostCSSNode).nodes)) {
+      if (
+        rawKeys.length <= 1 &&
+        (!node.nodes || node.nodes.length === 0) &&
+        !('after' in dto.raws) &&
+        node.parent &&
+        Array.isArray((node.parent as PostCSSNode).nodes)
+      ) {
         const sample = (node.parent as PostCSSNode).nodes?.find((sibling) => {
           if (sibling === node || sibling.type !== node.type) return false;
           const value = sibling.raws?.after ?? sibling.raw?.('after');
@@ -66,13 +85,13 @@ function dtoOf(
         });
         if (sample) dto.raws.after = sample.raws?.after ?? sample.raw?.('after');
       }
-  if (node.source && node.type === 'atrule' && !('between' in dto.raws)) {
+      if (node.source && node.type === 'atrule' && !('between' in dto.raws)) {
         const between = node.raw('between');
-      if (typeof between === 'string' && between !== ' ') dto.raws.between = between;
-  }
-  if (node.type === 'atrule' && node.name === 'keyframes' && !('between' in dto.raws)) {
-    dto.raws.between = '';
-  }
+        if (typeof between === 'string' && between !== ' ') dto.raws.between = between;
+      }
+      if (node.type === 'atrule' && node.name === 'keyframes' && !('between' in dto.raws)) {
+        dto.raws.between = '';
+      }
       const after = node.raw('after');
       if (
         !('after' in dto.raws) &&

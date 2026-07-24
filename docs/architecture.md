@@ -83,12 +83,12 @@ JavaScript stays responsible for ecosystem-facing behavior; Go handles parse, AS
 
 Ownership is split so PostCSS-shaped options stay in JavaScript while map generation stays in Go:
 
-| Layer | Owns |
-| ----- | ---- |
-| `@postcss-go/shared` | Normalize `map` / `map.prev` / `map.annotation` into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …); resolve annotation callbacks and map file paths |
-| Node / browser / compat | Call `normalizeProcessOptions` before `process` / `noWork`; empty plugin pipelines use `noWork` |
-| Go `processor` | Load previous maps, compose or build identity maps, clear or preserve annotations, emit inline/external `sourceMappingURL` |
-| Go `stringifier` | AST stringify with optional source-map annotation stripping; raw-CSS `ClearSourceMapAnnotations` for the no-work path |
+| Layer                   | Owns                                                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@postcss-go/shared`    | Normalize `map` / `map.prev` / `map.annotation` into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …); resolve annotation callbacks and map file paths |
+| Node / browser / compat | Call `normalizeProcessOptions` before `process` / `noWork`; empty plugin pipelines use `noWork`                                                                        |
+| Go `processor`          | Load previous maps, compose or build identity maps, clear or preserve annotations, emit inline/external `sourceMappingURL`                                             |
+| Go `stringifier`        | AST stringify with optional source-map annotation stripping; raw-CSS `ClearSourceMapAnnotations` for the no-work path                                                  |
 
 Contract notes:
 
