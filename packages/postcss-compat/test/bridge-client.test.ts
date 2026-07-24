@@ -1,22 +1,36 @@
 import childProcess from 'node:child_process';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
 function withBridgeClient(response, run) {
-  const originalSpawnSync = childProcess.spawnSync;
+  const originalSpawn = childProcess.spawn;
   const originalExecFileSync = childProcess.execFileSync;
+  const originalWriteSync = fs.writeSync;
+  const originalReadSync = fs.readSync;
   const calls = [];
+  const output = Buffer.from(`${JSON.stringify(response)}\n`);
+  let outputOffset = 0;
 
   childProcess.execFileSync = () => Buffer.alloc(0);
-  childProcess.spawnSync = (command, args, options) => {
+  childProcess.spawn = (command, args, options) => {
     calls.push({ command, args, options });
     return {
-      status: 0,
-      stdout: Buffer.from(`${JSON.stringify(response)}\n`),
-      stderr: Buffer.alloc(0),
+      stdin: { _handle: { fd: 41 }, unref() {} },
+      stdout: { _handle: { fd: 42 }, unref() {} },
+      stderr: { unref() {} },
+      unref() {},
+      kill() {},
     };
+  };
+  fs.writeSync = () => 0;
+  fs.readSync = (fd, buffer, offset, length) => {
+    if (fd !== 42) return originalReadSync(fd, buffer, offset, length, null);
+    if (outputOffset >= output.length) outputOffset = 0;
+    buffer[offset] = output[outputOffset++];
+    return 1;
   };
 
   const bridgePath = require.resolve('../bridge-client.cjs');
@@ -28,8 +42,10 @@ function withBridgeClient(response, run) {
   } finally {
     bridge.close();
     delete require.cache[bridgePath];
-    childProcess.spawnSync = originalSpawnSync;
+    childProcess.spawn = originalSpawn;
     childProcess.execFileSync = originalExecFileSync;
+    fs.writeSync = originalWriteSync;
+    fs.readSync = originalReadSync;
   }
 }
 
@@ -37,9 +53,8 @@ test('bridge-client.cjs builds one bridge binary and sends JSON-RPC requests', (
   withBridgeClient({ jsonrpc: '2.0', id: 1, result: { ok: true } }, ({ bridge, calls }) => {
     expect(bridge.callSync('process', { css: '.a { color: red; }' })).toEqual({ ok: true });
     expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(calls[0].args).toEqual(['--single']);
-    expect(calls[1].args).toEqual(['--single']);
   });
 });
 

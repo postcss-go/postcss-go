@@ -8,7 +8,7 @@ export default defineConfig({
     provider: 'v8',
     all: true,
     include: ['bridge-client.cjs', 'register.cjs'],
-    exclude: ['**/overrides/**', '**/test/**'],
+    exclude: ['**/src/**', '**/dist/**', '**/test/**'],
     excludeAfterRemap: true,
     reporter: ['text', 'html'],
     thresholds: {

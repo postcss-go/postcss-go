@@ -37,7 +37,7 @@ func TestTokenizeRPCSessionCompatibility(t *testing.T) {
 	}
 	id := opened.ID
 	t.Cleanup(func() {
-		delete(tokenizeSessions, id)
+		_, _ = TokenizeCloseRPC(ctx, TokenizeSessionParams{ID: id})
 	})
 
 	next, err := TokenizeNextRPC(ctx, TokenizeNextParams{ID: id})
@@ -85,5 +85,90 @@ func TestTokenizeRPCSessionCompatibility(t *testing.T) {
 	}
 	if _, err := TokenizeEOFRPC(ctx, TokenizeSessionParams{ID: id}); err == nil || !strings.Contains(err.Error(), "unknown tokenize session") {
 		t.Fatalf("expected unknown-session error, got %v", err)
+	}
+}
+
+func TestTokenizeRPCSessionUsesUTF16Offsets(t *testing.T) {
+	ctx := context.Background()
+	opened, err := TokenizeOpenRPC(ctx, TokenizeOpenParams{CSS: "中🔥"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = TokenizeCloseRPC(ctx, TokenizeSessionParams{ID: opened.ID})
+	})
+
+	next, err := TokenizeNextRPC(ctx, TokenizeNextParams{ID: opened.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{"word", "中🔥", 0, 2}
+	if !reflect.DeepEqual(next.Token, want) {
+		t.Fatalf("token = %#v, want %#v", next.Token, want)
+	}
+
+	position, err := TokenizePositionRPC(ctx, TokenizeSessionParams{ID: opened.ID})
+	if err != nil || position.Value != 3 {
+		t.Fatalf("position = %#v, err = %v", position, err)
+	}
+}
+
+func TestTokenizeBatchRPCPreservesIgnoredUnclosedError(t *testing.T) {
+	result, err := TokenizeBatchRPC(context.Background(), TokenizeBatchParams{CSS: " /*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == nil || result.ErrorIndex != 1 {
+		t.Fatalf("result error = %#v at index %d", result.Error, result.ErrorIndex)
+	}
+	if len(result.Tokens) != 2 || result.Tokens[1][0] != "comment" {
+		t.Fatalf("tokens = %#v, want ignored comment token", result.Tokens)
+	}
+}
+
+func TestTokenizeBatchRPCUsesUTF16Offsets(t *testing.T) {
+	result, err := TokenizeBatchRPC(context.Background(), TokenizeBatchParams{CSS: "中🔥"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantToken := []any{"word", "中🔥", 0, 2}
+	if len(result.Tokens) != 1 || !reflect.DeepEqual(result.Tokens[0], wantToken) {
+		t.Fatalf("tokens = %#v, want %#v", result.Tokens, [][]any{wantToken})
+	}
+	if len(result.Positions) != 1 || result.Positions[0] != 3 {
+		t.Fatalf("positions = %#v, want [3]", result.Positions)
+	}
+}
+
+func TestTokenizeBatchRPCPastEOFPosition(t *testing.T) {
+	result, err := TokenizeBatchRPC(context.Background(), TokenizeBatchParams{CSS: "/* unclosed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == nil || result.ErrorIndex != 0 {
+		t.Fatalf("result error = %#v at index %d", result.Error, result.ErrorIndex)
+	}
+	wantToken := []any{"comment", "/* unclosed", 0, 11}
+	if len(result.Tokens) != 1 || !reflect.DeepEqual(result.Tokens[0], wantToken) {
+		t.Fatalf("tokens = %#v, want %#v", result.Tokens, [][]any{wantToken})
+	}
+	if len(result.Positions) != 1 || result.Positions[0] != 12 {
+		t.Fatalf("positions = %#v, want [12] (one past UTF-16 EOF)", result.Positions)
+	}
+}
+
+func TestMakeUTF16TableFillsEveryByte(t *testing.T) {
+	input := "中🔥"
+	table := makeUTF16Table(input)
+	if len(table) != len(input)+1 {
+		t.Fatalf("table length = %d, want %d", len(table), len(input)+1)
+	}
+	for offset := 0; offset <= len(input); offset++ {
+		if table[offset] < 0 {
+			t.Fatalf("hole or invalid value at byte %d: %d", offset, table[offset])
+		}
+	}
+	if got := utf16Offset(table, len(input), len(input)+1); got != 4 {
+		t.Fatalf("past-EOF utf16 offset = %d, want 4", got)
 	}
 }

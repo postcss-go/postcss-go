@@ -80,7 +80,12 @@ func TestProcessorPropagatesVisitorErrors(t *testing.T) {
 }
 
 func TestProcessorMapsAnonymousInput(t *testing.T) {
-	res, err := New().Process(".a { color: red; }", Options{Map: true, To: "out.css"})
+	res, err := New().Process(".a { color: red; }", Options{
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+		To:                    "out.css",
+	})
 	if err != nil {
 		t.Fatalf("process failed: %v", err)
 	}
@@ -112,9 +117,11 @@ func TestProcessorMapsUnsourcedNodes(t *testing.T) {
 	})
 
 	res, err := p.Process(".a { color: red; }", Options{
-		From: "input.css",
-		To:   "out.css",
-		Map:  true,
+		From:                  "input.css",
+		To:                    "out.css",
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
 	})
 	if err != nil {
 		t.Fatalf("process failed: %v", err)
@@ -140,7 +147,13 @@ func TestProcessorSourceMapUsesUTF16ColumnsAndEncodedPaths(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "dist", "output.css")
 	css := ".🔥 { color: 红; }"
 
-	res, err := New().Process(css, Options{From: inputFile, To: outputFile, Map: true})
+	res, err := New().Process(css, Options{
+		From:                  inputFile,
+		To:                    outputFile,
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+	})
 	if err != nil {
 		t.Fatalf("process failed: %v", err)
 	}
@@ -177,11 +190,13 @@ func TestProcessorComposesPreviousMapAndRemovesAnnotation(t *testing.T) {
 	}`
 	css := ".a {\n  color: blue;\n}\n/*# sourceMappingURL=generated.css.map */"
 	res, err := New().Process(css, Options{
-		From:           "generated.css",
-		To:             "out.css",
-		Map:            true,
-		PreviousMap:    previousMap,
-		PreviousMapURL: "generated.css.map",
+		From:                  "generated.css",
+		To:                    "out.css",
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+		PreviousMap:           previousMap,
+		PreviousMapURL:        "generated.css.map",
 	})
 	if err != nil {
 		t.Fatalf("process failed: %v", err)
@@ -218,11 +233,13 @@ func TestProcessorPreservesMissingPreviousSourceContent(t *testing.T) {
 		"mappings": "AAAA"
 	}`
 	res, err := New().Process(".a {}", Options{
-		From:           "generated.css",
-		To:             "out.css",
-		Map:            true,
-		PreviousMap:    previousMap,
-		PreviousMapURL: "generated.css.map",
+		From:                  "generated.css",
+		To:                    "out.css",
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+		PreviousMap:           previousMap,
+		PreviousMapURL:        "generated.css.map",
 	})
 	if err != nil {
 		t.Fatalf("process failed: %v", err)
@@ -243,7 +260,13 @@ func TestProcessorLoadsInlinePreviousMapAnnotation(t *testing.T) {
 	annotation := base64.StdEncoding.EncodeToString([]byte(previousMap))
 	css := "a{}\n/*# sourceMappingURL=data:application/json;base64," + annotation + " */"
 
-	res, err := New().Process(css, Options{From: "generated.css", To: "out.css", Map: true})
+	res, err := New().Process(css, Options{
+		From:                  "generated.css",
+		To:                    "out.css",
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+	})
 	if err != nil {
 		t.Fatalf("process inline previous map: %v", err)
 	}
@@ -266,9 +289,11 @@ func TestProcessorLoadsExternalPreviousMapAnnotation(t *testing.T) {
 	}
 
 	res, err := New().Process("a{}\n/*# sourceMappingURL=generated.css.map */", Options{
-		From: cssFile,
-		To:   filepath.Join(tempDir, "out.css"),
-		Map:  true,
+		From:                  cssFile,
+		To:                    filepath.Join(tempDir, "out.css"),
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
 	})
 	if err != nil {
 		t.Fatalf("process external previous map: %v", err)
@@ -282,14 +307,272 @@ func TestProcessorLoadsExternalPreviousMapAnnotation(t *testing.T) {
 	}
 }
 
+func TestProcessorAppliesInlineAndExternalAnnotations(t *testing.T) {
+	css := ".a { color: red; }"
+	inline, err := New().Process(css, Options{
+		From:      "a.css",
+		Map:       true,
+		MapInline: boolPtr(true),
+	})
+	if err != nil {
+		t.Fatalf("inline process: %v", err)
+	}
+	if !strings.Contains(inline.CSS, "sourceMappingURL=data:application/json;base64,") {
+		t.Fatalf("expected inline annotation, got %q", inline.CSS)
+	}
+	if inline.Map != "" {
+		t.Fatalf("expected empty map payload for inline output, got %q", inline.Map)
+	}
+
+	external, err := New().Process(css, Options{
+		From:                  "a.css",
+		To:                    "out.css",
+		Map:                   true,
+		MapAnnotation:         "maps/custom.map",
+		MapAnnotationDisabled: false,
+	})
+	if err != nil {
+		t.Fatalf("external process: %v", err)
+	}
+	if !strings.Contains(external.CSS, "sourceMappingURL=maps/custom.map") {
+		t.Fatalf("expected external annotation, got %q", external.CSS)
+	}
+	if external.Map == "" {
+		t.Fatal("expected map payload for external annotation")
+	}
+
+	defaultAnnotation, err := New().Process(css, Options{
+		From:                 "a.css",
+		To:                   "out.css",
+		Map:                  true,
+		MapAnnotationDefault: true,
+	})
+	if err != nil {
+		t.Fatalf("default external process: %v", err)
+	}
+	if !strings.Contains(defaultAnnotation.CSS, "sourceMappingURL=out.css.map") {
+		t.Fatalf("expected Go-normalized default annotation, got %q", defaultAnnotation.CSS)
+	}
+}
+
+func TestProcessorPreservesCRLFForMapAnnotations(t *testing.T) {
+	res, err := New().Process("a {\r\n}", Options{
+		From:      "a.css",
+		To:        "b.css",
+		Map:       true,
+		MapInline: boolPtr(true),
+	})
+	if err != nil {
+		t.Fatalf("process CRLF map: %v", err)
+	}
+	if !strings.Contains(res.CSS, "a {\r\n}\r\n/*# sourceMappingURL=") {
+		t.Fatalf("expected CRLF annotation separator, got %q", res.CSS)
+	}
+}
+
+func TestNoWorkLoadsPreviousMapPath(t *testing.T) {
+	tempDir := t.TempDir()
+	previousPath := filepath.Join(tempDir, "previous.css.map")
+	previous := `{"version":3,"sources":["original.css"],"names":[],"mappings":"AAAA","sourcesContent":["a{}"]}`
+	if err := os.WriteFile(previousPath, []byte(previous), 0o600); err != nil {
+		t.Fatalf("write previous map: %v", err)
+	}
+
+	res, err := NoWork("a{}", Options{
+		From:                  filepath.Join(tempDir, "input.css"),
+		To:                    filepath.Join(tempDir, "output.css"),
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+		PreviousMapPath:       previousPath,
+	})
+	if err != nil {
+		t.Fatalf("no-work with previous map path: %v", err)
+	}
+	var sourceMap testSourceMap
+	if err := json.Unmarshal([]byte(res.Map), &sourceMap); err != nil {
+		t.Fatalf("decode no-work map: %v", err)
+	}
+	if !reflect.DeepEqual(sourceMap.Sources, []string{"original.css"}) {
+		t.Fatalf("unexpected previous sources: %#v", sourceMap.Sources)
+	}
+}
+
+func TestNoWorkAutoMapRequiresLoadedPreviousMap(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "input.css")
+	invalidMap := "not json"
+
+	for _, test := range []struct {
+		name    string
+		mapName string
+		content *string
+	}{
+		{name: "missing", mapName: "missing.css.map"},
+		{name: "invalid", mapName: "invalid.css.map", content: &invalidMap},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.content != nil {
+				if err := os.WriteFile(filepath.Join(tempDir, test.mapName), []byte(*test.content), 0o600); err != nil {
+					t.Fatalf("write previous map: %v", err)
+				}
+			}
+			css := "a{}\n/*# sourceMappingURL=" + test.mapName + " */"
+			res, err := NoWork(css, Options{From: inputPath, MapAuto: true})
+			if err != nil {
+				t.Fatalf("auto no-work: %v", err)
+			}
+			if res.Map != "" {
+				t.Fatalf("unexpected generated map: %q", res.Map)
+			}
+			if res.CSS != "a{}" {
+				t.Fatalf("expected annotation cleanup, got %q", res.CSS)
+			}
+		})
+	}
+}
+
+func TestNoWorkAutoMapUsesLoadedExternalPreviousMap(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "input.css")
+	previousPath := filepath.Join(tempDir, "input.css.map")
+	previous := `{"version":3,"sources":["original.css"],"names":[],"mappings":"AAAA","sourcesContent":["a{}"]}`
+	if err := os.WriteFile(previousPath, []byte(previous), 0o600); err != nil {
+		t.Fatalf("write previous map: %v", err)
+	}
+
+	res, err := NoWork("a{}\n/*# sourceMappingURL=input.css.map */", Options{
+		From:          inputPath,
+		To:            filepath.Join(tempDir, "output.css"),
+		MapAuto:       true,
+		MapInlineAuto: true,
+	})
+	if err != nil {
+		t.Fatalf("auto no-work with external map: %v", err)
+	}
+	if res.Map == "" {
+		t.Fatal("expected loaded previous map to enable external output")
+	}
+	if !strings.Contains(res.CSS, "sourceMappingURL=output.css.map") {
+		t.Fatalf("expected inherited external annotation, got %q", res.CSS)
+	}
+}
+
+func TestNoWorkExplicitMapDefaultsInlineWhenPreviousMapIsMissing(t *testing.T) {
+	res, err := NoWork("a{}\n/*# sourceMappingURL=missing.css.map */", Options{
+		From:          "/missing/input.css",
+		Map:           true,
+		MapInlineAuto: true,
+	})
+	if err != nil {
+		t.Fatalf("explicit no-work map: %v", err)
+	}
+	if res.Map != "" || !strings.Contains(res.CSS, "sourceMappingURL=data:application/json;base64,") {
+		t.Fatalf("expected inline identity map, got %#v", res)
+	}
+}
+
+func TestNoWorkMapFalseNeverEnablesAnnotatedMap(t *testing.T) {
+	css := "a{}\n/*# sourceMappingURL=data:application/json;base64,invalid! */"
+	res, err := NoWork(css, Options{Map: false})
+	if err != nil {
+		t.Fatalf("no-work map false: %v", err)
+	}
+	if res.Map != "" || res.CSS != "a{}" {
+		t.Fatalf("unexpected map:false result: %#v", res)
+	}
+}
+
+func TestProcessorMapFalseSkipsPreviousMapAndClearsAnnotation(t *testing.T) {
+	css := "a{}\n/*# sourceMappingURL=data:application/json;base64,invalid! */"
+	res, err := New().Process(css, Options{Map: false})
+	if err != nil {
+		t.Fatalf("process map false: %v", err)
+	}
+	if res.Map != "" || res.CSS != "a{}" {
+		t.Fatalf("unexpected map:false process result: %#v", res)
+	}
+}
+
+func TestProcessorMapFalseKeepsNonSourceMapPragmasAndSameLineSpacing(t *testing.T) {
+	pragma, err := New().Process("a{}\n/*# not-a-sourcemap */", Options{Map: false})
+	if err != nil {
+		t.Fatalf("process non-sourcemap pragma: %v", err)
+	}
+	if pragma.CSS != "a{}\n/*# not-a-sourcemap */" {
+		t.Fatalf("expected non-sourcemap pragma to remain, got %q", pragma.CSS)
+	}
+
+	sameLine, err := New().Process("a{} /*# sourceMappingURL=x.map */", Options{Map: false})
+	if err != nil {
+		t.Fatalf("process same-line annotation: %v", err)
+	}
+	if sameLine.CSS != "a{}" {
+		t.Fatalf("expected same-line annotation and spacing removed, got %q", sameLine.CSS)
+	}
+}
+
+func TestBareMapTrueDefaultsToInline(t *testing.T) {
+	res, err := New().Process(".a {}", Options{From: "a.css", To: "out.css", Map: true})
+	if err != nil {
+		t.Fatalf("process bare map:true: %v", err)
+	}
+	if res.Map != "" || !strings.Contains(res.CSS, "sourceMappingURL=data:application/json;base64,") {
+		t.Fatalf("expected PostCSS-like inline default for map:true, got %#v", res)
+	}
+
+	noWork, err := NoWork(".a {}", Options{From: "a.css", To: "out.css", Map: true})
+	if err != nil {
+		t.Fatalf("no-work bare map:true: %v", err)
+	}
+	if noWork.Map != "" || !strings.Contains(noWork.CSS, "sourceMappingURL=data:application/json;base64,") {
+		t.Fatalf("expected PostCSS-like inline default for no-work map:true, got %#v", noWork)
+	}
+}
+
+func TestExplicitMapInlineFalseIsRespected(t *testing.T) {
+	res, err := New().Process(".a {}", Options{
+		From:      "a.css",
+		To:        "out.css",
+		Map:       true,
+		MapInline: boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("process explicit mapInline false: %v", err)
+	}
+	if res.Map == "" || strings.Contains(res.CSS, "sourceMappingURL=data:") {
+		t.Fatalf("explicit MapInline:false must keep an external map payload, got %#v", res)
+	}
+}
+
+func TestPreserveAnnotationWithoutInlineDoesNotDoubleAnnotate(t *testing.T) {
+	res, err := New().Process("a{}\n/*# sourceMappingURL=old.map */", Options{
+		From:               "a.css",
+		To:                 "out.css",
+		Map:                true,
+		PreserveAnnotation: true,
+	})
+	if err != nil {
+		t.Fatalf("process preserve annotation: %v", err)
+	}
+	if strings.Count(res.CSS, "sourceMappingURL") != 1 || !strings.Contains(res.CSS, "old.map") {
+		t.Fatalf("expected only the preserved annotation, got %q", res.CSS)
+	}
+	if res.Map == "" {
+		t.Fatal("expected map payload when annotation is preserved without inline mode")
+	}
+}
+
 func TestProcessorCanDisablePreviousMapAndPreserveAnnotation(t *testing.T) {
 	css := "a{}\n/*# sourceMappingURL=old.css.map */"
 	res, err := New().Process(css, Options{
-		From:                "generated.css",
-		To:                  "out.css",
-		Map:                 true,
-		PreviousMapDisabled: true,
-		PreserveAnnotation:  true,
+		From:                  "generated.css",
+		To:                    "out.css",
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDisabled: true,
+		PreviousMapDisabled:   true,
+		PreserveAnnotation:    true,
 	})
 	if err != nil {
 		t.Fatalf("process with annotation preserved: %v", err)

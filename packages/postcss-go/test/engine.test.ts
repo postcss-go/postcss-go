@@ -8,6 +8,7 @@ vi.mock('../src/node.ts', async (importOriginal) => {
     ...actual,
     createNodeService: vi.fn(() => ({
       process: vi.fn(),
+      noWork: vi.fn(),
       parse: vi.fn(),
       stringify: vi.fn(),
       close: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,23 @@ import {
   runPluginChain,
 } from '../src/engine.ts';
 
+function mockEngine(service: {
+  process: ReturnType<typeof vi.fn>;
+  noWork?: ReturnType<typeof vi.fn>;
+  parse?: ReturnType<typeof vi.fn>;
+}) {
+  return {
+    name: 'go' as const,
+    queue: Promise.resolve(),
+    service: {
+      process: service.process,
+      noWork: service.noWork ?? service.process,
+      parse: service.parse ?? vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+}
+
 test('createGoEngine always returns the Go engine', async () => {
   const engine = createGoEngine();
 
@@ -38,19 +56,18 @@ test('processWithGoEngine converts buffer input and warning objects', async () =
     messages: [{ type: 'warning', text: 'be careful' }],
   });
 
-  const engine = {
-    name: 'go',
-    queue: Promise.resolve(),
-    service: {
-      process: processSpy,
+  const result = await processWithGoEngine(
+    mockEngine({ process: processSpy }),
+    {},
+    Buffer.from('.a { color: red; }'),
+    {
+      from: 'buffer.css',
     },
-  };
+  );
 
-  const result = await processWithGoEngine(engine, {}, Buffer.from('.a { color: red; }'), {
+  expect(processSpy).toHaveBeenCalledWith('.a { color: red; }', {
     from: 'buffer.css',
   });
-
-  expect(processSpy).toHaveBeenCalledWith('.a { color: red; }', { from: 'buffer.css' });
   expect(result.map).toBeUndefined();
   expect(result.messages).toEqual([{ type: 'warning', text: 'be careful' }]);
   expect(result.warnings()[0].toString()).toBe('be careful');
@@ -69,20 +86,32 @@ test('processWithGoEngine runs plugins before the Go bridge', async () => {
   };
 
   const result = await processWithGoEngine(
-    {
-      name: 'go',
-      queue: Promise.resolve(),
-      service: {
-        process: processSpy,
-      },
-    },
+    mockEngine({ process: processSpy }),
     { plugins: [plugin] },
     '.a { color: red; }',
     { from: 'a.css', map: false },
   );
 
-  expect(processSpy).toHaveBeenCalledWith(expect.stringContaining('blue'), { from: 'a.css' });
+  expect(processSpy).toHaveBeenCalledWith(
+    expect.stringContaining('blue'),
+    expect.objectContaining({ from: 'a.css', map: false }),
+  );
   expect(result.css).toContain('blue');
+});
+
+test('processWithGoEngine uses noWork when there are no plugins', async () => {
+  const processSpy = vi.fn();
+  const noWorkSpy = vi.fn().mockResolvedValue({ css: '.a {}' });
+
+  await processWithGoEngine(
+    mockEngine({ process: processSpy, noWork: noWorkSpy }),
+    { plugins: [] },
+    '.a {}',
+    { from: 'a.css', map: false },
+  );
+
+  expect(noWorkSpy).toHaveBeenCalledWith('.a {}', { from: 'a.css', map: false });
+  expect(processSpy).not.toHaveBeenCalled();
 });
 
 test('runPluginChain preserves async lifecycle and plugin messages', async () => {
@@ -129,11 +158,7 @@ test('processWithGoEngine passes the plugin map to the Go bridge for composition
   };
 
   await processWithGoEngine(
-    {
-      name: 'go',
-      queue: Promise.resolve(),
-      service: { process: processSpy },
-    },
+    mockEngine({ process: processSpy }),
     { plugins: [plugin] },
     '.a { color: red; }',
     { from: '/src/a.css', to: '/dist/a.css', map: { inline: false } },
@@ -142,53 +167,95 @@ test('processWithGoEngine passes the plugin map to the Go bridge for composition
   expect(processSpy).toHaveBeenCalledWith(
     expect.stringContaining('blue'),
     expect.objectContaining({
-      map: true,
-      mapFile: '/dist/a.css.map',
+      map: { inline: false },
       previousMap: expect.stringContaining('"version":3'),
       previousMapUrl: '/dist/a.css.map',
     }),
   );
+  expect(processSpy.mock.calls[0][1].mapFile).toBeUndefined();
 });
 
 test('processWithGoEngine keeps inline maps when annotation is false', async () => {
   const processSpy = vi.fn().mockResolvedValue({
-    css: '.a {}',
-    map: '{"version":3,"sources":[],"names":[],"mappings":""}',
+    css: '.a {}\n/*# sourceMappingURL=data:application/json;base64,e30= */',
+    map: '',
     messages: [],
   });
 
   const result = await processWithGoEngine(
-    {
-      name: 'go',
-      queue: Promise.resolve(),
-      service: { process: processSpy },
-    },
+    mockEngine({ process: processSpy }),
     { plugins: [] },
     '.a {}',
     { from: 'a.css', map: { inline: true, annotation: false } },
   );
 
+  expect(processSpy).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      map: { inline: true, annotation: false },
+    }),
+  );
+  expect(processSpy.mock.calls[0][1].mapFile).toBeUndefined();
   expect(result.css).toContain('sourceMappingURL=data:application/json;base64,');
   expect(result.map).toBeUndefined();
 });
 
-test('processWithGoEngine resolves dynamic source map annotations before the Go bridge', async () => {
+test('processWithGoEngine computes auto-external output path after Go returns a map', async () => {
+  const noWorkSpy = vi.fn().mockResolvedValue({
+    css: '.a {}\n/*# sourceMappingURL=input.css.map */',
+    map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
+  });
+
+  const result = await processWithGoEngine(
+    mockEngine({ process: vi.fn(), noWork: noWorkSpy }),
+    { plugins: [] },
+    '.a {}\n/*# sourceMappingURL=previous.css.map */',
+    { from: 'input.css' },
+  );
+
+  expect(noWorkSpy.mock.calls[0][1]).toEqual({
+    from: 'input.css',
+  });
+  expect(result.mapFile).toBe('input.css.map');
+});
+
+test('processWithGoEngine defers default map mode to the Go noWork path', async () => {
   const processSpy = vi.fn().mockResolvedValue({
-    css: '.a {}',
+    css: '.a {}\n/*# sourceMappingURL=data:application/json;base64,e30= */',
+    messages: [],
+  });
+
+  const result = await processWithGoEngine(
+    mockEngine({ process: processSpy }),
+    { plugins: [] },
+    '.a {}\n/*# sourceMappingURL=previous.css.map */',
+    { from: '/src/a.css', to: '/dist/a.css', map: {} },
+  );
+
+  expect(processSpy).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      map: {},
+    }),
+  );
+  expect(result.mapFile).toBeUndefined();
+});
+
+test('processWithGoEngine resolves dynamic source map annotations before the Go bridge', async () => {
+  const root = { type: 'root', nodes: [{ type: 'rule', selector: '.a', nodes: [] }] };
+  const processSpy = vi.fn().mockResolvedValue({
+    css: '.a {}\n/*# sourceMappingURL=maps/custom.map */',
     map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
     messages: [],
   });
-  const annotation = vi.fn((_to, root) => {
-    expect(root.type).toBe('root');
+  const parseSpy = vi.fn().mockResolvedValue({ root });
+  const annotation = vi.fn((_to, receivedRoot) => {
+    expect(receivedRoot).toBe(root);
     return 'maps/custom.map';
   });
 
   const result = await processWithGoEngine(
-    {
-      name: 'go',
-      queue: Promise.resolve(),
-      service: { process: processSpy },
-    },
+    mockEngine({ process: processSpy, parse: parseSpy }),
     { plugins: [] },
     '.a {}',
     {
@@ -198,14 +265,41 @@ test('processWithGoEngine resolves dynamic source map annotations before the Go 
     },
   );
 
-  expect(annotation).toHaveBeenCalledWith('/dist/a.css', expect.anything());
+  expect(parseSpy).toHaveBeenCalledWith('.a {}', { from: '/src/a.css' });
+  expect(annotation).toHaveBeenCalledWith('/dist/a.css', root);
   const expectedMapFile = path.resolve('/dist/maps/custom.map');
   expect(processSpy).toHaveBeenCalledWith(
     expect.any(String),
-    expect.objectContaining({ mapFile: expectedMapFile }),
+    expect.objectContaining({
+      map: { inline: false, annotation: 'maps/custom.map' },
+    }),
   );
   expect(result.css).toContain('sourceMappingURL=maps/custom.map');
   expect(result.mapFile).toBe(expectedMapFile);
+});
+
+test('processWithGoEngine requires parse for annotation callbacks', async () => {
+  await expect(
+    processWithGoEngine(
+      {
+        name: 'go',
+        queue: Promise.resolve(),
+        service: {
+          process: vi.fn(),
+          noWork: vi.fn(),
+          parse: undefined as never,
+          close: vi.fn(),
+        },
+      },
+      { plugins: [] },
+      '.a {}',
+      {
+        from: '/src/a.css',
+        to: '/dist/a.css',
+        map: { inline: false, annotation: () => 'x.map' },
+      },
+    ),
+  ).rejects.toThrow(/parse\(\) is required/);
 });
 
 test('processWithGoEngine preserves existing annotations when annotation is false', async () => {
@@ -216,11 +310,7 @@ test('processWithGoEngine preserves existing annotations when annotation is fals
   });
 
   const result = await processWithGoEngine(
-    {
-      name: 'go',
-      queue: Promise.resolve(),
-      service: { process: processSpy },
-    },
+    mockEngine({ process: processSpy }),
     { plugins: [] },
     '.a {}/*# sourceMappingURL=old.css.map */',
     {
@@ -232,7 +322,9 @@ test('processWithGoEngine preserves existing annotations when annotation is fals
 
   expect(processSpy).toHaveBeenCalledWith(
     expect.any(String),
-    expect.objectContaining({ preserveAnnotation: true }),
+    expect.objectContaining({
+      map: { inline: false, annotation: false },
+    }),
   );
   expect(result.css).toContain('sourceMappingURL=old.css.map');
 });
@@ -278,6 +370,9 @@ test('assertGoCompatibility still rejects a genuinely custom syntax', () => {
 
 test('isExternalSourceMap detects external map configurations', () => {
   expect(isExternalSourceMap(false)).toBe(false);
+  expect(isExternalSourceMap({})).toBe(false);
+  expect(isExternalSourceMap({ annotation: true })).toBe(false);
+  expect(isExternalSourceMap({ annotation: false })).toBe(true);
   expect(isExternalSourceMap({ inline: true })).toBe(false);
   expect(isExternalSourceMap(true)).toBe(false);
   expect(isExternalSourceMap({ inline: false })).toBe(true);
@@ -306,19 +401,15 @@ test('processWithGoEngine serializes requests', async () => {
   let active = 0;
   let maxActive = 0;
 
-  const engine = {
-    name: 'go',
-    queue: Promise.resolve(),
-    service: {
-      async process(css) {
-        active += 1;
-        maxActive = Math.max(maxActive, active);
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        active -= 1;
-        return { css, messages: [] };
-      },
-    },
-  };
+  const engine = mockEngine({
+    process: vi.fn(async (css) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return { css, messages: [] };
+    }),
+  });
 
   const results = await Promise.all([
     processWithGoEngine(engine, {}, '.a { color: red; }', { from: 'a.css' }),

@@ -24,6 +24,12 @@ type StringifyResult struct {
 	Map string
 }
 
+type BuilderPart struct {
+	CSS  string `json:"css"`
+	Node int    `json:"node,omitempty"`
+	Type string `json:"type,omitempty"`
+}
+
 type cssWriter interface {
 	writeString(string)
 	writeByte(byte)
@@ -42,9 +48,103 @@ func (w builderWriter) writeByte(ch byte) {
 }
 
 func Stringify(node ast.Node) string {
+	return stringify(node, false)
+}
+
+// StringifyWithoutSourceMapAnnotations stringifies like Stringify but skips
+// `# sourceMappingURL=` comment nodes (and their before whitespace), matching
+// PostCSS's AST clearAnnotation path used by LazyResult.
+func StringifyWithoutSourceMapAnnotations(node ast.Node) string {
+	return stringify(node, true)
+}
+
+func stringify(node ast.Node, stripSourceMapAnnotations bool) string {
 	var builder strings.Builder
-	writeNode(builderWriter{&builder}, node, 0)
+	writeNode(builderWriter{&builder}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
+}
+
+func StringifyWithBuilder(node ast.Node) []BuilderPart {
+	parts := make([]BuilderPart, 0)
+	writeBuilderNode(&parts, node, 0, new(int))
+	return parts
+}
+
+func appendBuilderPart(parts *[]BuilderPart, css string, node int, kind string) {
+	if css != "" {
+		*parts = append(*parts, BuilderPart{CSS: css, Node: node, Type: kind})
+	}
+}
+
+func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int) {
+	(*next)++
+	id := *next
+	switch current := node.(type) {
+	case *ast.Document:
+		for index, child := range current.Nodes {
+			appendBuilderPart(parts, nodeBeforeDocument(child, depth, index), 0, "")
+			writeBuilderNode(parts, child, depth, next)
+		}
+		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
+	case *ast.Root:
+		for index, child := range current.Nodes {
+			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth, index)), 0, "")
+			writeBuilderNode(parts, child, depth, next)
+		}
+		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
+	case *ast.Rule:
+		appendBuilderPart(parts, ruleHeader(current)+"{", id, "start")
+		for index, child := range current.Nodes {
+			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
+			writeBuilderNode(parts, child, depth+1, next)
+		}
+		close := "}"
+		if hasRaw(current, "after") {
+			close = escapeHTMLInCSS(rawString(current, "after", "")) + close
+		} else if len(current.Nodes) != 0 {
+			inferred, ok := inferSiblingRawForNode(current, "after")
+			if ok {
+				close = escapeHTMLInCSS(inferred) + close
+			} else {
+				close = "\n" + strings.Repeat(indentFor(current), depth) + close
+			}
+		}
+		appendBuilderPart(parts, close+rawString(current, "ownSemicolon", ""), id, "end")
+	case *ast.AtRule:
+		if !current.Block {
+			text := atRuleHeader(current) + rawString(current, "between", "")
+			if atRuleHasSemicolon(current) {
+				text += ";"
+			}
+			appendBuilderPart(parts, text, id, "")
+			return
+		}
+		appendBuilderPart(parts, atRuleHeader(current)+rawBetween(current, "between", " ")+"{", id, "start")
+		for index, child := range current.Nodes {
+			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
+			writeBuilderNode(parts, child, depth+1, next)
+		}
+		close := "}"
+		if hasRaw(current, "after") {
+			close = escapeHTMLInCSS(rawString(current, "after", "")) + close
+		} else if len(current.Nodes) != 0 {
+			inferred, ok := inferSiblingRawForNode(current, "after")
+			if ok {
+				close = escapeHTMLInCSS(inferred) + close
+			} else {
+				close = "\n" + strings.Repeat(indentFor(current), depth) + close
+			}
+		}
+		appendBuilderPart(parts, close, id, "end")
+	case *ast.Declaration:
+		text := declarationText(current)
+		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+			text += ";"
+		}
+		appendBuilderPart(parts, text, id, "")
+	case *ast.Comment:
+		appendBuilderPart(parts, commentText(current), id, "")
+	}
 }
 
 func StringifyWithSourceMap(node ast.Node, opts SourceMapOptions) (StringifyResult, error) {
@@ -61,19 +161,19 @@ func StringifyWithSourceMap(node ast.Node, opts SourceMapOptions) (StringifyResu
 	return StringifyResult{CSS: writer.String(), Map: sourceMap}, nil
 }
 
-func writeNode(writer cssWriter, node ast.Node, depth int) {
+func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotations bool) {
 	switch current := node.(type) {
 	case *ast.Document:
-		writeChildren(writer, current.Nodes, depth)
+		writeChildren(writer, current.Nodes, depth, false, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
-		writeChildren(writer, current.Nodes, depth)
+		writeChildren(writer, current.Nodes, depth, true, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
 		writer.writeString(ruleHeader(current))
 		writer.writeByte('{')
-		writeChildren(writer, current.Nodes, depth+1)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeChildren(writer, current.Nodes, depth+1, true, stripSourceMapAnnotations)
+		writeBlockClose(writer, current, childCount, depth)
 		writer.writeString(rawString(current, "ownSemicolon", ""))
 	case *ast.AtRule:
 		writer.writeString(atRuleHeader(current))
@@ -86,8 +186,8 @@ func writeNode(writer cssWriter, node ast.Node, depth int) {
 		}
 		writer.writeString(rawBetween(current, "between", " "))
 		writer.writeByte('{')
-		writeChildren(writer, current.Nodes, depth+1)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeChildren(writer, current.Nodes, depth+1, true, stripSourceMapAnnotations)
+		writeBlockClose(writer, current, childCount, depth)
 	case *ast.Declaration:
 		writer.writeString(declarationText(current))
 		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
@@ -110,8 +210,8 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.AddMapping(current)
 		writer.writeString(ruleHeader(current))
 		writer.writeByte('{')
-		writeMappedChildren(writer, current.Nodes, depth+1)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeMappedChildren(writer, current.Nodes, depth+1)
+		writeBlockClose(writer, current, childCount, depth)
 		writer.writeString(rawString(current, "ownSemicolon", ""))
 		writer.AddEndMapping(current)
 		return true
@@ -128,8 +228,8 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		}
 		writer.writeString(rawBetween(current, "between", " "))
 		writer.writeByte('{')
-		writeMappedChildren(writer, current.Nodes, depth+1)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeMappedChildren(writer, current.Nodes, depth+1)
+		writeBlockClose(writer, current, childCount, depth)
 		writer.AddEndMapping(current)
 		return true
 	case *ast.Declaration:
@@ -159,17 +259,29 @@ func atRuleHasSemicolon(node *ast.AtRule) bool {
 		return true
 	}
 	if parent := node.Parent(); parent != nil {
-		return rawBool(parent, "semicolon", false)
+		if rawBool(parent, "semicolon", false) {
+			return true
+		}
+		children := parent.Children()
+		for index, child := range children {
+			if child == node {
+				return index < len(children)-1
+			}
+		}
 	}
 	return false
 }
 
 func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
 	if hasRaw(node, "after") {
-		writer.writeString(rawString(node, "after", ""))
+		writer.writeString(escapeHTMLInCSS(rawString(node, "after", "")))
 	} else if childCount != 0 {
-		writer.writeByte('\n')
-		writeIndent(writer, node, depth)
+		if inferred, ok := inferSiblingRawForNode(node, "after"); ok {
+			writer.writeString(escapeHTMLInCSS(inferred))
+		} else {
+			writer.writeByte('\n')
+			writeIndent(writer, node, depth)
+		}
 	}
 	writer.writeByte('}')
 }
@@ -200,14 +312,17 @@ func declarationValuePosition(node *ast.Declaration) sourcemap.Position {
 	return input.FromOffset(valueOffset)
 }
 
-func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) {
+func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) int {
+	written := 0
 	for index, child := range nodes {
 		if !writer.preserveAnnotation && isSourceMapAnnotationNode(child) {
 			continue
 		}
 		writer.writeString(nodeBefore(child, depth, index))
 		writeMappedNode(writer, child, depth)
+		written++
 	}
+	return written
 }
 
 func isSourceMapAnnotationNode(node ast.Node) bool {
@@ -219,11 +334,21 @@ func isSourceMapAnnotation(text string) bool {
 	return strings.HasPrefix(strings.TrimSpace(text), "# sourceMappingURL=")
 }
 
-func writeChildren(writer cssWriter, nodes []ast.Node, depth int) {
+func writeChildren(writer cssWriter, nodes []ast.Node, depth int, escapeBefore, stripSourceMapAnnotations bool) int {
+	written := 0
 	for index, child := range nodes {
-		writer.writeString(nodeBefore(child, depth, index))
-		writeNode(writer, child, depth)
+		if stripSourceMapAnnotations && isSourceMapAnnotationNode(child) {
+			continue
+		}
+		before := nodeBefore(child, depth, index)
+		if escapeBefore {
+			before = escapeHTMLInCSS(before)
+		}
+		writer.writeString(before)
+		writeNode(writer, child, depth, stripSourceMapAnnotations)
+		written++
 	}
+	return written
 }
 
 func writeIndent(writer cssWriter, node ast.Node, depth int) {
@@ -307,7 +432,7 @@ func lookupRaw(node ast.Node, key string) (any, bool) {
 }
 
 func ruleHeader(node *ast.Rule) string {
-	return rawValue(node, "selector", strings.TrimSpace(node.Selector)) + rawBetween(node, "between", " ")
+	return escapeHTMLInCSS(rawValue(node, "selector", strings.TrimSpace(node.Selector)) + rawBetween(node, "between", " "))
 }
 
 func atRuleHeader(node *ast.AtRule) string {
@@ -315,11 +440,11 @@ func atRuleHeader(node *ast.AtRule) string {
 	if params == "" && !hasRaw(node, "afterName") {
 		return "@" + node.Name
 	}
-	return "@" + node.Name + rawString(node, "afterName", " ") + params
+	return escapeHTMLInCSS("@" + node.Name + rawStringDetected(node, "afterName", " ") + params)
 }
 
 func declarationText(node *ast.Declaration) string {
-	return declarationPrefix(node) + declarationValueText(node)
+	return escapeHTMLInCSS(declarationPrefix(node) + declarationValueText(node))
 }
 
 func declarationPrefix(node *ast.Declaration) string {
@@ -339,33 +464,10 @@ func declarationValueText(node *ast.Declaration) string {
 }
 
 func commentText(node *ast.Comment) string {
-	return "/*" + rawString(node, "left", " ") + node.Text + rawString(node, "right", " ") + "*/"
+	return escapeHTMLInCSS("/*" + rawStringDetected(node, "left", " ") + node.Text + rawStringDetected(node, "right", " ") + "*/")
 }
 
-func nodeBefore(node ast.Node, depth, index int) string {
-	if hasRaw(node, "before") {
-		return rawString(node, "before", "")
-	}
-	// A newly inserted first node in a root has no leading separator. Existing
-	// parsed nodes can still preserve an explicit `raws.before` above.
-	if index == 0 && depth == 0 {
-		return ""
-	}
-	if parent := node.Parent(); parent != nil {
-		if inferred, ok := inferSiblingRaw(parent, "before", node.Type()); ok {
-			return inferred
-		}
-		if inferred, ok := inferSiblingRaw(parent, "before", ""); ok && inferred != "" {
-			return inferred
-		}
-	}
-	if index == 0 && depth == 0 {
-		return ""
-	}
-	return "\n" + strings.Repeat(indentFor(node), depth)
-}
-
-func rawBetween(node ast.Node, key, fallback string) string {
+func rawStringDetected(node ast.Node, key, fallback string) string {
 	if value, ok := lookupRaw(node, key); ok {
 		if stringValue, ok := value.(string); ok {
 			return stringValue
@@ -378,6 +480,161 @@ func rawBetween(node ast.Node, key, fallback string) string {
 		}
 	}
 	return fallback
+}
+
+func nodeBefore(node ast.Node, depth, index int) string {
+	if hasRaw(node, "before") {
+		return rawString(node, "before", "")
+	}
+	if rule, ok := node.(*ast.Rule); ok && rule.Selector == "from" {
+		return ""
+	}
+	if node.Source() == nil && index == 0 {
+		if parent := node.Parent(); parent != nil {
+			if atRule, ok := parent.(*ast.AtRule); ok && atRule.Name == "keyframes" {
+				return ""
+			}
+		}
+	}
+	// A newly inserted first node in a root has no leading separator. Existing
+	// parsed nodes can still preserve an explicit `raws.before` above.
+	if index == 0 && depth == 0 {
+		return ""
+	}
+	if parent := node.Parent(); parent != nil {
+		if inferred, ok := rawBeforeDetected(parent, node); ok {
+			return inferred
+		}
+		after := rawString(node, "after", "")
+		if indent := inferredContainerIndent(parent); indent != "" && strings.Contains(indent, " ") && !strings.Contains(indent, "\n") && !strings.Contains(after, "\n") {
+			return indent
+		}
+	}
+	if index == 0 && depth == 0 {
+		return ""
+	}
+	return "\n" + strings.Repeat(indentFor(node), depth)
+}
+
+func nodeBeforeDocument(node ast.Node, depth, index int) string {
+	if hasRaw(node, "before") {
+		return rawString(node, "before", "")
+	}
+	return ""
+}
+
+// escapeHTMLInCSS protects CSS embedded in an HTML style context, matching
+// PostCSS's default stringifier behavior.
+func escapeHTMLInCSS(value string) string {
+	if !strings.Contains(value, "<") {
+		return value
+	}
+	value = strings.ReplaceAll(value, "</style", `\3c /style`)
+	value = strings.ReplaceAll(value, "<style", `\3c style`)
+	value = strings.ReplaceAll(value, "<!--", `\3c !--`)
+	return value
+}
+
+func rawBetween(node ast.Node, key, fallback string) string {
+	if value, ok := lookupRaw(node, key); ok {
+		if stringValue, ok := value.(string); ok {
+			if node.Type() == ast.NodeDecl && stringValue == "" {
+				if parent := node.Parent(); parent != nil {
+					if inferred, inferredOK := inferSiblingRaw(parent, key, node.Type()); inferredOK && inferred != "" {
+						return inferred
+					}
+				}
+				return fallback
+			}
+			return stringValue
+		}
+		return fallback
+	}
+	if parent := node.Parent(); parent != nil {
+		if inferred, ok := inferSiblingRaw(parent, key, node.Type()); ok {
+			if node.Type() != ast.NodeDecl || !strings.Contains(inferred, "/*") {
+				return inferred
+			}
+			if strings.Contains(inferred, ":") {
+				return ":"
+			}
+		}
+		if node.Type() == ast.NodeDecl && node.Source() == nil {
+			for container := parent; container != nil; container = container.Parent() {
+				if inferred, ok := inferDescendantRaw(container, key, node.Type()); ok && inferred != "" {
+					return inferred
+				}
+			}
+		}
+	}
+	return fallback
+}
+
+func inferDescendantRaw(parent ast.Container, key string, nodeType ast.NodeType) (string, bool) {
+	for _, sibling := range parent.Children() {
+		if sibling.Type() == nodeType {
+			continue
+		}
+		container, ok := sibling.(ast.Container)
+		if !ok {
+			continue
+		}
+		if inferred, ok := inferSiblingRaw(container, key, nodeType); ok && inferred != "" {
+			return inferred, true
+		}
+		if inferred, ok := inferDescendantRaw(container, key, nodeType); ok && inferred != "" {
+			return inferred, true
+		}
+	}
+	return "", false
+}
+
+func inferSiblingRawForNode(node ast.Node, key string) (string, bool) {
+	parent := node.Parent()
+	if parent == nil {
+		return "", false
+	}
+	for _, sibling := range parent.Children() {
+		if sibling == node || sibling.Type() != node.Type() {
+			continue
+		}
+		if value, ok := lookupRaw(sibling, key); ok {
+			if text, ok := value.(string); ok {
+				return text, true
+			}
+		}
+	}
+	return "", false
+}
+
+func rawBeforeDetected(parent ast.Container, node ast.Node) (string, bool) {
+	// Prefer an existing sibling's explicit separator, but discard its
+	// non-whitespace content when it is being used as a formatting sample.
+	children := parent.Children()
+	for index, sibling := range children {
+		if sibling == node || (parent.Type() == ast.NodeRoot && index == 0) {
+			continue
+		}
+		if sibling.Type() != node.Type() {
+			continue
+		}
+		if value, ok := lookupRaw(sibling, "before"); ok {
+			if text, ok := value.(string); ok {
+				return text, true
+			}
+		}
+	}
+	for index, sibling := range children {
+		if sibling == node || (parent.Type() == ast.NodeRoot && index == 0) {
+			continue
+		}
+		if value, ok := lookupRaw(sibling, "before"); ok {
+			if text, ok := value.(string); ok {
+				return text, true
+			}
+		}
+	}
+	return "", false
 }
 
 func inferSiblingRaw(parent ast.Container, key string, nodeType ast.NodeType) (string, bool) {
@@ -405,12 +662,65 @@ func inferSiblingRaw(parent ast.Container, key string, nodeType ast.NodeType) (s
 }
 
 func indentFor(node ast.Node) string {
+	if parent := node.Parent(); parent != nil {
+		if indent := inferredContainerIndent(parent); indent != "" {
+			return indent
+		}
+	}
 	if root := node.Root(); root != nil {
 		if indent := rawString(root, "indent", ""); indent != "" {
 			return indent
 		}
+		if indent := inferredIndent(root); indent != "" {
+			return indent
+		}
 	}
 	return "    "
+}
+
+func inferredContainerIndent(parent ast.Container) string {
+	if before, ok := lookupRaw(parent, "before"); ok {
+		if text, ok := before.(string); ok && text != "" && strings.TrimSpace(text) == "" {
+			if newline := strings.LastIndexByte(text, '\n'); newline >= 0 {
+				return text[newline+1:]
+			}
+			return text
+		}
+	}
+	for _, child := range parent.Children() {
+		if before, ok := lookupRaw(child, "before"); ok {
+			if text, ok := before.(string); ok && strings.TrimSpace(text) == "" && text != "" {
+				if newline := strings.LastIndexByte(text, '\n'); newline >= 0 {
+					return text[newline+1:]
+				}
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func inferredIndent(node ast.Node) string {
+	container, ok := node.(ast.Container)
+	if !ok {
+		return ""
+	}
+	for _, child := range container.Children() {
+		if before, ok := lookupRaw(child, "before"); ok {
+			if text, ok := before.(string); ok {
+				if newline := strings.LastIndexByte(text, '\n'); newline >= 0 {
+					indent := text[newline+1:]
+					if indent != "" && strings.TrimSpace(indent) == "" {
+						return indent
+					}
+				}
+			}
+		}
+		if indent := inferredIndent(child); indent != "" {
+			return indent
+		}
+	}
+	return ""
 }
 
 func needsSemicolon(parent ast.Container, node ast.Node) bool {

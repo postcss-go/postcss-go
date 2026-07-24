@@ -50,6 +50,10 @@ func New(plugins ...Plugin) *Processor {
 	return processor.New(plugins...)
 }
 
+func NoWork(css string, opts ProcessOptions) (*Result, error) {
+	return processor.NoWork(css, opts)
+}
+
 func Parse(css string) (*Root, error) {
 	return parser.Parse(css, sourcemap.Options{})
 }

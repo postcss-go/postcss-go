@@ -122,14 +122,22 @@ export interface ProcessOptions {
   from?: string;
   to?: string;
   map?: boolean | SourceMapOptions;
+  mapAuto?: boolean;
   mapFile?: string;
   previousMap?: string;
+  previousMapPath?: string;
   previousMapUrl?: string;
   previousMapDisabled?: boolean;
   sourceMapFrom?: string;
   sourcesContent?: boolean;
   absolute?: boolean;
   preserveAnnotation?: boolean;
+  /** When set, forces inline (`true`) or non-inline (`false`) map output. Omit to leave unset for Go defaults / `mapInlineAuto`. */
+  mapInline?: boolean;
+  mapInlineAuto?: boolean;
+  mapAnnotation?: string;
+  mapAnnotationDefault?: boolean;
+  mapAnnotationDisabled?: boolean;
 }
 
 export interface ProcessResult {
@@ -137,6 +145,11 @@ export interface ProcessResult {
   map?: string;
   root: RootNode;
   messages: Warning[];
+}
+
+export interface NoWorkResult {
+  css: string;
+  map?: string;
 }
 
 export interface ParseResult {

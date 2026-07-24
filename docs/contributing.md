@@ -41,7 +41,7 @@ Refresh the vendored snapshot only when needed:
 pnpm sync:upstream
 ```
 
-See [the Go compatibility overrides](../packages/postcss-compat/overrides/go/README.md) for coverage details.
+See [the Go compatibility overrides](../packages/postcss-compat/src/README.md) for coverage details.
 
 ## Benchmarks
 

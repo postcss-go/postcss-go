@@ -51,6 +51,17 @@ test('rejects external sourcemaps from config.map when writing to stdout', async
   );
 });
 
+test('rejects auto-external sourcemaps when writing to stdout', async () => {
+  const fixtureDir = path.resolve('test/fixtures/config-auto-external-stdout');
+
+  const { error, stderr } = await cli(['input.css'], fixtureDir);
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain(
+    'Output Error: Cannot output external sourcemaps when writing to STDOUT',
+  );
+});
+
 test('--map writes an external sourcemap with the Go engine', async () => {
   const output = tmp('mapped.css');
 

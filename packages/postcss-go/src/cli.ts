@@ -196,6 +196,14 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
         }
 
         return processWithGoEngine(engine, activeConfig, cssText, options).then((result) => {
+          // mapAuto / mapInlineAuto may only become external after Go loads a
+          // previous map, so also guard on the concrete result payload.
+          if (!options.to && result.map) {
+            throw new Error(
+              'Output Error: Cannot output external sourcemaps when writing to STDOUT',
+            );
+          }
+
           const tasks: Array<Promise<void>> = [];
 
           if (options.to) {

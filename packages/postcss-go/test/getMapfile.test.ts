@@ -14,3 +14,8 @@ test('getMapfile respects explicit annotation paths', () => {
 test('getMapfile falls back to the default .map suffix', () => {
   expect(getMapfile({ to: '/tmp/output.css', map: true })).toBe('/tmp/output.css.map');
 });
+
+test('getMapfile falls back to input and then the PostCSS default output name', () => {
+  expect(getMapfile({ from: '/tmp/input.css', map: true })).toBe('/tmp/input.css.map');
+  expect(getMapfile({ map: true })).toBe('to.css.map');
+});
