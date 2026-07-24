@@ -1,4 +1,7 @@
 import { spy } from 'nanospy'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { SourceMapGenerator } from 'source-map-js'
 import { test } from 'uvu'
 import { equal, instance, is, not, throws, type } from 'uvu/assert'
@@ -74,6 +77,81 @@ test('has map only if necessary', () => {
     map: { inline: false }
   })
   is(result3.map instanceof SourceMapGenerator, true)
+})
+
+test('map false does not enable a map from an annotation', () => {
+  let result = new NoWorkResult(
+    processor,
+    'a {}\n/*# sourceMappingURL=missing.css.map */',
+    { from: '/a.css', map: false }
+  )
+
+  is(result.css, 'a {}')
+  type(result.map, 'undefined')
+})
+
+test('missing previous map annotation does not enable a map', () => {
+  let result = new NoWorkResult(
+    processor,
+    'a {}\n/*# sourceMappingURL=missing.css.map */',
+    { from: '/postcss-go-missing/input.css' }
+  )
+
+  is(result.css, 'a {}')
+  type(result.map, 'undefined')
+})
+
+test('invalid previous map annotation does not enable a map', () => {
+  let dir = mkdtempSync(join(tmpdir(), 'postcss-go-invalid-map-'))
+  try {
+    writeFileSync(join(dir, 'invalid.css.map'), 'not json')
+    let result = new NoWorkResult(
+      processor,
+      'a {}\n/*# sourceMappingURL=invalid.css.map */',
+      { from: join(dir, 'input.css') }
+    )
+
+    is(result.css, 'a {}')
+    type(result.map, 'undefined')
+  } finally {
+    rmSync(dir, { force: true, recursive: true })
+  }
+})
+
+test('empty map options default inline when annotated map is missing', () => {
+  let result = new NoWorkResult(
+    processor,
+    'a {}\n/*# sourceMappingURL=missing.css.map */',
+    { from: '/postcss-go-missing/input.css', map: {} }
+  )
+
+  is(result.css.includes('sourceMappingURL=data:application/json;base64,'), true)
+  type(result.map, 'undefined')
+})
+
+test('empty map options inherit a loaded external map', () => {
+  let dir = mkdtempSync(join(tmpdir(), 'postcss-go-external-map-'))
+  try {
+    writeFileSync(
+      join(dir, 'input.css.map'),
+      JSON.stringify({
+        version: 3,
+        sources: ['original.css'],
+        names: [],
+        mappings: 'AAAA'
+      })
+    )
+    let result = new NoWorkResult(
+      processor,
+      'a {}\n/*# sourceMappingURL=input.css.map */',
+      { from: join(dir, 'input.css'), map: {}, to: join(dir, 'output.css') }
+    )
+
+    is(result.css.includes('sourceMappingURL=output.css.map'), true)
+    is(result.map instanceof SourceMapGenerator, true)
+  } finally {
+    rmSync(dir, { force: true, recursive: true })
+  }
 })
 
 test('contains simple properties', () => {

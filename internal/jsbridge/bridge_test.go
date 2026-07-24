@@ -2,11 +2,64 @@ package jsbridge
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"postcss-go/internal/ast"
 )
+
+func TestProcessOptionsJSONContract(t *testing.T) {
+	var params ProcessParams
+	err := json.Unmarshal([]byte(`{
+		"css":"a{}",
+		"options":{
+			"from":"src/a.css",
+			"to":"dist/a.css",
+			"map":true,
+			"mapAuto":true,
+			"mapFile":"dist/maps/a.css.map",
+			"previousMap":"{}",
+			"previousMapPath":"src/a.css.map",
+			"previousMapUrl":"src/a.css.map",
+			"previousMapDisabled":true,
+			"sourceMapFrom":"virtual.css",
+			"sourcesContent":false,
+			"absolute":true,
+			"preserveAnnotation":true,
+			"mapInline":true,
+			"mapInlineAuto":true,
+			"mapAnnotation":"a.css.map",
+			"mapAnnotationDefault":true,
+			"mapAnnotationDisabled":true
+		}
+	}`), &params)
+	if err != nil {
+		t.Fatalf("decode process params: %v", err)
+	}
+	opts := params.Options
+	if opts.From != "src/a.css" ||
+		opts.To != "dist/a.css" ||
+		!opts.Map ||
+		!opts.MapAuto ||
+		opts.MapFile != "dist/maps/a.css.map" ||
+		opts.PreviousMap != "{}" ||
+		opts.PreviousMapPath != "src/a.css.map" ||
+		opts.PreviousMapURL != "src/a.css.map" ||
+		!opts.PreviousMapDisabled ||
+		opts.SourceMapFrom != "virtual.css" ||
+		opts.SourcesContent == nil ||
+		*opts.SourcesContent ||
+		!opts.Absolute ||
+		!opts.PreserveAnnotation ||
+		opts.MapInline == nil || !*opts.MapInline ||
+		!opts.MapInlineAuto ||
+		opts.MapAnnotation != "a.css.map" ||
+		!opts.MapAnnotationDefault ||
+		!opts.MapAnnotationDisabled {
+		t.Fatalf("unexpected decoded options: %#v", opts)
+	}
+}
 
 func TestParseProcessAndStringifyBridge(t *testing.T) {
 	parseResp := Execute(Request{
@@ -27,7 +80,13 @@ func TestParseProcessAndStringifyBridge(t *testing.T) {
 	processResp := Execute(Request{
 		Command: "process",
 		CSS:     ".a { color: red; }",
-		Options: RequestOpts{From: "demo.css", To: "out.css", Map: true},
+		Options: RequestOpts{
+			From:                  "demo.css",
+			To:                    "out.css",
+			Map:                   true,
+			MapInline: boolPtr(false),
+			MapAnnotationDisabled: true,
+		},
 	})
 	if !processResp.OK || !strings.Contains(processResp.CSS, "color: red;") {
 		t.Fatalf("unexpected process response: %#v", processResp)
@@ -42,6 +101,26 @@ func TestParseProcessAndStringifyBridge(t *testing.T) {
 	})
 	if !stringifyResp.OK || !strings.Contains(stringifyResp.CSS, ".a") {
 		t.Fatalf("unexpected stringify response: %#v", stringifyResp)
+	}
+}
+
+func TestNoWorkBridgeGeneratesIdentityMapWithoutParsing(t *testing.T) {
+	resp, err := NoWorkRPC(context.Background(), NoWorkParams{
+		CSS: "a {",
+		Options: RequestOpts{
+			From:      "a.css",
+			Map:       true,
+			MapInline: boolPtr(true),
+		},
+	})
+	if err != nil {
+		t.Fatalf("no-work RPC parsed unchanged CSS: %v", err)
+	}
+	if !strings.Contains(resp.CSS, "sourceMappingURL=data:application/json;base64,") {
+		t.Fatalf("expected inline no-work map, got %q", resp.CSS)
+	}
+	if resp.Map != "" {
+		t.Fatalf("expected inline map payload to be consumed, got %q", resp.Map)
 	}
 }
 
@@ -168,9 +247,11 @@ func TestRPCMethods(t *testing.T) {
 	processRes, err := ProcessRPC(context.Background(), ProcessParams{
 		CSS: ".a { color: red; }",
 		Options: RequestOpts{
-			From: "demo.css",
-			To:   "out.css",
-			Map:  true,
+			From:                  "demo.css",
+			To:                    "out.css",
+			Map:                   true,
+			MapInline: boolPtr(false),
+			MapAnnotationDisabled: true,
 		},
 	})
 	if err != nil || processRes == nil || !strings.Contains(processRes.CSS, "color: red;") {
@@ -190,4 +271,8 @@ func TestRPCMethods(t *testing.T) {
 	if _, err := StringifyRPC(context.Background(), StringifyParams{}); err == nil {
 		t.Fatal("expected stringify rpc without ast to fail")
 	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

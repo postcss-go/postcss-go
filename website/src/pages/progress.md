@@ -24,7 +24,7 @@ The sections below track the user-visible compatibility limits and the engineeri
 - [x] Source-map generation, previous maps, annotations, and source locations on the main path.
 - [x] Route all compatibility tokenizer behavior through Go.
 - [x] Implement the supported builder callback adapter; Go emits builder chunks with node and boundary metadata, and the compatibility layer forwards them to PostCSS.
-- [ ] Move map-generator, previous-map, no-work-result, and annotation normalization into the Go-owned path.
+- [x] Move map-generator, previous-map, no-work-result, and annotation normalization into the Go-owned path.
 
 ### JavaScript API and runtime
 
@@ -74,7 +74,7 @@ The sections below track the user-visible compatibility limits and the engineeri
 - [ ] Inventory the public PostCSS API and separate Go-owned behavior from JavaScript fallback behavior.
 - [ ] Prototype a persistent plugin callback bridge.
 - [ ] Implement processor, visitor, warning, and asynchronous plugin parity through that bridge.
-- [ ] Move builder stringifier, map, and no-work-result paths to Go.
+- [x] Move builder stringifier, map, and no-work-result paths to Go.
 - [ ] Choose and implement either a drop-in PostCSS API or an explicit independent API with migration guidance.
 - [ ] Remove PostCSS runtime dependencies from the CLI and package boundary.
 - [ ] Delete obsolete compatibility overrides and update architecture and README documentation.

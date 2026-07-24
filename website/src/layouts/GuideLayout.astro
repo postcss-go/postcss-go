@@ -42,14 +42,17 @@ const links = [
     <div class="fixed inset-0 -z-10 grid-bg"></div>
     <div class="fixed inset-0 -z-10 noise"></div>
     <SiteNav />
-    <main class="guide-shell mx-auto max-w-7xl px-6 pb-24 pt-8 lg:px-10 lg:pt-16">
-      <aside class="guide-sidebar" aria-label="Guide navigation">
-        <div class="guide-sidebar__eyebrow">Documentation</div>
-        <nav class="guide-sidebar__links">
+    <main class="mx-auto grid max-w-7xl grid-cols-1 gap-[clamp(3.5rem,9vw,8rem)] px-6 pb-24 pt-8 min-[761px]:grid-cols-[15rem_minmax(0,1fr)] lg:px-10 lg:pt-16">
+      <aside class="mb-10 self-start min-[761px]:sticky min-[761px]:top-8 min-[761px]:mb-0" aria-label="Guide navigation">
+        <div class="mb-4 font-mono text-[.68rem] uppercase tracking-[.14em] text-acid">Documentation</div>
+        <nav class="flex gap-5 overflow-x-auto whitespace-nowrap border-t border-white/10 px-0 pb-[.35rem] pt-[.95rem] min-[761px]:grid min-[761px]:gap-[.45rem] min-[761px]:overflow-visible min-[761px]:whitespace-normal min-[761px]:border-l min-[761px]:border-t-0 min-[761px]:pl-4 min-[761px]:pb-0 min-[761px]:pt-0">
           {
             links.map((link) => (
               <a
-                class:list={['guide-sidebar__link', section === link.key && 'text-acid!']}
+                class:list={[
+                  'py-[.35rem] text-[.9rem] leading-normal text-white/50 transition-colors duration-150 hover:text-acid!',
+                  section === link.key && 'text-acid!',
+                ]}
                 href={link.href}
                 aria-current={section === link.key ? 'page' : undefined}
               >
@@ -59,7 +62,7 @@ const links = [
           }
         </nav>
       </aside>
-      <article class="progress-content guide-content">
+      <article class="progress-content guide-content min-w-0 max-w-none min-[761px]:max-w-[52rem]">
         <slot />
       </article>
     </main>

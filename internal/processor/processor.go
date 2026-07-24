@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -19,17 +20,26 @@ import (
 )
 
 type Options struct {
-	From                string
-	To                  string
-	Map                 bool
-	MapFile             string
-	PreviousMap         string
-	PreviousMapURL      string
-	PreviousMapDisabled bool
-	SourceMapFrom       string
-	SourcesContent      *bool
-	Absolute            bool
-	PreserveAnnotation  bool
+	From                  string `json:"from,omitempty"`
+	To                    string `json:"to,omitempty"`
+	Map                   bool   `json:"map,omitempty"`
+	MapAuto               bool   `json:"mapAuto,omitempty"`
+	MapFile               string `json:"mapFile,omitempty"`
+	PreviousMap           string `json:"previousMap,omitempty"`
+	PreviousMapPath       string `json:"previousMapPath,omitempty"`
+	PreviousMapURL        string `json:"previousMapUrl,omitempty"`
+	PreviousMapDisabled   bool   `json:"previousMapDisabled,omitempty"`
+	SourceMapFrom         string `json:"sourceMapFrom,omitempty"`
+	SourcesContent        *bool  `json:"sourcesContent,omitempty"`
+	Absolute              bool   `json:"absolute,omitempty"`
+	PreserveAnnotation    bool   `json:"preserveAnnotation,omitempty"`
+	// MapInline is a pointer so JSON/bridge callers can distinguish unset (nil)
+	// from explicit false. Bare Map:true with no output-mode flags defaults to inline.
+	MapInline             *bool  `json:"mapInline,omitempty"`
+	MapInlineAuto         bool   `json:"mapInlineAuto,omitempty"`
+	MapAnnotation         string `json:"mapAnnotation,omitempty"`
+	MapAnnotationDefault  bool   `json:"mapAnnotationDefault,omitempty"`
+	MapAnnotationDisabled bool   `json:"mapAnnotationDisabled,omitempty"`
 }
 
 var sourceMapAnnotationPattern = regexp.MustCompile(`(?s)/\*\s*# sourceMappingURL=(.*?)\*/`)
@@ -79,15 +89,22 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 	if len(optsList) > 0 {
 		opts = optsList[0]
 	}
-	previousMap, previousMapURL, err := previousSourceMap(css, opts)
-	if err != nil {
-		return nil, err
+	applyBareMapDefaults(&opts)
+	var previousMap, previousMapURL string
+	if opts.Map || opts.MapAuto {
+		var err error
+		previousMap, previousMapURL, err = previousSourceMap(css, opts)
+		if err != nil {
+			return nil, err
+		}
 	}
+	mapEnabled := opts.Map || (opts.MapAuto && previousMap != "")
+	resolveMapOutputMode(&opts, css, previousMap)
 	root, err := parser.Parse(css, sourcemap.Options{
 		From:         opts.From,
 		SourceMap:    []byte(previousMap),
 		SourceMapURL: previousMapURL,
-		TrackSource:  opts.Map,
+		TrackSource:  mapEnabled,
 	})
 	if err != nil {
 		return nil, err
@@ -125,7 +142,7 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 		}
 	}
 
-	if opts.Map {
+	if mapEnabled {
 		stringified, err := stringifier.StringifyWithSourceMap(root, stringifier.SourceMapOptions{
 			From:               opts.From,
 			To:                 opts.To,
@@ -140,14 +157,146 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 		}
 		res.CSS = stringified.CSS
 		res.Map = stringified.Map
+		applyMapAnnotation(res, opts)
 		return res, nil
 	}
 
-	res.CSS = stringifier.Stringify(root)
+	if opts.PreserveAnnotation {
+		res.CSS = stringifier.Stringify(root)
+	} else {
+		res.CSS = stringifier.StringifyWithoutSourceMapAnnotations(root)
+	}
 	return res, nil
 }
 
+// NoWork processes source-map behavior for an empty plugin pipeline without
+// parsing or re-stringifying CSS.
+func NoWork(css string, opts Options) (*result.Result, error) {
+	applyBareMapDefaults(&opts)
+	var previousMap string
+	if opts.Map || opts.MapAuto {
+		var err error
+		previousMap, _, err = previousSourceMap(css, opts)
+		if err != nil {
+			return nil, err
+		}
+	}
+	mapEnabled := opts.Map || (opts.MapAuto && previousMap != "")
+	resolveMapOutputMode(&opts, css, previousMap)
+	res := &result.Result{}
+	if !mapEnabled {
+		if opts.PreserveAnnotation {
+			res.CSS = css
+		} else {
+			res.CSS = stringifier.ClearSourceMapAnnotations(css)
+		}
+		return res, nil
+	}
+
+	stringified, err := stringifier.NoWorkWithSourceMap(css, previousMap, stringifier.SourceMapOptions{
+		From:               opts.From,
+		To:                 opts.To,
+		MapFile:            opts.MapFile,
+		SourceMapFrom:      opts.SourceMapFrom,
+		SourcesContent:     opts.SourcesContent,
+		Absolute:           opts.Absolute,
+		PreserveAnnotation: opts.PreserveAnnotation,
+	})
+	if err != nil {
+		return nil, err
+	}
+	res.CSS = stringified.CSS
+	res.Map = stringified.Map
+	applyMapAnnotation(res, opts)
+	return res, nil
+}
+
+func applyMapAnnotation(res *result.Result, opts Options) {
+	eol := stringifier.SourceMapEOL(res.CSS)
+	if mapIsInline(opts) {
+		encoded := base64.StdEncoding.EncodeToString([]byte(res.Map))
+		res.CSS += eol + "/*# sourceMappingURL=data:application/json;base64," + encoded + " */"
+		res.Map = ""
+	} else if !opts.MapAnnotationDisabled {
+		if annotation := resolvedMapAnnotation(opts); annotation != "" {
+			res.CSS += eol + "/*# sourceMappingURL=" + annotation + " */"
+		}
+	}
+}
+
+// applyBareMapDefaults mirrors PostCSS `map: true`: when map generation is on
+// but no inline/annotation output mode was chosen, default to an inline map.
+// MapInline is a *bool so explicit false is distinct from unset.
+func applyBareMapDefaults(opts *Options) {
+	if !opts.Map {
+		return
+	}
+	if opts.MapInline != nil || opts.MapInlineAuto || opts.MapAnnotationDisabled ||
+		opts.MapAnnotationDefault || opts.MapAnnotation != "" || opts.PreserveAnnotation {
+		return
+	}
+	opts.MapInline = boolPtr(true)
+	opts.MapAnnotationDisabled = true
+}
+
+func resolveMapOutputMode(opts *Options, css, previousMap string) {
+	if !opts.MapInlineAuto {
+		return
+	}
+	inline := previousMap == "" || previousMapWasInline(css)
+	opts.MapInline = boolPtr(inline)
+	opts.MapAnnotationDisabled = inline
+	opts.MapAnnotationDefault = !inline
+}
+
+func mapIsInline(opts Options) bool {
+	return opts.MapInline != nil && *opts.MapInline
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}
+
+func previousMapWasInline(css string) bool {
+	matches := sourceMapAnnotationPattern.FindAllStringSubmatch(css, -1)
+	if len(matches) == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(matches[len(matches)-1][1]), "data:")
+}
+
+func resolvedMapAnnotation(opts Options) string {
+	if opts.MapAnnotation != "" {
+		return opts.MapAnnotation
+	}
+	if !opts.MapAnnotationDefault {
+		return ""
+	}
+	mapFile := opts.MapFile
+	if mapFile == "" {
+		outputFile := opts.To
+		if outputFile == "" {
+			outputFile = opts.From
+			if outputFile == "" {
+				outputFile = "to.css"
+			}
+		}
+		mapFile = outputFile + ".map"
+	}
+	if parsed, err := url.Parse(mapFile); err == nil && parsed.Scheme != "" && !utils.IsWindowsDrivePath(mapFile) {
+		return path.Base(parsed.Path)
+	}
+	return path.Base(strings.ReplaceAll(mapFile, "\\", "/"))
+}
+
 func previousSourceMap(css string, opts Options) (string, string, error) {
+	if opts.PreviousMapPath != "" {
+		raw, err := os.ReadFile(opts.PreviousMapPath)
+		if err != nil {
+			return "", "", fmt.Errorf("Unable to load previous source map: %s", opts.PreviousMapPath)
+		}
+		return strings.TrimSpace(string(raw)), filepath.ToSlash(opts.PreviousMapPath), nil
+	}
 	if opts.PreviousMap != "" || opts.PreviousMapDisabled {
 		return opts.PreviousMap, opts.PreviousMapURL, nil
 	}

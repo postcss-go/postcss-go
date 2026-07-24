@@ -78,6 +78,12 @@ func handleSingleRequest(data []byte) ([]byte, error) {
 		if callErr == nil {
 			result, callErr = jsbridge.ProcessRPC(context.Background(), params)
 		}
+	case "noWork":
+		var params jsbridge.NoWorkParams
+		callErr = json.Unmarshal(request.Params, &params)
+		if callErr == nil {
+			result, callErr = jsbridge.NoWorkRPC(context.Background(), params)
+		}
 	case "stringify":
 		var params jsbridge.StringifyParams
 		callErr = json.Unmarshal(request.Params, &params)

@@ -1,18 +1,24 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  applyMapAnnotation,
+  normalizeProcessOptions,
+  type NormalizeProcessOptionsInput,
+} from '@postcss-go/shared/map-options';
+import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 import type { PostcssGoService } from './service.js';
 import type {
   AstNode,
+  NoWorkResult,
   ParseResult,
   ProcessOptions,
   ProcessResult,
-  SourceMapOptions,
   Warning,
 } from './types.js';
 
-type BridgeMethod = 'parse' | 'process' | 'stringify';
+type BridgeMethod = 'parse' | 'process' | 'noWork' | 'stringify';
 
 type BridgeParams = { css: string; options?: ProcessOptions } | { ast: AstNode };
 
@@ -96,13 +102,29 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
-    const normalized = normalizeProcessOptions(options);
+    const effectiveOptions = await this.resolveAnnotation(css, options);
+    const normalized = normalizeProcessOptions(
+      effectiveOptions as NormalizeProcessOptionsInput,
+      joinMapAnnotationPath,
+    ) as ProcessOptions;
     const response = await this.request('process', {
       css,
-      options: normalized.bridgeOptions,
+      options: normalized,
     });
-    const result = readProcessResult(response.result);
-    return applySourceMapOutput(result, options, normalized.mapOptions);
+    return readProcessResult(response.result);
+  }
+
+  async noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    const effectiveOptions = await this.resolveAnnotation(css, options);
+    const normalized = normalizeProcessOptions(
+      effectiveOptions as NormalizeProcessOptionsInput,
+      joinMapAnnotationPath,
+    ) as ProcessOptions;
+    const response = await this.request('noWork', {
+      css,
+      options: normalized,
+    });
+    return readNoWorkResult(response.result);
   }
 
   async stringify(ast: AstNode): Promise<string> {
@@ -118,6 +140,18 @@ export class NodePostcssGoService implements PostcssGoService {
     if (this.closed) return;
     this.closed = true;
     await this.bridge.close();
+  }
+
+  private async resolveAnnotation(css: string, options: ProcessOptions): Promise<ProcessOptions> {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const parsed = await this.parse(css, { from: options.from });
+    return applyMapAnnotation(options, parsed.root);
   }
 
   private async request(
@@ -267,60 +301,6 @@ class BridgeTransport {
   }
 }
 
-function normalizeProcessOptions(options: ProcessOptions): {
-  bridgeOptions: ProcessOptions;
-  mapOptions?: SourceMapOptions;
-} {
-  if (!options.map || typeof options.map === 'boolean') return { bridgeOptions: options };
-
-  const mapOptions = options.map;
-  const bridgeOptions: ProcessOptions = {
-    ...options,
-    map: true,
-    absolute: mapOptions.absolute,
-    preserveAnnotation: mapOptions.annotation === false,
-    sourceMapFrom: mapOptions.from,
-    sourcesContent: mapOptions.sourcesContent,
-  };
-  const previous =
-    typeof mapOptions.prev === 'function' ? mapOptions.prev(options.from) : mapOptions.prev;
-  if (previous === false) bridgeOptions.previousMapDisabled = true;
-  else if (typeof previous === 'string') bridgeOptions.previousMap = previous;
-  else if (previous) bridgeOptions.previousMap = JSON.stringify(previous);
-  if (bridgeOptions.previousMap && !bridgeOptions.previousMapUrl) {
-    bridgeOptions.previousMapUrl = `${options.from ?? options.to ?? 'to.css'}.map`;
-  }
-  if (!bridgeOptions.mapFile && typeof mapOptions.annotation === 'string' && options.to) {
-    bridgeOptions.mapFile = join(dirname(options.to), mapOptions.annotation);
-  }
-  return { bridgeOptions, mapOptions };
-}
-
-function applySourceMapOutput(
-  result: ProcessResult,
-  options: ProcessOptions,
-  mapOptions?: SourceMapOptions,
-): ProcessResult {
-  if (!result.map || !mapOptions) return result;
-  if (mapOptions.inline === true) {
-    const encoded = Buffer.from(result.map).toString('base64');
-    return {
-      ...result,
-      css: `${result.css}\n/*# sourceMappingURL=data:application/json;base64,${encoded} */`,
-      map: undefined,
-    };
-  }
-  if (mapOptions.annotation === false || mapOptions.annotation === undefined) return result;
-
-  const annotation =
-    typeof mapOptions.annotation === 'function'
-      ? mapOptions.annotation(options.to, result.root)
-      : typeof mapOptions.annotation === 'string'
-        ? mapOptions.annotation
-        : basename(options.mapFile ?? `${options.to ?? options.from ?? 'to.css'}.map`);
-  return { ...result, css: `${result.css}\n/*# sourceMappingURL=${annotation} */` };
-}
-
 function readProcessResult(result?: BridgeResult): ProcessResult {
   if (!result?.root || typeof result.css !== 'string') {
     throw new Error('postcss-go bridge process response is incomplete');
@@ -331,6 +311,13 @@ function readProcessResult(result?: BridgeResult): ProcessResult {
     root: result.root,
     messages: result.messages ?? [],
   };
+}
+
+function readNoWorkResult(result?: BridgeResult): NoWorkResult {
+  if (!result || typeof result.css !== 'string') {
+    throw new Error('postcss-go bridge noWork response is incomplete');
+  }
+  return { css: result.css, map: result.map };
 }
 
 function resolveBridgeCommand(options: NodePostcssGoService): BridgeCommand {

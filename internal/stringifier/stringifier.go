@@ -48,8 +48,19 @@ func (w builderWriter) writeByte(ch byte) {
 }
 
 func Stringify(node ast.Node) string {
+	return stringify(node, false)
+}
+
+// StringifyWithoutSourceMapAnnotations stringifies like Stringify but skips
+// `# sourceMappingURL=` comment nodes (and their before whitespace), matching
+// PostCSS's AST clearAnnotation path used by LazyResult.
+func StringifyWithoutSourceMapAnnotations(node ast.Node) string {
+	return stringify(node, true)
+}
+
+func stringify(node ast.Node, stripSourceMapAnnotations bool) string {
 	var builder strings.Builder
-	writeNode(builderWriter{&builder}, node, 0)
+	writeNode(builderWriter{&builder}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
 }
 
@@ -150,19 +161,19 @@ func StringifyWithSourceMap(node ast.Node, opts SourceMapOptions) (StringifyResu
 	return StringifyResult{CSS: writer.String(), Map: sourceMap}, nil
 }
 
-func writeNode(writer cssWriter, node ast.Node, depth int) {
+func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotations bool) {
 	switch current := node.(type) {
 	case *ast.Document:
-		writeChildren(writer, current.Nodes, depth, false)
+		writeChildren(writer, current.Nodes, depth, false, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
-		writeChildren(writer, current.Nodes, depth, true)
+		writeChildren(writer, current.Nodes, depth, true, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
 		writer.writeString(ruleHeader(current))
 		writer.writeByte('{')
-		writeChildren(writer, current.Nodes, depth+1, true)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeChildren(writer, current.Nodes, depth+1, true, stripSourceMapAnnotations)
+		writeBlockClose(writer, current, childCount, depth)
 		writer.writeString(rawString(current, "ownSemicolon", ""))
 	case *ast.AtRule:
 		writer.writeString(atRuleHeader(current))
@@ -175,8 +186,8 @@ func writeNode(writer cssWriter, node ast.Node, depth int) {
 		}
 		writer.writeString(rawBetween(current, "between", " "))
 		writer.writeByte('{')
-		writeChildren(writer, current.Nodes, depth+1, true)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeChildren(writer, current.Nodes, depth+1, true, stripSourceMapAnnotations)
+		writeBlockClose(writer, current, childCount, depth)
 	case *ast.Declaration:
 		writer.writeString(declarationText(current))
 		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
@@ -199,8 +210,8 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.AddMapping(current)
 		writer.writeString(ruleHeader(current))
 		writer.writeByte('{')
-		writeMappedChildren(writer, current.Nodes, depth+1)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeMappedChildren(writer, current.Nodes, depth+1)
+		writeBlockClose(writer, current, childCount, depth)
 		writer.writeString(rawString(current, "ownSemicolon", ""))
 		writer.AddEndMapping(current)
 		return true
@@ -217,8 +228,8 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		}
 		writer.writeString(rawBetween(current, "between", " "))
 		writer.writeByte('{')
-		writeMappedChildren(writer, current.Nodes, depth+1)
-		writeBlockClose(writer, current, len(current.Nodes), depth)
+		childCount := writeMappedChildren(writer, current.Nodes, depth+1)
+		writeBlockClose(writer, current, childCount, depth)
 		writer.AddEndMapping(current)
 		return true
 	case *ast.Declaration:
@@ -301,14 +312,17 @@ func declarationValuePosition(node *ast.Declaration) sourcemap.Position {
 	return input.FromOffset(valueOffset)
 }
 
-func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) {
+func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) int {
+	written := 0
 	for index, child := range nodes {
 		if !writer.preserveAnnotation && isSourceMapAnnotationNode(child) {
 			continue
 		}
 		writer.writeString(nodeBefore(child, depth, index))
 		writeMappedNode(writer, child, depth)
+		written++
 	}
+	return written
 }
 
 func isSourceMapAnnotationNode(node ast.Node) bool {
@@ -320,15 +334,21 @@ func isSourceMapAnnotation(text string) bool {
 	return strings.HasPrefix(strings.TrimSpace(text), "# sourceMappingURL=")
 }
 
-func writeChildren(writer cssWriter, nodes []ast.Node, depth int, escapeBefore bool) {
+func writeChildren(writer cssWriter, nodes []ast.Node, depth int, escapeBefore, stripSourceMapAnnotations bool) int {
+	written := 0
 	for index, child := range nodes {
+		if stripSourceMapAnnotations && isSourceMapAnnotationNode(child) {
+			continue
+		}
 		before := nodeBefore(child, depth, index)
 		if escapeBefore {
 			before = escapeHTMLInCSS(before)
 		}
 		writer.writeString(before)
-		writeNode(writer, child, depth)
+		writeNode(writer, child, depth, stripSourceMapAnnotations)
+		written++
 	}
+	return written
 }
 
 func writeIndent(writer cssWriter, node ast.Node, depth int) {

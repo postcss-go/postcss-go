@@ -32,12 +32,13 @@
     "bin"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs",
+    "build": "pnpm --filter @postcss-go/shared build && tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm run build && vitest run",
     "test:coverage": "pnpm run build && vitest run --coverage"
   },
   "dependencies": {
+    "@postcss-go/shared": "workspace:*",
     "chokidar": "^3.6.0",
     "dependency-graph": "^1.0.0",
     "picocolors": "^1.1.1",

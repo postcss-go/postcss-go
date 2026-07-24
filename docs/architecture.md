@@ -1,10 +1,8 @@
 # Architecture
 
-`postcss-go` is designed around two priorities: make the core CSS pipeline faster than PostCSS for common workloads, and remain compatible with the existing PostCSS ecosystem. The repository therefore separates the Go engine from the JavaScript integration layers while keeping the data model close to PostCSS.
+A fast Go CSS engine behind a PostCSS-compatible JavaScript surface. The Go core owns the hot path; Node and browser packages own ecosystem integration.
 
 ## System overview
-
-The repository has three cooperating layers:
 
 ```mermaid
 flowchart LR
@@ -17,124 +15,47 @@ flowchart LR
     Service --> Browser[Browser / WASM service]
 ```
 
-- The Go core owns parsing, AST mutation, plugin visitor execution, stringification, warnings, and source maps.
-- The Node.js packages provide the public JavaScript-facing API, CLI behavior, plugin loading, and process management.
-- The bridge serializes requests and AST results so the JavaScript layer can use the Go engine without duplicating core CSS logic.
-- The browser/WASM service implements the same service contract as the Node service through a classic Web Worker and a Go WASM request handler.
+- **Go core** — parse, AST mutation, plugin visitors, stringify, warnings, source maps
+- **Node.js packages** — public API, CLI, plugin loading, process management
+- **Bridge** — serialize requests and AST results between JavaScript and Go
+- **Browser / WASM** — same service contract as Node, via a Worker and Go WASM
 
-## Core processing pipeline
-
-For direct Go usage, `postcss.New(...).Process(css, options)` runs the following lifecycle:
+## Processing pipeline
 
 ```text
-CSS text
-  │
-  ├─ previous source-map discovery and input setup
-  ▼
-tokenizer
-  │  emits position-aware tokens
-  ▼
-parser
-  │  builds Root / Rule / AtRule / Declaration / Comment nodes
-  ▼
-AST
-  │  plugins mutate the tree through visitor callbacks
-  ▼
-stringifier
-  │  preserves formatting metadata and optionally emits a source map
-  ▼
-Result { CSS, Root, Map, Messages }
+CSS → tokenizer → parser → AST → plugins → stringifier → Result
 ```
 
-The processor executes plugins in a predictable order:
-
-1. Parse the input and create a `Result` containing the root node.
-2. Call `Plugin.Prepare` for plugins that need per-run state.
-3. Call each plugin's `Once` hook.
-4. Walk the AST and call node-specific enter hooks.
-5. Traverse children, then call the matching exit hooks.
-6. Call each plugin's `OnceExit` hook.
-7. Stringify the final AST, with source-map generation when requested.
-
-Errors from parsing, plugins, source-map handling, or stringification stop the current process and are returned to the caller. Warnings are collected on `Result.Messages` and retain plugin and source-location information when available.
-
-## Public Go facade
-
-`internal/postcss/postcss.go` is the narrow entry point for Go callers. It aliases the core types and exposes:
-
-- `Parse` and `ParseWithOptions`
-- `New` for constructing a processor with plugins
-- `Stringify` and `StringifyWithSourceMap` behavior through processor options
-- Root, rule, at-rule, declaration, comment, and input constructors
-- Generic and filtered AST walkers
-- Processing options for source files, output files, previous maps, annotations, and source content
-
-The facade keeps consumers independent from most package-level implementation details. Internal packages can evolve while the facade continues to provide the PostCSS-shaped API.
+`postcss.New(...).Process(css, options)` parses input, runs plugin hooks (`Prepare` → `Once` → enter/exit visitors → `OnceExit`), then stringifies. Source-map generation, previous-map composition, and annotation emission are Go-owned. Errors stop the run; warnings accumulate on `Result.Messages`.
 
 ## AST model
 
-The AST is a mutable tree made of five node kinds:
+Five node kinds: `Root`, `Rule`, `AtRule`, `Declaration`, `Comment`. Nodes share parent links, source ranges, and formatting metadata (`Raws`), so output can stay faithful to the input.
 
-| Node          | Meaning                                      | Children                                       |
-| ------------- | -------------------------------------------- | ---------------------------------------------- |
-| `Root`        | Document root                                | Top-level nodes                                |
-| `Rule`        | Selector and block                           | Nested rules, at-rules, declarations, comments |
-| `AtRule`      | At-rule name, parameters, and optional block | Optional nested nodes                          |
-| `Declaration` | Property, value, and `!important` state      | None                                           |
-| `Comment`     | CSS comment text                             | None                                           |
+## Go packages
 
-All nodes share `BaseNode`, which stores parent links, source ranges, source locations, formatting metadata, and traversal bookkeeping. Container nodes provide append, prepend, insert, remove, clone, and sibling navigation operations.
+| Package       | Responsibility                     |
+| ------------- | ---------------------------------- |
+| `tokenizer`   | Lexical scanning                   |
+| `parser`      | AST construction                   |
+| `ast`         | Node types, mutation, traversal    |
+| `processor`   | Plugin lifecycle and orchestration |
+| `sourcemap`   | Inputs, locations, previous maps   |
+| `stringifier` | CSS output and generated maps      |
+| `result`      | CSS, root, maps, warnings          |
+| `postcss`     | Public Go facade                   |
 
-The AST deliberately keeps both semantic values and formatting information. For example, a declaration exposes normalized `Prop` and `Value` fields while `Raws` retains whitespace and other source formatting needed for faithful output.
-
-## Module responsibilities
-
-The Go core is split by responsibility so the hot path stays independent from integration concerns:
-
-| Package                | Owns                                                                        | Does not own                         |
-| ---------------------- | --------------------------------------------------------------------------- | ------------------------------------ |
-| `internal/tokenizer`   | CSS lexical scanning and position-aware tokens                              | AST construction or plugin execution |
-| `internal/parser`      | Statement classification, AST construction, source ranges, and parse errors | Plugin execution or CSS output       |
-| `internal/ast`         | Node types, parent/child invariants, mutation, cloning, and traversal       | Parsing or serialization             |
-| `internal/processor`   | Plugin registration, visitor lifecycle, results, and process orchestration  | Node representation or tokenization  |
-| `internal/sourcemap`   | Input files, offsets, locations, source content, and previous source maps   | AST traversal or plugin behavior     |
-| `internal/stringifier` | CSS output, raw formatting, and generated source maps                       | AST mutation or plugin dispatch      |
-| `internal/result`      | CSS, root, maps, warnings, and active-plugin context                        | Error parsing or transport           |
-| `internal/csserrors`   | Structured syntax errors with source context                                | Recovery or process orchestration    |
-
-### Core boundaries
-
-- The tokenizer emits tokens; it never creates AST nodes.
-- The parser creates and annotates nodes; it never runs plugins.
-- The AST exposes mutation and traversal primitives; it does not know whether a change came from a plugin or a caller.
-- The processor coordinates the lifecycle but delegates parsing, traversal, source handling, and output to their respective packages.
-- The bridge and Node.js packages depend on the public facade instead of reaching into core implementation details.
-
-This separation makes it possible to benchmark the Go pipeline independently and to test compatibility at each boundary.
+The tokenizer never builds AST nodes; the parser never runs plugins; the processor coordinates without owning tokenization or serialization.
 
 ## JavaScript bridge
 
-The bridge is a narrow transport boundary, not a second processing engine.
-
 ```text
-TypeScript service -> JSON-RPC line -> cmd/api -> internal/jsbridge -> Go facade
+TypeScript service → JSON-RPC → cmd/api → jsbridge → Go facade
 ```
 
-`internal/jsbridge` exposes three core operations:
+Four core operations: `parse`, `process`, `noWork`, and `stringify`. The DTO carries semantic fields, children, source locations, and `Raws` so the bridge does not silently change CSS or maps. `noWork` handles the no-plugin map path without parsing or re-stringifying CSS. `cmd/api` only wires RPC to bridge handlers.
 
-| Operation   | Input                              | Output                      |
-| ----------- | ---------------------------------- | --------------------------- |
-| `parse`     | CSS and input options              | Serialized root AST         |
-| `process`   | CSS and process/source-map options | CSS, AST, map, and warnings |
-| `stringify` | Serialized AST                     | CSS                         |
-
-`NodeDTO` carries semantic fields (`selector`, `prop`, `value`, and so on), child nodes, source locations, and `Raws`. Keeping formatting and source metadata in the DTO prevents the bridge from silently changing CSS output or source-map behavior.
-
-The server in `cmd/api` only wires `jrpc2` to the bridge handlers. It does not contain parsing or processing logic. The Node service starts it once, sends newline-delimited requests over stdin, matches responses by request ID, and rejects pending calls when the process exits.
-
-## Node.js and CLI integration
-
-The Node.js layer adapts the Go engine to PostCSS's JavaScript ecosystem without moving core CSS work back into JavaScript.
+## Node.js integration
 
 ```mermaid
 sequenceDiagram
@@ -144,49 +65,43 @@ sequenceDiagram
     participant Go as Go bridge + core
 
     User->>Plugins: load config and plugins
-    Plugins->>Service: parse / process / stringify
+    Plugins->>Service: parse / process / noWork / stringify
     Service->>Go: JSON-RPC request
     Go-->>Service: CSS, AST, map, warnings
     Service-->>User: PostCSS-shaped result
 ```
 
-Responsibilities are intentionally split:
+- **service** — shared async contract
+- **node** — child process, request queue; map-option normalization via `@postcss-go/shared`
+- **browser** — Worker-backed service; `@postcss-go/wasm` ships the WASM assets
+- **cli** — config, JS plugins, message combining, writing Go-generated CSS and maps
+- **shared** — dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; used by core and vendored compat overrides
 
-- `packages/postcss-go/src/service` defines the shared async service contract.
-- `packages/postcss-go/src/node` manages the Go child process, request queue, response matching, and source-map option normalization.
-- `packages/postcss-go/src/browser` implements the browser service contract over a Worker; `@postcss-go/wasm` ships the worker, Go WASM binary, and `wasm_exec.js` runtime asset.
-- `packages/postcss-go/src/cli` loads configuration, runs JavaScript plugins, forwards CSS/options to the service, combines messages, applies map annotations, and writes output files. The `bin/postcss-go.js` entry imports compiled `dist/cli/index.js` and calls `runCLI()`.
-- `packages/postcss-go/src/index.ts` and `types.ts` remain the only top-level source files; everything else lives in module directories.
+JavaScript stays responsible for ecosystem-facing behavior; Go handles parse, AST, process, no-work map handling, and stringify.
 
-The result is a hybrid pipeline: JavaScript remains responsible for ecosystem-facing behavior, while Go handles the performance-sensitive parse, AST, process, and stringify path.
+## Source maps
 
-## Compatibility and performance decisions
+Ownership is split so PostCSS-shaped options stay in JavaScript while map generation stays in Go:
 
-### Compatibility
+| Layer | Owns |
+| ----- | ---- |
+| `@postcss-go/shared` | Normalize `map` / `map.prev` / `map.annotation` into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …); resolve annotation callbacks and map file paths |
+| Node / browser / compat | Call `normalizeProcessOptions` before `process` / `noWork`; empty plugin pipelines use `noWork` |
+| Go `processor` | Load previous maps, compose or build identity maps, clear or preserve annotations, emit inline/external `sourceMappingURL` |
+| Go `stringifier` | AST stringify with optional source-map annotation stripping; raw-CSS `ClearSourceMapAnnotations` for the no-work path |
 
-- Keep the AST vocabulary and visitor lifecycle close to PostCSS.
-- Preserve raw formatting and source locations instead of rebuilding CSS from normalized values only.
-- Carry source-map options and previous-map metadata through the processor and bridge.
-- Maintain upstream compatibility tests in `vendor/postcss` and the `packages/postcss-compat` harness.
+Contract notes:
 
-### Performance
+- Bridge `mapInline` is optional JSON (`*bool` in Go). Omitted means unset; `false` means explicit external/no-inline. Bare Go `Map: true` with no output-mode flags defaults to inline, matching PostCSS `map: true`.
+- `process` with maps off strips only `# sourceMappingURL=` comment nodes. `noWork` without maps uses the PostCSS no-work string cleaner (`/*#` comments).
+- When JavaScript plugins still run first, their intermediate map may be passed to Go as `previousMap`; final annotation/inline emission remains Go-owned.
 
-- Keep tokenization, parsing, AST traversal, and stringification in Go for the core path.
-- Avoid invoking JavaScript for direct Go API usage.
-- Reuse the Node bridge child process instead of spawning one process per request.
-- Use buffered token collection and string-builder-based output in the parser/stringifier paths.
-- Measure changes with the benchmark fixtures and comparison commands documented in [Contributing](contributing.md).
+## Compatibility and performance
 
-## Testing by boundary
+**Compatibility** — keep PostCSS-shaped AST and visitors; preserve formatting and source locations; carry source-map options through the processor and bridge; run upstream tests via `packages/postcss-compat`.
 
-Tests are colocated with the module they protect:
+**Performance** — keep the core pipeline in Go; reuse one Node bridge process; measure with the fixtures in [Contributing](contributing.md).
 
-- tokenizer tests cover lexical edge cases and upstream token behavior;
-- parser tests cover AST construction, syntax errors, source ranges, and fixtures;
-- AST tests cover mutation, cloning, and walking;
-- processor tests cover plugin ordering, visitor hooks, warnings, and source maps;
-- stringifier tests cover formatting preservation and generated maps;
-- bridge tests cover DTO conversion and JSON-RPC operations;
-- package tests cover Node.js, CLI, compatibility, and browser-facing contracts.
+## Testing
 
-When changing a boundary, update the narrowest relevant tests first, then run the broader checks from [Contributing](contributing.md).
+Tests live next to the code they protect (tokenizer, parser, AST, processor, stringifier, bridge, `@postcss-go/shared`, packages). Prefer the narrowest boundary tests first, then the broader checks from [Contributing](contributing.md).

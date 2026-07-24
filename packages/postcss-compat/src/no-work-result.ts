@@ -1,20 +1,41 @@
+import {
+  applyMapAnnotation,
+  normalizeProcessOptions,
+  type MapOptions,
+} from '@postcss-go/shared/map-options';
+import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
+import { call } from './bridge';
+import path from 'node:path';
+
 // Sibling PostCSS lib modules exist only after these files are copied into
 // vendor/postcss/lib by the upstream compat prepare script.
 const load = (id: string): any => require(id);
-const MapGenerator = load('./map-generator');
 const parse = load('./parse');
 const Result = load('./result');
-const stringify = load('./stringify');
+const { SourceMapConsumer, SourceMapGenerator } = load('source-map-js');
 const warnOnce = load('./warn-once');
 
-function hasSourceMapAnnotation(css: string) {
-  return /\/\*#\s*sourceMappingURL=/.test(css);
+function resolveAnnotationPath(to: string | undefined, annotation: string): string {
+  return path.resolve(joinMapAnnotationPath(to, annotation));
 }
 
-function normalizeGeneratedCSS(css: string, hadAnnotation: boolean, mapped: boolean) {
-  if (!hadAnnotation) return css;
-  if (!mapped) return css.replace(/\n+$/, '');
-  return css.replace(/\n{2}(\/\*#\s*sourceMappingURL=)/, '\n$1');
+function toBridgeOptions(opts: Record<string, unknown>) {
+  // NoWorkResult historically passes an undefined root into annotation callbacks.
+  const applied = applyMapAnnotation(
+    {
+      from: opts.from as string | undefined,
+      to: opts.to as string | undefined,
+      map: opts.map as MapOptions | boolean | undefined,
+    },
+    undefined,
+  );
+  return normalizeProcessOptions(applied, resolveAnnotationPath);
+}
+
+function asSourceMap(json: string) {
+  return SourceMapGenerator.fromSourceMap(new SourceMapConsumer(json), {
+    ignoreInvalidMapping: true,
+  });
 }
 
 class NoWorkResult {
@@ -67,24 +88,23 @@ class NoWorkResult {
     this._css = cssText;
     this._opts = opts;
     this._map = undefined;
-    const hadAnnotation = hasSourceMapAnnotation(cssText);
-    const str = stringify;
     this.result = new Result(this._processor, undefined, this._opts);
     this.result.css = cssText;
     Object.defineProperty(this.result, 'root', {
       get: () => this.root,
     });
 
-    const map = new MapGenerator(str, undefined, this._opts, cssText);
-    if (map.isMap()) {
-      const [generatedCSS, generatedMap] = map.generate();
-      if (generatedCSS) this.result.css = generatedCSS;
-      if (generatedMap) this.result.map = generatedMap;
-      this.result.css = normalizeGeneratedCSS(this.result.css, hadAnnotation, true);
-    } else {
-      map.clearAnnotation();
-      this.result.css = normalizeGeneratedCSS(map.css, hadAnnotation, false);
-    }
+    // Go owns no-work map generation, previous-map composition, annotation
+    // cleanup, and annotation emission without parsing CSS.
+    const processed = call('noWork', {
+      css: cssText,
+      options: toBridgeOptions(opts),
+    }) as {
+      css: string;
+      map?: string;
+    };
+    this.result.css = processed.css;
+    if (processed.map) this.result.map = asSourceMap(processed.map);
   }
 
   async() {

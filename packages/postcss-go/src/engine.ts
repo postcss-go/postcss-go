@@ -1,11 +1,19 @@
 import path from 'node:path';
 
+import {
+  applyMapAnnotation,
+  isExternalSourceMap,
+  isSourceMapEnabled,
+  mapDefersInlineMode,
+  type MapOptions,
+  type ProcessFileOptions,
+} from '@postcss-go/shared/map-options';
+import { getMapfile, joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
 import postcss, { type AcceptedPlugin, type Result, type SourceMap } from 'postcss';
 
-import getMapfile, { type MapOptions, type ProcessFileOptions } from './getMapfile.js';
 import { createNodeService, type NodePostcssGoService } from './node.js';
 import { resolveGoBridgeServiceOptions } from './resolveGoBridge.js';
-import type { ProcessResult as BridgeProcessResult } from './types.js';
+import type { ProcessOptions, SourceMapOptions } from './types.js';
 
 export interface CliConfig {
   options?: ProcessFileOptions;
@@ -16,7 +24,7 @@ export interface CliConfig {
 export interface GoEngine {
   name: 'go';
   queue: Promise<unknown>;
-  service: Pick<NodePostcssGoService, 'process' | 'close'>;
+  service: Pick<NodePostcssGoService, 'process' | 'noWork' | 'parse' | 'close'>;
   close(): Promise<void>;
 }
 
@@ -48,15 +56,7 @@ export function getEffectiveMapOption(config?: CliConfig): boolean | MapOptions 
   return config?.map;
 }
 
-export function isSourceMapEnabled(map: boolean | MapOptions | undefined): boolean {
-  return map !== false && map !== undefined;
-}
-
-export function isExternalSourceMap(map: boolean | MapOptions | undefined): boolean {
-  if (!isSourceMapEnabled(map)) return false;
-  if (map === true) return false;
-  return (map as MapOptions).inline !== true;
-}
+export { isExternalSourceMap, isSourceMapEnabled };
 
 export function assertGoCompatibility(
   argv: { parser?: string; syntax?: string; stringifier?: string },
@@ -93,7 +93,9 @@ export async function processWithGoEngine(
       return processWithPostcss(config, inputCss, options);
     }
     const mapEnabled = isSourceMapEnabled(options.map);
-    const shouldRunPostcss = hasPlugins(config?.plugins) || mapEnabled;
+    // With no plugins, sending the input straight to Go avoids PostCSS's
+    // NoWorkResult/MapGenerator path. Go owns the complete no-work map flow.
+    const shouldRunPostcss = hasPlugins(config?.plugins);
     const mapOption = options.map && typeof options.map === 'object' ? options.map : {};
     const pluginMap =
       options.map && typeof options.map === 'object'
@@ -105,44 +107,83 @@ export async function processWithGoEngine(
           map: mapEnabled ? pluginMap : false,
         })
       : null;
-    const resolvedAnnotation =
-      typeof mapOption.annotation === 'function'
-        ? mapOption.annotation(options.to, pluginResult?.root)
-        : mapOption.annotation;
-    const mapFile = mapEnabled ? getSourceMapFile(options, resolvedAnnotation) : undefined;
-    const processOptions: Record<string, unknown> = { from: options.from };
-    if (options.to) processOptions.to = options.to;
-    if (mapEnabled) {
-      processOptions.map = true;
-      processOptions.mapFile = mapFile;
-      processOptions.absolute = mapOption.absolute === true;
-      processOptions.preserveAnnotation = mapOption.annotation === false;
-      processOptions.sourceMapFrom = mapOption.from;
-      if (mapOption.sourcesContent !== undefined) {
-        processOptions.sourcesContent = mapOption.sourcesContent;
+    let annotationRoot: unknown = pluginResult?.root;
+    if (!annotationRoot && typeof mapOption.annotation === 'function') {
+      // Dynamic annotations are the one JS callback boundary. Parsing here
+      // supplies its root without invoking PostCSS's no-work result path.
+      if (typeof engine.service.parse !== 'function') {
+        throw new Error('Go engine parse() is required for map.annotation callbacks');
       }
-      if (pluginResult?.map) {
-        processOptions.previousMap = pluginResult.map.toString();
-        processOptions.previousMapUrl = toSourceMapPath(
-          `${options.to || options.from || 'to.css'}.map`,
-        );
-      }
+      const parsed = await engine.service.parse(inputCss, { from: options.from });
+      annotationRoot = parsed.root;
     }
-    const result = (await engine.service.process(
-      pluginResult?.css ?? inputCss,
-      // Bridge accepts a wider option set than the public ProcessOptions surface.
-      processOptions as Parameters<NodePostcssGoService['process']>[1],
-    )) as BridgeProcessResult;
+    const optionsForService = applyMapAnnotation(options, annotationRoot);
+    const mapForServiceBase = optionsForService.map as ProcessOptions['map'];
+    const resolvedAnnotation =
+      mapForServiceBase && typeof mapForServiceBase === 'object'
+        ? mapForServiceBase.annotation
+        : undefined;
+
+    // Keep public PostCSS-shaped options here. Node/browser services own
+    // normalizeProcessOptions at the bridge boundary.
+    let mapForService: ProcessOptions['map'] = mapForServiceBase;
+
+    if (pluginResult && mapEnabled && mapDefersInlineMode(mapForService as MapOptions | boolean | undefined)) {
+      const inputMap = (
+        pluginResult.root.source?.input as unknown as
+          | {
+              map?: { inline?: boolean; text?: string };
+            }
+          | undefined
+      )?.map;
+      const base =
+        mapForService && typeof mapForService === 'object'
+          ? mapForService
+          : ({} as SourceMapOptions);
+      mapForService = {
+        ...base,
+        inline: !inputMap || inputMap.inline === true,
+      };
+    }
+
+    const publicOptions: ProcessOptions = { from: options.from };
+    if (options.to !== undefined) publicOptions.to = options.to;
+    if (mapForService !== undefined) publicOptions.map = mapForService;
+
+    if (pluginResult?.map) {
+      if (publicOptions.map && typeof publicOptions.map === 'object') {
+        const { prev: _ignored, ...rest } = publicOptions.map;
+        publicOptions.map = rest;
+      }
+      publicOptions.previousMap = pluginResult.map.toString();
+      publicOptions.previousMapUrl = toSourceMapPath(
+        `${options.to || options.from || 'to.css'}.map`,
+      );
+    }
+
+    const processedCss = pluginResult?.css ?? inputCss;
+    const result = shouldRunPostcss
+      ? await engine.service.process(processedCss, publicOptions)
+      : await engine.service.noWork(processedCss, publicOptions);
+
     const messages: CliMessage[] = [
       ...((pluginResult?.messages ?? []) as CliMessage[]),
-      ...((result.messages ?? []) as CliMessage[]),
+      ...(('messages' in result ? result.messages : []) as CliMessage[]),
     ];
-    const annotated = applySourceMapAnnotation(result.css, result.map, options, resolvedAnnotation);
+    // Annotation/inline comments are applied by Go when map options are set.
+    const map = result.map ? result.map : undefined;
+    const outputMapFile = result.map
+      ? getSourceMapFile(
+          options,
+          typeof resolvedAnnotation === 'string' ? resolvedAnnotation : undefined,
+          true,
+        )
+      : undefined;
 
     return {
-      css: annotated.css,
-      map: annotated.map,
-      mapFile: isExternalSourceMap(options.map) ? mapFile : undefined,
+      css: result.css,
+      map,
+      mapFile: outputMapFile,
       warnings() {
         return messages
           .filter((message) => message.type === 'warning')
@@ -222,53 +263,16 @@ function isDefaultSyntax(value: unknown): boolean {
   return syntax.parse === postcss.parse && syntax.stringify === postcss.stringify;
 }
 
-function applySourceMapAnnotation(
-  css: string,
-  map: string | undefined,
-  options: ProcessFileOptions,
-  resolvedAnnotation: boolean | string | undefined,
-): { css: string; map: string | undefined } {
-  if (!map || !isSourceMapEnabled(options.map)) {
-    return { css, map: undefined };
-  }
-
-  const mapOption = options.map && typeof options.map === 'object' ? options.map : {};
-
-  if (options.map === true || mapOption.inline === true) {
-    const encoded = Buffer.from(map).toString('base64');
-    return {
-      css: `${css}\n/*# sourceMappingURL=data:application/json;base64,${encoded} */`,
-      map: undefined,
-    };
-  }
-
-  if (mapOption.annotation === false) {
-    return { css, map };
-  }
-
-  const annotation =
-    typeof resolvedAnnotation === 'string'
-      ? resolvedAnnotation
-      : path.basename(getMapfile(options));
-  return {
-    css: `${css}\n/*# sourceMappingURL=${annotation} */`,
-    map,
-  };
-}
-
 function getSourceMapFile(
   options: ProcessFileOptions,
   resolvedAnnotation?: boolean | string,
+  external = isExternalSourceMap(options.map),
 ): string {
-  if (!isExternalSourceMap(options.map)) {
+  if (!external) {
     return options.to || options.from || 'to.css';
   }
   if (typeof resolvedAnnotation === 'string') {
-    return path.resolve(path.dirname(options.to ?? ''), resolvedAnnotation);
+    return path.resolve(joinMapAnnotationPath(options.to, resolvedAnnotation));
   }
   return getMapfile(options);
-}
-
-function toSourceMapPath(value: string): string {
-  return value.replaceAll('\\', '/');
 }

@@ -45,6 +45,69 @@ test('browser service dispatches parse requests and resolves matching responses'
 
   worker.respond({ id: 1, result: { root: { type: 'root', nodes: [] } } });
   await expect(pending).resolves.toEqual({ root: { type: 'root', nodes: [] } });
+
+  const noWork = service.noWork('.a {}', { map: false });
+  expect(worker.sent.at(-1)).toEqual({
+    id: 2,
+    method: 'noWork',
+    params: { css: '.a {}', options: { map: false } },
+  });
+  worker.respond({ id: 2, result: { css: '.a {}' } });
+  await expect(noWork).resolves.toEqual({ css: '.a {}' });
+
+  const inline = service.noWork('.b {}', { map: { inline: true } });
+  expect(worker.sent.at(-1)).toEqual({
+    id: 3,
+    method: 'noWork',
+    params: {
+      css: '.b {}',
+      options: {
+        map: true,
+        mapInline: true,
+        mapAnnotationDisabled: true,
+      },
+    },
+  });
+  worker.respond({ id: 3, result: { css: '.b {}' } });
+  await inline;
+
+  const annotated = service.noWork('.c {}', {
+    from: '/src/c.css',
+    to: '/dist/c.css',
+    map: {
+      inline: false,
+      annotation(file, root) {
+        expect(file).toBe('/dist/c.css');
+        expect(root.type).toBe('root');
+        return 'maps/c.css.map';
+      },
+    },
+  });
+  expect(worker.sent.at(-1)).toEqual({
+    id: 4,
+    method: 'parse',
+    params: { css: '.c {}', options: { from: '/src/c.css' } },
+  });
+  worker.respond({ id: 4, result: { root: { type: 'root', nodes: [] } } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(worker.sent.at(-1)).toEqual({
+    id: 5,
+    method: 'noWork',
+    params: {
+      css: '.c {}',
+      options: {
+        from: '/src/c.css',
+        to: '/dist/c.css',
+        map: true,
+        mapFile: '/dist/maps/c.css.map',
+        mapInline: false,
+        mapAnnotation: 'maps/c.css.map',
+        mapAnnotationDisabled: false,
+      },
+    },
+  });
+  worker.respond({ id: 5, result: { css: '.c {}', map: '{}' } });
+  await annotated;
   await service.close();
 });
 

@@ -1,5 +1,11 @@
+import {
+  applyMapAnnotation,
+  normalizeProcessOptions,
+  type NormalizeProcessOptionsInput,
+} from '@postcss-go/shared/map-options';
+import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 import type { PostcssGoService } from './service.js';
-import type { AstNode, ParseResult, ProcessOptions, ProcessResult } from './types.js';
+import type { AstNode, NoWorkResult, ParseResult, ProcessOptions, ProcessResult } from './types.js';
 
 export interface BrowserWorkerLike {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -53,8 +59,48 @@ export class BrowserPostcssGoService implements PostcssGoService {
     return this.call<ParseResult>('parse', { css, options });
   }
 
-  async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
-    return this.call<ProcessResult>('process', { css, options });
+  process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    const effectiveOptions = this.resolveAnnotation(css, options);
+    if (effectiveOptions instanceof Promise) {
+      return effectiveOptions.then((resolved) =>
+        this.call<ProcessResult>('process', {
+          css,
+          options: normalizeProcessOptions(
+            resolved as NormalizeProcessOptionsInput,
+            joinMapAnnotationPath,
+          ) as ProcessOptions,
+        }),
+      );
+    }
+    return this.call<ProcessResult>('process', {
+      css,
+      options: normalizeProcessOptions(
+        effectiveOptions as NormalizeProcessOptionsInput,
+        joinMapAnnotationPath,
+      ) as ProcessOptions,
+    });
+  }
+
+  noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    const effectiveOptions = this.resolveAnnotation(css, options);
+    if (effectiveOptions instanceof Promise) {
+      return effectiveOptions.then((resolved) =>
+        this.call<NoWorkResult>('noWork', {
+          css,
+          options: normalizeProcessOptions(
+            resolved as NormalizeProcessOptionsInput,
+            joinMapAnnotationPath,
+          ) as ProcessOptions,
+        }),
+      );
+    }
+    return this.call<NoWorkResult>('noWork', {
+      css,
+      options: normalizeProcessOptions(
+        effectiveOptions as NormalizeProcessOptionsInput,
+        joinMapAnnotationPath,
+      ) as ProcessOptions,
+    });
   }
 
   async stringify(ast: AstNode): Promise<string> {
@@ -88,6 +134,22 @@ export class BrowserPostcssGoService implements PostcssGoService {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
     return pending;
+  }
+
+  private resolveAnnotation(
+    css: string,
+    options: ProcessOptions,
+  ): ProcessOptions | Promise<ProcessOptions> {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    return this.parse(css, { from: options.from }).then((parsed) =>
+      applyMapAnnotation(options, parsed.root),
+    );
   }
 
   private handleMessage(message: unknown): void {

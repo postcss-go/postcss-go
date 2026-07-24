@@ -21,11 +21,11 @@ configuration shape used by PostCSS projects.
 
 ## Inputs and output
 
-<div class="cli-command-list">
-  <div class="cli-command code-sample" data-code-sample><code>postcss-go input.css -o output.css</code><button class="code-sample__copy" type="button" data-copy-code>Copy</button></div>
-  <div class="cli-command code-sample" data-code-sample><code>postcss-go src/**/*.css --base src --dir build</code><button class="code-sample__copy" type="button" data-copy-code>Copy</button></div>
-  <div class="cli-command code-sample" data-code-sample><code>cat input.css | postcss-go -u autoprefixer &gt; output.css</code><button class="code-sample__copy" type="button" data-copy-code>Copy</button></div>
-  <div class="cli-command code-sample" data-code-sample><code>postcss-go input.css --replace</code><button class="code-sample__copy" type="button" data-copy-code>Copy</button></div>
+<div class="mb-12 mt-7 grid gap-[.6rem]">
+  <div class="m-0 flex items-center justify-between gap-4 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent px-4 py-[.9rem]" data-code-sample><code class="min-w-0 overflow-x-auto whitespace-nowrap border-0! bg-transparent! p-0! text-[.86rem] leading-normal text-white">postcss-go input.css -o output.css</code><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div>
+  <div class="m-0 flex items-center justify-between gap-4 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent px-4 py-[.9rem]" data-code-sample><code class="min-w-0 overflow-x-auto whitespace-nowrap border-0! bg-transparent! p-0! text-[.86rem] leading-normal text-white">postcss-go src/**/*.css --base src --dir build</code><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div>
+  <div class="m-0 flex items-center justify-between gap-4 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent px-4 py-[.9rem]" data-code-sample><code class="min-w-0 overflow-x-auto whitespace-nowrap border-0! bg-transparent! p-0! text-[.86rem] leading-normal text-white">cat input.css | postcss-go -u autoprefixer &gt; output.css</code><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div>
+  <div class="m-0 flex items-center justify-between gap-4 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent px-4 py-[.9rem]" data-code-sample><code class="min-w-0 overflow-x-auto whitespace-nowrap border-0! bg-transparent! p-0! text-[.86rem] leading-normal text-white">postcss-go input.css --replace</code><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div>
 </div>
 
 | Option                | Description                                       |
@@ -44,9 +44,9 @@ The CLI loads `postcss.config.js`, `.cjs`, or `.mjs` with
 `postcss-load-config`. JavaScript plugins run through the Node compatibility
 layer before the Go engine handles parsing, stringifying, and source maps.
 
-<div class="cli-command-list">
-  <div class="cli-command code-sample" data-code-sample><code>postcss-go src/**/*.css --dir dist --base src --no-map</code><button class="code-sample__copy" type="button" data-copy-code>Copy</button></div>
-  <div class="cli-command code-sample" data-code-sample><code>postcss-go input.css -u autoprefixer -o output.css</code><button class="code-sample__copy" type="button" data-copy-code>Copy</button></div>
+<div class="mb-12 mt-7 grid gap-[.6rem]">
+  <div class="m-0 flex items-center justify-between gap-4 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent px-4 py-[.9rem]" data-code-sample><code class="min-w-0 overflow-x-auto whitespace-nowrap border-0! bg-transparent! p-0! text-[.86rem] leading-normal text-white">postcss-go src/**/*.css --dir dist --base src --no-map</code><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div>
+  <div class="m-0 flex items-center justify-between gap-4 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent px-4 py-[.9rem]" data-code-sample><code class="min-w-0 overflow-x-auto whitespace-nowrap border-0! bg-transparent! p-0! text-[.86rem] leading-normal text-white">postcss-go input.css -u autoprefixer -o output.css</code><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div>
 </div>
 
 ## Watch mode

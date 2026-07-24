@@ -35,6 +35,13 @@ export {
   type GoEngine,
 } from './engine.js';
 export { default as getMapfile, type MapOptions, type ProcessFileOptions } from './getMapfile.js';
+export {
+  applyMapAnnotation,
+  mapDefersInlineMode,
+  normalizeProcessOptions,
+  type NormalizeProcessOptionsInput,
+} from '@postcss-go/shared/map-options';
+export { joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
 export { BrowserPostcssGoService } from './browser.js';
 export {
   createNodeService,
@@ -50,6 +57,7 @@ export type {
   CommentNode,
   DeclarationNode,
   DocumentNode,
+  NoWorkResult,
   ParseResult,
   ProcessOptions,
   ProcessResult,

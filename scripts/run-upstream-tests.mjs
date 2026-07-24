@@ -68,6 +68,15 @@ const uvuArgs = [
 const uvuEnv = { ...env };
 if (mode === 'go') {
   uvuEnv.POSTCSS_GO_COMPAT_BRIDGE_CLIENT = bridgeClient;
+  // Overrides run from a temp copy of vendor/postcss/lib and require workspace
+  // packages such as @postcss-go/shared; NODE_PATH keeps those resolvable.
+  const nodePaths = [
+    path.join(repoRoot, 'packages', 'postcss-compat', 'node_modules'),
+    path.join(repoRoot, 'node_modules'),
+  ];
+  uvuEnv.NODE_PATH = uvuEnv.NODE_PATH
+    ? [...nodePaths, uvuEnv.NODE_PATH].join(path.delimiter)
+    : nodePaths.join(path.delimiter);
 }
 
 run('pnpm', uvuArgs, { cwd: repoRoot, env: uvuEnv });

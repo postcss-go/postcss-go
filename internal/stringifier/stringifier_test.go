@@ -441,6 +441,21 @@ func TestStringifyInfersDeclarationBetweenFromSibling(t *testing.T) {
 	}
 }
 
+func TestStringifyWithoutSourceMapAnnotations(t *testing.T) {
+	css := "a{}\n/*# keep-me */\n/*# sourceMappingURL=x.map */"
+	root, err := parser.Parse(css, sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := StringifyWithoutSourceMapAnnotations(root)
+	if got != "a{}\n/*# keep-me */" {
+		t.Fatalf("unexpected stripped CSS: %q", got)
+	}
+	if full := Stringify(root); !strings.Contains(full, "sourceMappingURL=x.map") {
+		t.Fatalf("plain Stringify should keep annotations, got %q", full)
+	}
+}
+
 func TestStringifyWithSourceMap(t *testing.T) {
 	input, err := sourcemap.NewInput(".a { color: red; }", sourcemap.Options{From: "input.css"})
 	if err != nil {

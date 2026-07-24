@@ -1,6 +1,6 @@
 type WasmRequest = {
   id: number;
-  method: 'parse' | 'process' | 'stringify';
+  method: 'parse' | 'process' | 'noWork' | 'stringify';
   params: unknown;
 };
 
@@ -52,12 +52,17 @@ async function handleRequest(request: WasmRequest): Promise<void> {
           ? { css: response.css ?? '' }
           : request.method === 'parse'
             ? { root: response.root }
-            : {
-                css: response.css ?? '',
-                map: response.map,
-                root: response.root,
-                messages: response.messages ?? [],
-              },
+            : request.method === 'noWork'
+              ? {
+                  css: response.css ?? '',
+                  map: response.map,
+                }
+              : {
+                  css: response.css ?? '',
+                  map: response.map,
+                  root: response.root,
+                  messages: response.messages ?? [],
+                },
     });
   } catch (error) {
     scope.postMessage({

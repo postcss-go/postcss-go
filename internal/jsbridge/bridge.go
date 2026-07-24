@@ -20,19 +20,7 @@ type Request struct {
 	Options RequestOpts `json:"options,omitempty"`
 }
 
-type RequestOpts struct {
-	From                string `json:"from,omitempty"`
-	To                  string `json:"to,omitempty"`
-	Map                 bool   `json:"map,omitempty"`
-	MapFile             string `json:"mapFile,omitempty"`
-	PreviousMap         string `json:"previousMap,omitempty"`
-	PreviousMapURL      string `json:"previousMapUrl,omitempty"`
-	PreviousMapDisabled bool   `json:"previousMapDisabled,omitempty"`
-	SourceMapFrom       string `json:"sourceMapFrom,omitempty"`
-	SourcesContent      *bool  `json:"sourcesContent,omitempty"`
-	Absolute            bool   `json:"absolute,omitempty"`
-	PreserveAnnotation  bool   `json:"preserveAnnotation,omitempty"`
-}
+type RequestOpts = postcss.ProcessOptions
 
 type Response struct {
 	OK       bool         `json:"ok"`
@@ -124,6 +112,13 @@ type ProcessResult struct {
 	Messages []WarningDTO `json:"messages,omitempty"`
 }
 
+type NoWorkParams = ProcessParams
+
+type NoWorkResult struct {
+	CSS string `json:"css"`
+	Map string `json:"map,omitempty"`
+}
+
 type StringifyParams struct {
 	AST     *NodeDTO `json:"ast"`
 	Builder bool     `json:"builder,omitempty"`
@@ -138,6 +133,7 @@ func Assigner() handler.Map {
 	assigner := handler.Map{
 		"parse":     handler.New(ParseRPC),
 		"process":   handler.New(ProcessRPC),
+		"noWork":    handler.New(NoWorkRPC),
 		"stringify": handler.New(StringifyRPC),
 	}
 	for method, rpc := range tokenizeAssigner() {
@@ -160,6 +156,12 @@ func Execute(req Request) Response {
 			return errorResponse(err)
 		}
 		return Response{OK: true, CSS: result.CSS, Map: result.Map, Root: result.Root, Messages: result.Messages}
+	case "noWork":
+		result, err := NoWorkRPC(context.Background(), NoWorkParams{CSS: req.CSS, Options: req.Options})
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, CSS: result.CSS, Map: result.Map}
 	case "stringify":
 		result, err := StringifyRPC(context.Background(), StringifyParams{AST: req.AST})
 		if err != nil {
@@ -189,19 +191,7 @@ func ParseRPC(_ context.Context, params ParseParams) (*ParseResult, error) {
 }
 
 func ProcessRPC(_ context.Context, params ProcessParams) (*ProcessResult, error) {
-	result, err := postcss.New().Process(params.CSS, postcss.ProcessOptions{
-		From:                params.Options.From,
-		To:                  params.Options.To,
-		Map:                 params.Options.Map,
-		MapFile:             params.Options.MapFile,
-		PreviousMap:         params.Options.PreviousMap,
-		PreviousMapURL:      params.Options.PreviousMapURL,
-		PreviousMapDisabled: params.Options.PreviousMapDisabled,
-		SourceMapFrom:       params.Options.SourceMapFrom,
-		SourcesContent:      params.Options.SourcesContent,
-		Absolute:            params.Options.Absolute,
-		PreserveAnnotation:  params.Options.PreserveAnnotation,
-	})
+	result, err := postcss.New().Process(params.CSS, params.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +205,14 @@ func ProcessRPC(_ context.Context, params ProcessParams) (*ProcessResult, error)
 		Root:     dto,
 		Messages: warningsToDTO(result.Messages),
 	}, nil
+}
+
+func NoWorkRPC(_ context.Context, params NoWorkParams) (*NoWorkResult, error) {
+	result, err := postcss.NoWork(params.CSS, params.Options)
+	if err != nil {
+		return nil, err
+	}
+	return &NoWorkResult{CSS: result.CSS, Map: result.Map}, nil
 }
 
 func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, error) {
