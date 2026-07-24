@@ -20,19 +20,19 @@ import (
 )
 
 type Options struct {
-	From                  string `json:"from,omitempty"`
-	To                    string `json:"to,omitempty"`
-	Map                   bool   `json:"map,omitempty"`
-	MapAuto               bool   `json:"mapAuto,omitempty"`
-	MapFile               string `json:"mapFile,omitempty"`
-	PreviousMap           string `json:"previousMap,omitempty"`
-	PreviousMapPath       string `json:"previousMapPath,omitempty"`
-	PreviousMapURL        string `json:"previousMapUrl,omitempty"`
-	PreviousMapDisabled   bool   `json:"previousMapDisabled,omitempty"`
-	SourceMapFrom         string `json:"sourceMapFrom,omitempty"`
-	SourcesContent        *bool  `json:"sourcesContent,omitempty"`
-	Absolute              bool   `json:"absolute,omitempty"`
-	PreserveAnnotation    bool   `json:"preserveAnnotation,omitempty"`
+	From                string `json:"from,omitempty"`
+	To                  string `json:"to,omitempty"`
+	Map                 bool   `json:"map,omitempty"`
+	MapAuto             bool   `json:"mapAuto,omitempty"`
+	MapFile             string `json:"mapFile,omitempty"`
+	PreviousMap         string `json:"previousMap,omitempty"`
+	PreviousMapPath     string `json:"previousMapPath,omitempty"`
+	PreviousMapURL      string `json:"previousMapUrl,omitempty"`
+	PreviousMapDisabled bool   `json:"previousMapDisabled,omitempty"`
+	SourceMapFrom       string `json:"sourceMapFrom,omitempty"`
+	SourcesContent      *bool  `json:"sourcesContent,omitempty"`
+	Absolute            bool   `json:"absolute,omitempty"`
+	PreserveAnnotation  bool   `json:"preserveAnnotation,omitempty"`
 	// MapInline is a pointer so JSON/bridge callers can distinguish unset (nil)
 	// from explicit false. Bare Map:true with no output-mode flags defaults to inline.
 	MapInline             *bool  `json:"mapInline,omitempty"`

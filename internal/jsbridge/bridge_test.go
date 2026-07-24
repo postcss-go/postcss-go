@@ -84,7 +84,7 @@ func TestParseProcessAndStringifyBridge(t *testing.T) {
 			From:                  "demo.css",
 			To:                    "out.css",
 			Map:                   true,
-			MapInline: boolPtr(false),
+			MapInline:             boolPtr(false),
 			MapAnnotationDisabled: true,
 		},
 	})
@@ -250,7 +250,7 @@ func TestRPCMethods(t *testing.T) {
 			From:                  "demo.css",
 			To:                    "out.css",
 			Map:                   true,
-			MapInline: boolPtr(false),
+			MapInline:             boolPtr(false),
 			MapAnnotationDisabled: true,
 		},
 	})

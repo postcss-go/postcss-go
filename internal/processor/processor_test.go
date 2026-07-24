@@ -82,7 +82,7 @@ func TestProcessorPropagatesVisitorErrors(t *testing.T) {
 func TestProcessorMapsAnonymousInput(t *testing.T) {
 	res, err := New().Process(".a { color: red; }", Options{
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 		To:                    "out.css",
 	})
@@ -120,7 +120,7 @@ func TestProcessorMapsUnsourcedNodes(t *testing.T) {
 		From:                  "input.css",
 		To:                    "out.css",
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 	})
 	if err != nil {
@@ -151,7 +151,7 @@ func TestProcessorSourceMapUsesUTF16ColumnsAndEncodedPaths(t *testing.T) {
 		From:                  inputFile,
 		To:                    outputFile,
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 	})
 	if err != nil {
@@ -193,7 +193,7 @@ func TestProcessorComposesPreviousMapAndRemovesAnnotation(t *testing.T) {
 		From:                  "generated.css",
 		To:                    "out.css",
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 		PreviousMap:           previousMap,
 		PreviousMapURL:        "generated.css.map",
@@ -236,7 +236,7 @@ func TestProcessorPreservesMissingPreviousSourceContent(t *testing.T) {
 		From:                  "generated.css",
 		To:                    "out.css",
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 		PreviousMap:           previousMap,
 		PreviousMapURL:        "generated.css.map",
@@ -264,7 +264,7 @@ func TestProcessorLoadsInlinePreviousMapAnnotation(t *testing.T) {
 		From:                  "generated.css",
 		To:                    "out.css",
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 	})
 	if err != nil {
@@ -292,7 +292,7 @@ func TestProcessorLoadsExternalPreviousMapAnnotation(t *testing.T) {
 		From:                  cssFile,
 		To:                    filepath.Join(tempDir, "out.css"),
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 	})
 	if err != nil {
@@ -382,7 +382,7 @@ func TestNoWorkLoadsPreviousMapPath(t *testing.T) {
 		From:                  filepath.Join(tempDir, "input.css"),
 		To:                    filepath.Join(tempDir, "output.css"),
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 		PreviousMapPath:       previousPath,
 	})
@@ -569,7 +569,7 @@ func TestProcessorCanDisablePreviousMapAndPreserveAnnotation(t *testing.T) {
 		From:                  "generated.css",
 		To:                    "out.css",
 		Map:                   true,
-		MapInline: boolPtr(false),
+		MapInline:             boolPtr(false),
 		MapAnnotationDisabled: true,
 		PreviousMapDisabled:   true,
 		PreserveAnnotation:    true,
