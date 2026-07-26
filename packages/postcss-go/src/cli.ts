@@ -14,7 +14,7 @@ import slash from 'slash';
 import { glob } from 'tinyglobby';
 
 import { parseCliArgs } from './args.js';
-import createDependencyGraph, { type GraphMessage } from './createDependencyGraph.js';
+import createDependencyGraph, { type GraphMessage } from './create-dependency-graph.js';
 import {
   assertGoCompatibility,
   createGoEngine,
@@ -25,7 +25,7 @@ import {
   type CliProcessResult,
   type GoEngine,
 } from './engine.js';
-import getMapfile from './getMapfile.js';
+import { getMapfile } from '@postcss-go/shared/map-path';
 import { getPollInterval, usePolling } from './poll.js';
 
 export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promise<void> {

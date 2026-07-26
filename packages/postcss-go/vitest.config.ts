@@ -4,10 +4,7 @@ export default defineConfig({
   test: {
     fileParallelism: false,
     testTimeout: 10000,
-    include: [
-      'test/**/*.test.ts',
-      'test/{base,cli,config,dir,engine,errors,output,poll,stdin,stdout,watch}.ts',
-    ],
+    include: ['test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       all: true,

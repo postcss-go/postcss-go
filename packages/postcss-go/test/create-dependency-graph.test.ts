@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { expect, test } from 'vitest';
 
-import createDependencyGraph from '../src/createDependencyGraph.ts';
+import createDependencyGraph from '../src/create-dependency-graph.ts';
 
 test('dependency graph tracks both file and directory dependencies', () => {
   const graph = createDependencyGraph();

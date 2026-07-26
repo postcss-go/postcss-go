@@ -3,8 +3,7 @@ import { afterEach, expect, test } from 'vitest';
 import {
   getBundledGoBridgeBinPath,
   resolveGoBridgeServiceOptions,
-} from '../src/resolveGoBridge.ts';
-
+} from '../src/resolve-go-bridge.ts';
 const originalBin = process.env.POSTCSS_GO_NODE_API_BIN;
 
 afterEach(() => {

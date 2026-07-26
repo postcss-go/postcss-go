@@ -194,6 +194,48 @@ test('provides synchronous PostCSS-style stringification and raw helpers', () =>
   expect(String(root)).toBe('.a {color: red;}');
 });
 
+test('preserves empty at-rule blocks and afterName spacing', () => {
+  const emptyBlock = fromAst({
+    type: 'atrule',
+    name: 'media',
+    params: 'x',
+    block: true,
+    nodes: [],
+    raws: { afterName: ' ', between: ' ', after: '' },
+  });
+  const importRule = fromAst({
+    type: 'atrule',
+    name: 'import',
+    params: '"y"',
+    raws: { afterName: ' ' },
+  });
+
+  expect(emptyBlock.toString()).toBe('@media x {}');
+  expect(importRule.toString()).toBe('@import "y";');
+  expect(toAst(emptyBlock)).toMatchObject({ block: true, nodes: [] });
+  expect(toAst(importRule)).not.toHaveProperty('block');
+  expect(toAst(importRule)).not.toHaveProperty('nodes');
+});
+
+test('toProxy marks property writes dirty for rewalk', () => {
+  const decl = new Declaration({ prop: 'color', value: 'red' });
+  const root = new Root();
+  const rule = new Rule({ selector: '.a' });
+  rule.append(decl);
+  root.append(rule);
+  root.markClean();
+  rule.markClean();
+  decl.markClean();
+
+  const proxy = decl.toProxy();
+  proxy.value = 'blue';
+
+  expect(decl.value).toBe('blue');
+  expect(decl.isClean).toBe(false);
+  expect(root.isClean).toBe(false);
+  expect(rule.first?.toProxy()).toBe(decl.toProxy());
+});
+
 test('attaches PostCSS-style warning and syntax error metadata', () => {
   const decl = new Declaration({
     prop: 'color',

@@ -9,10 +9,11 @@ import {
   type ProcessFileOptions,
 } from '@postcss-go/shared/map-options';
 import { getMapfile, joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
-import postcss, { type AcceptedPlugin, type Result, type SourceMap } from 'postcss';
+import postcss, { type AcceptedPlugin, type SourceMap } from 'postcss';
 
 import { createNodeService, type NodePostcssGoService } from './node.js';
-import { resolveGoBridgeServiceOptions } from './resolveGoBridge.js';
+import { runPluginsWithBridge, type PluginResult } from './plugin-runtime.js';
+import { resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
 import type { ProcessOptions, SourceMapOptions } from './types.js';
 
 export interface CliConfig {
@@ -24,7 +25,7 @@ export interface CliConfig {
 export interface GoEngine {
   name: 'go';
   queue: Promise<unknown>;
-  service: Pick<NodePostcssGoService, 'process' | 'noWork' | 'parse' | 'close'>;
+  service: Pick<NodePostcssGoService, 'process' | 'noWork' | 'parse' | 'stringify' | 'close'>;
   close(): Promise<void>;
 }
 
@@ -102,10 +103,15 @@ export async function processWithGoEngine(
         ? { ...options.map, inline: false, annotation: false }
         : { inline: false, annotation: false };
     const pluginResult = shouldRunPostcss
-      ? await runPluginChain(config, inputCss, {
-          ...options,
-          map: mapEnabled ? pluginMap : false,
-        })
+      ? await runPluginChain(
+          config,
+          inputCss,
+          {
+            ...options,
+            map: mapEnabled ? pluginMap : false,
+          },
+          engine.service,
+        )
       : null;
     let annotationRoot: unknown = pluginResult?.root;
     if (!annotationRoot && typeof mapOption.annotation === 'function') {
@@ -134,7 +140,7 @@ export async function processWithGoEngine(
       mapDefersInlineMode(mapForService as MapOptions | boolean | undefined)
     ) {
       const inputMap = (
-        pluginResult.root.source?.input as unknown as
+        (pluginResult.root.source as unknown as { input?: unknown } | undefined)?.input as
           | {
               map?: { inline?: boolean; text?: string };
             }
@@ -221,7 +227,8 @@ async function processWithPostcss(
   css: string,
   options: ProcessFileOptions,
 ): Promise<CliProcessResult> {
-  const result = await runPluginChain(config, css, options);
+  const plugins = getPlugins(config);
+  const result = await postcss(plugins).process(css, options as postcss.ProcessOptions);
   return {
     css: result.css,
     map: result.map,
@@ -237,11 +244,29 @@ export function runPluginChain(
   config: CliConfig | undefined,
   css: string,
   options: ProcessFileOptions,
-): Promise<Result> {
-  const plugins = Array.isArray(config?.plugins)
+  service?: Pick<NodePostcssGoService, 'parse' | 'process' | 'stringify' | 'close'>,
+): Promise<PluginResult> {
+  return runWithPluginService(service, getPlugins(config), css, options);
+}
+
+async function runWithPluginService(
+  service: Pick<NodePostcssGoService, 'parse' | 'process' | 'stringify' | 'close'> | undefined,
+  plugins: AcceptedPlugin[],
+  css: string,
+  options: ProcessFileOptions,
+): Promise<PluginResult> {
+  const activeService = service ?? createNodeService(resolveGoBridgeServiceOptions());
+  try {
+    return await runPluginsWithBridge(activeService, plugins, css, options);
+  } finally {
+    if (!service) await activeService.close();
+  }
+}
+
+function getPlugins(config: CliConfig | undefined): AcceptedPlugin[] {
+  return Array.isArray(config?.plugins)
     ? config.plugins
     : ((config?.plugins ? Object.values(config.plugins) : []) as AcceptedPlugin[]);
-  return postcss(plugins).process(css, options as postcss.ProcessOptions);
 }
 
 function hasPlugins(plugins: CliConfig['plugins']): boolean {

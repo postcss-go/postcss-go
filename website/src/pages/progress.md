@@ -46,7 +46,7 @@ The sections below track the user-visible compatibility limits and the engineeri
 
 ### Node CLI and package boundary
 
-- [ ] Replace `runPluginChain()` in `packages/postcss-go/src/engine.ts` with the new plugin runtime/bridge.
+- [x] Replace `runPluginChain()` in `packages/postcss-go/src/engine.ts` with the new plugin runtime/bridge.
 - [ ] Replace or isolate `postcss-load-config` and `postcss-reporter` runtime coupling.
 - [ ] Define the config contract for plugins, parser, syntax, and stringifier without relying on PostCSS types.
 - [ ] Remove the `postcss` peer dependency, or document it as an intentional compatibility dependency.
