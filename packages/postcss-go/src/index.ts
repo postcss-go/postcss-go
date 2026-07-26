@@ -20,7 +20,7 @@ export {
   type DependencyMessage,
   type DirDependencyMessage,
   type GraphMessage,
-} from './createDependencyGraph.js';
+} from './create-dependency-graph.js';
 export {
   assertGoCompatibility,
   createGoEngine,
@@ -34,14 +34,19 @@ export {
   type CliProcessResult,
   type GoEngine,
 } from './engine.js';
-export { default as getMapfile, type MapOptions, type ProcessFileOptions } from './getMapfile.js';
 export {
   applyMapAnnotation,
   mapDefersInlineMode,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
 } from '@postcss-go/shared/map-options';
-export { joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
+export {
+  getMapfile,
+  joinMapAnnotationPath,
+  toSourceMapPath,
+  type MapOptions,
+  type ProcessFileOptions,
+} from '@postcss-go/shared/map-path';
 export { BrowserPostcssGoService } from './browser.js';
 export {
   createNodeService,
@@ -49,7 +54,7 @@ export {
   type NodePostcssGoServiceOptions,
 } from './node.js';
 export { getPollInterval, usePolling } from './poll.js';
-export { getBundledGoBridgeBinPath, resolveGoBridgeServiceOptions } from './resolveGoBridge.js';
+export { getBundledGoBridgeBinPath, resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
 export { UnsupportedServiceError, type PostcssGoService } from './service.js';
 export type {
   AstNode,

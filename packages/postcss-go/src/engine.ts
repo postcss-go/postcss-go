@@ -13,7 +13,7 @@ import postcss, { type AcceptedPlugin, type SourceMap } from 'postcss';
 
 import { createNodeService, type NodePostcssGoService } from './node.js';
 import { runPluginsWithBridge, type PluginResult } from './plugin-runtime.js';
-import { resolveGoBridgeServiceOptions } from './resolveGoBridge.js';
+import { resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
 import type { ProcessOptions, SourceMapOptions } from './types.js';
 
 export interface CliConfig {

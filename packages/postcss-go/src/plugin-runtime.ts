@@ -140,7 +140,7 @@ const postcssApi = {
 
 let hasInstancePatched = false;
 
-function ordinaryHasInstance(ctor: Function, value: unknown): boolean {
+function ordinaryHasInstance(ctor: { prototype: object }, value: unknown): boolean {
   if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return false;
   let proto = Object.getPrototypeOf(value);
   const target = ctor.prototype;
@@ -151,7 +151,7 @@ function ordinaryHasInstance(ctor: Function, value: unknown): boolean {
   return false;
 }
 
-function patchHasInstance(ctor: Function, match: (value: unknown) => boolean): void {
+function patchHasInstance(ctor: { prototype: object }, match: (value: unknown) => boolean): void {
   Object.defineProperty(ctor, Symbol.hasInstance, {
     configurable: true,
     value(value: unknown) {
@@ -201,6 +201,7 @@ export async function runPluginsWithBridge(
     return prepared ? { ...plugin, ...prepared } : plugin;
   });
   const helpers: PluginHelpers = { result, postcss: postcssApi };
+  const listeners = prepareVisitors(activePlugins);
 
   for (const plugin of activePlugins) {
     await runListener(plugin, plugin.Once, hydrated, helpers);
@@ -208,7 +209,7 @@ export async function runPluginsWithBridge(
 
   while (!hydrated.isClean) {
     hydrated.markClean();
-    await visitNode(hydrated, activePlugins, helpers);
+    await visitNode(hydrated, listeners, helpers);
   }
 
   for (const plugin of activePlugins) {
@@ -295,39 +296,69 @@ function normalizePlugins(plugins: AcceptedPlugin[]): RuntimePlugin[] {
   return normalized;
 }
 
-async function visitNode(
-  node: Node,
-  plugins: RuntimePlugin[],
-  helpers: PluginHelpers,
-): Promise<void> {
-  if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+const CHILDREN = Symbol('children');
 
-  const event = nodeEvent(node);
+const PLUGIN_PROPS = new Set([
+  'AtRule',
+  'AtRuleExit',
+  'Comment',
+  'CommentExit',
+  'Declaration',
+  'DeclarationExit',
+  'Document',
+  'DocumentExit',
+  'Once',
+  'OnceExit',
+  'postcssPlugin',
+  'prepare',
+  'Root',
+  'RootExit',
+  'Rule',
+  'RuleExit',
+]);
+
+const NOT_VISITORS = new Set([
+  'Once',
+  'OnceExit',
+  'postcssPlugin',
+  'prepare',
+  'plugins',
+  'postcss',
+]);
+
+type ListenerEntry = [RuntimePlugin, Listener];
+type Listeners = Record<string, ListenerEntry[]>;
+
+function prepareVisitors(plugins: RuntimePlugin[]): Listeners {
+  const listeners: Listeners = {};
+  const add = (plugin: RuntimePlugin, type: string, callback: Listener): void => {
+    (listeners[type] ??= []).push([plugin, callback]);
+  };
+
   for (const plugin of plugins) {
-    await runListenerGroup(plugin, plugin[event], node, helpers);
-    if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
-  }
-
-  if (node instanceof Container) {
-    let index = 0;
-    while (index < node.nodes.length) {
-      const child = node.nodes[index];
-      if (!child.isClean) {
-        child.markClean();
-        await visitNode(child, plugins, helpers);
+    for (const event of Object.keys(plugin)) {
+      if (NOT_VISITORS.has(event)) continue;
+      if (!PLUGIN_PROPS.has(event) && /^[A-Z]/.test(event)) {
+        throw new Error(
+          `Unknown event ${event} in ${plugin.postcssPlugin ?? 'anonymous'}. ` +
+            'Try to update PostCSS or postcss-go.',
+        );
       }
-      const currentIndex = node.nodes.indexOf(child);
-      index = currentIndex === -1 ? index : currentIndex + 1;
+      if (!PLUGIN_PROPS.has(event)) continue;
+
+      const value = plugin[event];
+      if (typeof value === 'object' && value) {
+        for (const [filter, callback] of Object.entries(value as Record<string, Listener>)) {
+          if (typeof callback !== 'function') continue;
+          if (filter === '*') add(plugin, event, callback);
+          else add(plugin, `${event}-${filter.toLowerCase()}`, callback);
+        }
+      } else if (typeof value === 'function') {
+        add(plugin, event, value as Listener);
+      }
     }
   }
-
-  if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
-
-  const exitEvent = `${event}Exit`;
-  for (const plugin of plugins) {
-    await runListenerGroup(plugin, plugin[exitEvent] as ListenerGroup | undefined, node, helpers);
-    if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
-  }
+  return listeners;
 }
 
 function nodeEvent(
@@ -341,27 +372,52 @@ function nodeEvent(
   return 'Comment';
 }
 
-async function runListenerGroup(
-  plugin: RuntimePlugin,
-  group: ListenerGroup | undefined,
-  node: Node,
-  helpers: PluginHelpers,
-): Promise<void> {
-  if (typeof group === 'function') {
-    await runListener(plugin, group, node, helpers);
-    return;
-  }
-  if (!group) return;
+function getEvents(node: Node): Array<string | typeof CHILDREN> {
+  const type = nodeEvent(node);
+  let key: string | false = false;
+  if (node instanceof Declaration) key = node.prop.toLowerCase();
+  else if (node instanceof AtRule) key = node.name.toLowerCase();
 
-  const name =
-    node instanceof AtRule
-      ? node.name.toLowerCase()
-      : node instanceof Declaration
-        ? node.prop.toLowerCase()
-        : '*';
-  // PostCSS order: general (*) first, then the named filter.
-  if (name !== '*') await runListener(plugin, group['*'], node, helpers);
-  await runListener(plugin, group[name], node, helpers);
+  if (key && node instanceof Container) {
+    return [type, `${type}-${key}`, CHILDREN, `${type}Exit`, `${type}Exit-${key}`];
+  }
+  if (key) {
+    return [type, `${type}-${key}`, `${type}Exit`, `${type}Exit-${key}`];
+  }
+  if (node instanceof Container) {
+    return [type, CHILDREN, `${type}Exit`];
+  }
+  return [type, `${type}Exit`];
+}
+
+async function visitNode(node: Node, listeners: Listeners, helpers: PluginHelpers): Promise<void> {
+  if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+
+  for (const event of getEvents(node)) {
+    if (event === CHILDREN) {
+      if (node instanceof Container && node.nodes.length) {
+        node.markClean();
+        let index = 0;
+        while (index < node.nodes.length) {
+          const child = node.nodes[index];
+          if (!child.isClean) {
+            child.markClean();
+            await visitNode(child, listeners, helpers);
+          }
+          const currentIndex = node.nodes.indexOf(child);
+          index = currentIndex === -1 ? index : currentIndex + 1;
+        }
+      }
+      continue;
+    }
+
+    const visitors = listeners[event];
+    if (!visitors) continue;
+    for (const [plugin, visitor] of visitors) {
+      await runListener(plugin, visitor, node, helpers);
+      if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+    }
+  }
 }
 
 async function runListener(
@@ -373,18 +429,17 @@ async function runListener(
   if (!listener) return;
   helpers.result.lastPlugin = plugin;
   try {
-    await listener(node, helpers);
+    await listener(node.toProxy(), helpers);
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      (error as { plugin?: unknown }).plugin === undefined
-    ) {
-      Object.defineProperty(error, 'plugin', {
-        configurable: true,
-        enumerable: true,
-        value: pluginName(plugin),
-      });
+    if (error && typeof error === 'object') {
+      node.addToError(error as Error);
+      if ((error as { plugin?: unknown }).plugin === undefined) {
+        Object.defineProperty(error, 'plugin', {
+          configurable: true,
+          enumerable: true,
+          value: pluginName(plugin),
+        });
+      }
     }
     throw error;
   }
@@ -446,6 +501,17 @@ function rawValue(value: unknown, fallback: string): string {
   return fallback;
 }
 
+function stringifyAtRulePrelude(node: AtRule): string {
+  let name = `@${node.name}`;
+  const params = node.params ? rawValue(node.raws.params, node.params) : '';
+  if (node.raws.afterName !== undefined) {
+    name += rawValue(node.raws.afterName, '');
+  } else if (params) {
+    name += ' ';
+  }
+  return name + params;
+}
+
 function stringifyNodeInto(node: Node, write: (chunk: string, node?: Node) => void): void {
   const before = rawValue(node.raws.before, '');
   if (before) write(before, node);
@@ -466,13 +532,8 @@ function stringifyNodeInto(node: Node, write: (chunk: string, node?: Node) => vo
     return;
   }
   if (node instanceof AtRule) {
-    write(`@${node.name}`, node);
-    write(rawValue(node.raws.afterName, ''), node);
-    if (node.params) {
-      write(' ', node);
-      write(rawValue(node.raws.params, node.params), node);
-    }
-    if (node.nodes.length) {
+    write(stringifyAtRulePrelude(node), node);
+    if (node.hasBlock) {
       write(rawValue(node.raws.between, ' '), node);
       write('{', node);
       for (const child of node.nodes) stringifyNodeInto(child, write);

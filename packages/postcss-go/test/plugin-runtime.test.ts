@@ -60,8 +60,15 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
     map: false,
   });
 
+  // Changing decl.value dirties the tree, so PostCSS rewalks once more.
   expect(events).toEqual([
     'Once',
+    'Root',
+    'Rule',
+    'Declaration',
+    'DeclarationExit',
+    'RuleExit',
+    'RootExit',
     'Root',
     'Rule',
     'Declaration',
@@ -74,6 +81,7 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
   expect(result.content).toBe(result.css);
   expect(result.toString()).toBe(result.css);
   expect(result.warnings()).toEqual([
+    expect.objectContaining({ type: 'warning', text: 'checked', plugin: 'bridge-lifecycle' }),
     expect.objectContaining({ type: 'warning', text: 'checked', plugin: 'bridge-lifecycle' }),
   ]);
   expect(service.parse).toHaveBeenCalledOnce();
@@ -350,7 +358,8 @@ test('previous map metadata is attached from annotation and opts.prev', async ()
 });
 
 test('AST map stringifier covers at-rules, comments, and helpers extras', async () => {
-  const original = '@media (max-width: 1px) {\n  /* note */\n  .a { color: red !important; }\n}\n@import "x";\n';
+  const original =
+    '@media (max-width: 1px) {\n  /* note */\n  .a { color: red !important; }\n}\n@import "x";\n';
   const result = await runPluginsWithBridge(
     bridge(),
     [
@@ -384,6 +393,110 @@ test('AST map stringifier covers at-rules, comments, and helpers extras', async 
   expect(JSON.parse(result.map ?? '{}').sourcesContent).toEqual([original]);
 });
 
+test('property mutations dirty the tree and trigger rewalk', async () => {
+  const seen: string[] = [];
+  await runPluginsWithBridge(
+    bridge(),
+    [
+      {
+        postcssPlugin: 'rewalk-on-prop',
+        Declaration(decl) {
+          seen.push(decl.value);
+        },
+        RuleExit(rule) {
+          const first = rule.first as { value: string };
+          if (first.value === 'red') first.value = 'blue';
+        },
+      },
+    ],
+    '.a{color:red}',
+    { from: 'input.css', map: false },
+  );
+
+  expect(seen).toEqual(['red', 'blue']);
+});
+
+test('named visitors run general filters across plugins before named filters', async () => {
+  const events: string[] = [];
+  await runPluginsWithBridge(
+    bridge(),
+    [
+      {
+        postcssPlugin: 'a',
+        AtRule: {
+          '*': () => events.push('a:*'),
+          media: () => events.push('a:media'),
+        },
+      },
+      {
+        postcssPlugin: 'b',
+        AtRule: {
+          '*': () => events.push('b:*'),
+          media: () => events.push('b:media'),
+        },
+      },
+    ],
+    '@media x{.a{}}',
+    { from: 'input.css', map: false },
+  );
+
+  expect(events).toEqual(['a:*', 'b:*', 'a:media', 'b:media']);
+});
+
+test('empty at-rule blocks keep braces and afterName spacing', async () => {
+  const css = '@media x {}';
+  const service = bridge();
+  service.parse = vi.fn(async () => ({
+    root: {
+      type: 'root',
+      nodes: [
+        {
+          type: 'atrule',
+          name: 'media',
+          params: 'x',
+          block: true,
+          nodes: [],
+          raws: { before: '', afterName: ' ', between: ' ', after: '' },
+        },
+      ],
+    } as AstNode,
+  }));
+
+  const noMap = await runPluginsWithBridge(service, [{ postcssPlugin: 'noop', Once() {} }], css, {
+    from: 'input.css',
+    map: false,
+  });
+  const withMap = await runPluginsWithBridge(service, [{ postcssPlugin: 'noop', Once() {} }], css, {
+    from: 'input.css',
+    map: { inline: false },
+  });
+
+  expect(noMap.css).toBe('@media x {}');
+  expect(withMap.css).toBe('@media x {}');
+});
+
+test('callback errors include postcssNode metadata', async () => {
+  await expect(
+    runPluginsWithBridge(
+      bridge(),
+      [
+        {
+          postcssPlugin: 'broken-plugin',
+          Declaration() {
+            throw new Error('broken');
+          },
+        },
+      ],
+      '.a{color:red}',
+      { from: 'input.css', map: false },
+    ),
+  ).rejects.toMatchObject({
+    message: 'broken',
+    plugin: 'broken-plugin',
+    postcssNode: expect.objectContaining({ type: 'decl' }),
+  });
+});
+
 test('hasPreviousMap treats map.prev false as absent', async () => {
   const service = bridge();
   service.parse = vi.fn(async () => ({
@@ -401,7 +514,5 @@ test('hasPreviousMap treats map.prev false as absent', async () => {
     { from: 'input.css', map: { prev: false } },
   );
 
-  expect(
-    (result.root.source as unknown as { input?: unknown } | undefined)?.input,
-  ).toBeUndefined();
+  expect((result.root.source as unknown as { input?: unknown } | undefined)?.input).toBeUndefined();
 });

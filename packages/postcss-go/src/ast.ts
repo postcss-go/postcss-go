@@ -78,6 +78,7 @@ export abstract class Node {
   private readonly rawsProvided: boolean;
   private parentNode?: Container;
   private clean = false;
+  private proxyCache?: this;
 
   protected constructor(type: NodeType, init: NodeInit = {}) {
     this.type = type;
@@ -90,12 +91,28 @@ export abstract class Node {
     return this.parentNode;
   }
 
+  get proxyOf(): this {
+    return this;
+  }
+
   setParent(parent: Container | undefined): void {
     this.parentNode = parent;
   }
 
   addToError<T extends Error>(error: T): T {
     Object.assign(error, { postcssNode: this });
+    if (
+      error.stack &&
+      this.source &&
+      /\n\s{4}at /.test(error.stack) &&
+      this.source.file &&
+      this.source.start
+    ) {
+      error.stack = error.stack.replace(
+        /\n\s{4}at /,
+        `$&${this.source.file}:${this.source.start.line}:${this.source.start.column}$&`,
+      );
+    }
     return error;
   }
 
@@ -278,8 +295,38 @@ export abstract class Node {
     return error;
   }
 
+  protected getProxyProcessor(): ProxyHandler<this> {
+    return {
+      get: (node, prop) => {
+        if (prop === 'proxyOf') return node;
+        if (prop === 'root') return () => node.root().toProxy();
+        const value = Reflect.get(node, prop, node);
+        if (typeof value === 'function') return value.bind(node);
+        return value;
+      },
+      set: (node, prop, value) => {
+        if (Reflect.get(node, prop, node) === value) return true;
+        Reflect.set(node, prop, value, node);
+        if (
+          prop === 'prop' ||
+          prop === 'value' ||
+          prop === 'name' ||
+          prop === 'params' ||
+          prop === 'important' ||
+          prop === 'text'
+        ) {
+          node.markDirty();
+        }
+        return true;
+      },
+    };
+  }
+
   toProxy(): this {
-    return this;
+    if (!this.proxyCache) {
+      this.proxyCache = new Proxy(this, this.getProxyProcessor());
+    }
+    return this.proxyCache;
   }
 
   toString(): string {
@@ -331,6 +378,50 @@ export abstract class Container extends Node {
   }
   get last(): Node | undefined {
     return this.nodes[this.nodes.length - 1];
+  }
+
+  protected getProxyProcessor(): ProxyHandler<this> {
+    return {
+      get: (node, prop) => {
+        if (prop === 'proxyOf') return node;
+        if (prop === 'root') return () => node.root().toProxy();
+        if (prop === 'nodes') return node.nodes.map((child) => child.toProxy());
+        if (prop === 'first' || prop === 'last') {
+          const child = Reflect.get(node, prop, node) as Node | undefined;
+          return child?.toProxy();
+        }
+        if (prop === 'each' || (typeof prop === 'string' && prop.startsWith('walk'))) {
+          return (...args: unknown[]) =>
+            (Reflect.get(node, prop, node) as (...inner: unknown[]) => unknown).apply(
+              node,
+              args.map((arg) =>
+                typeof arg === 'function'
+                  ? (child: Node, index: number) =>
+                      (arg as (child: Node, index: number) => unknown)(child.toProxy(), index)
+                  : arg,
+              ),
+            );
+        }
+        if (prop === 'every' || prop === 'some') {
+          return (callback: (child: Node, ...rest: unknown[]) => unknown) =>
+            (Reflect.get(node, prop, node) as (cb: typeof callback) => unknown).call(
+              node,
+              (child: Node, ...rest: unknown[]) => callback(child.toProxy(), ...rest),
+            );
+        }
+        const value = Reflect.get(node, prop, node);
+        if (typeof value === 'function') return value.bind(node);
+        return value;
+      },
+      set: (node, prop, value) => {
+        if (Reflect.get(node, prop, node) === value) return true;
+        Reflect.set(node, prop, value, node);
+        if (prop === 'name' || prop === 'params' || prop === 'selector') {
+          node.markDirty();
+        }
+        return true;
+      },
+    };
   }
 
   append(...children: NodeChild[]): this {
@@ -595,17 +686,28 @@ export class Rule extends Container {
 export class AtRule extends Container {
   name: string;
   params: string;
+  /** True when this at-rule has a `{}` block, including empty blocks. */
+  block: boolean;
+
   constructor(init: ContainerInit = {}) {
+    const dto = init as ContainerInit & Partial<AtRuleDTO>;
+    const explicitBlock = dto.block === true || Object.prototype.hasOwnProperty.call(init, 'nodes');
     super('atrule', init);
-    this.name = String((init as AtRuleDTO).name ?? '');
-    this.params = String((init as AtRuleDTO).params ?? '');
+    this.name = String(dto.name ?? '');
+    this.params = String(dto.params ?? '');
+    this.block = explicitBlock;
   }
+
+  get hasBlock(): boolean {
+    return this.block || this.nodes.length > 0;
+  }
+
   toJSON(): AtRuleDTO {
     return {
       type: 'atrule',
       name: this.name,
       params: this.params,
-      ...(this.nodes.length ? { nodes: this.nodes.map((node) => node.toJSON()) } : {}),
+      ...(this.hasBlock ? { block: true, nodes: this.nodes.map((node) => node.toJSON()) } : {}),
       ...this.jsonMeta(),
     };
   }
@@ -674,6 +776,18 @@ function rawValue(value: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Match PostCSS: use afterName when present; otherwise insert one space before params. */
+function stringifyAtRulePrelude(node: AtRule): string {
+  let name = `@${node.name}`;
+  const params = node.params ? rawValue(node.raws.params, node.params) : '';
+  if (node.raws.afterName !== undefined) {
+    name += rawValue(node.raws.afterName, '');
+  } else if (params) {
+    name += ' ';
+  }
+  return name + params;
+}
+
 function defaultRaw(node: Node, type?: string): string {
   if (type === 'beforeOpen') return node instanceof Rule ? ' ' : '';
   if (type === 'beforeDecl') return node.parent?.first === node ? '' : '\n';
@@ -697,9 +811,8 @@ function stringifyNode(node: Node): string {
     return `${before}${selector}${rawValue(node.raws.between, ' ')}{${body}${after}}`;
   }
   if (node instanceof AtRule) {
-    const params = node.params ? ` ${rawValue(node.raws.params, node.params)}` : '';
-    const name = `@${node.name}${rawValue(node.raws.afterName, '')}${params}`;
-    if (node.nodes.length) {
+    const name = stringifyAtRulePrelude(node);
+    if (node.hasBlock) {
       const body = node.nodes.map(stringifyNode).join('');
       return `${before}${name}${rawValue(node.raws.between, ' ')}{${body}${rawValue(node.raws.after, '')}}`;
     }
