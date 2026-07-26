@@ -2,15 +2,19 @@ import path from 'node:path';
 import postcss from 'postcss';
 import { expect, test, vi } from 'vitest';
 
+import { fromAst } from '../src/ast.ts';
+
 vi.mock('../src/node.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/node.ts')>();
+  const parse = async (css: string) => ({ root: postcss.parse(css).toJSON() });
+  const stringify = async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString();
   return {
     ...actual,
     createNodeService: vi.fn(() => ({
       process: vi.fn(),
       noWork: vi.fn(),
-      parse: vi.fn(),
-      stringify: vi.fn(),
+      parse: vi.fn(parse),
+      stringify: vi.fn(stringify),
       close: vi.fn().mockResolvedValue(undefined),
     })),
   };
@@ -30,6 +34,7 @@ function mockEngine(service: {
   process: ReturnType<typeof vi.fn>;
   noWork?: ReturnType<typeof vi.fn>;
   parse?: ReturnType<typeof vi.fn>;
+  stringify?: ReturnType<typeof vi.fn>;
 }) {
   return {
     name: 'go' as const,
@@ -37,7 +42,10 @@ function mockEngine(service: {
     service: {
       process: service.process,
       noWork: service.noWork ?? service.process,
-      parse: service.parse ?? vi.fn(),
+      parse: service.parse ?? vi.fn(async (css: string) => ({ root: postcss.parse(css).toJSON() })),
+      stringify:
+        service.stringify ??
+        vi.fn(async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString()),
       close: vi.fn().mockResolvedValue(undefined),
     },
   };

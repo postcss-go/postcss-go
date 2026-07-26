@@ -174,12 +174,17 @@ export abstract class Node {
     return this;
   }
 
+  get isClean(): boolean {
+    return this.clean;
+  }
+
   markClean(): this {
     this.clean = true;
     return this;
   }
 
   markDirty(): this {
+    if (!this.clean) return this;
     this.clean = false;
     if (this.parent) this.parent.markDirty();
     return this;
@@ -282,14 +287,19 @@ export abstract class Node {
   }
 
   warn(
-    result: { messages?: Array<Record<string, unknown>> },
+    result: {
+      messages?: Array<Record<string, unknown>>;
+      lastPlugin?: { postcssPlugin?: string } | string;
+    },
     text: string,
     options: { plugin?: string; index?: number; word?: string } = {},
   ): Record<string, unknown> {
+    const lastPlugin =
+      typeof result.lastPlugin === 'string' ? result.lastPlugin : result.lastPlugin?.postcssPlugin;
     const warning = {
       type: 'warning',
       text,
-      plugin: options.plugin,
+      plugin: options.plugin ?? lastPlugin,
       node: this,
       ...this.rangeBy(options),
     };
@@ -331,6 +341,7 @@ export abstract class Container extends Node {
       node.setParent(this);
       this.nodes.push(node);
     }
+    if (nodes.length) this.markDirty();
     return this;
   }
 
@@ -358,6 +369,7 @@ export abstract class Container extends Node {
       node.setParent(this);
       this.nodes.unshift(node);
     }
+    if (nodes.length) this.markDirty();
     return this;
   }
 
@@ -382,6 +394,7 @@ export abstract class Container extends Node {
       node.setParent(this);
     }
     this.nodes.splice(index, 0, ...children);
+    if (children.length) this.markDirty();
   }
 
   private normalize(children: NodeChild[]): Node[] {
@@ -411,6 +424,7 @@ export abstract class Container extends Node {
     if (index < 0) throw new Error('Node is not a child of this container');
     this.nodes[index].setParent(undefined);
     this.nodes.splice(index, 1);
+    this.markDirty();
     return this;
   }
 
@@ -421,6 +435,7 @@ export abstract class Container extends Node {
   removeAll(): this {
     for (const node of this.nodes) node.setParent(undefined);
     this.nodes = [];
+    this.markDirty();
     return this;
   }
 
