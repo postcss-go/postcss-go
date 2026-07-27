@@ -85,7 +85,12 @@ if (archive.status !== 0) {
   process.exit(0);
 }
 
-const addon = run('npx', ['--yes', 'node-gyp', 'rebuild'], { cwd: here });
+const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const addon = run(npx, ['--yes', 'node-gyp', 'rebuild'], {
+  cwd: here,
+  // .cmd shims require a shell on Windows; spawn cannot run them directly.
+  shell: process.platform === 'win32',
+});
 if (addon.status !== 0) {
   console.warn('postcss-go: native addon build failed; stdio bridge remains available');
   process.exit(0);
