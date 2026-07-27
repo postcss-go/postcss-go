@@ -165,10 +165,13 @@ rl.on('line', (line) => {
   }
 
   if (request.method === 'stringify') {
+    const map = request.params.options?.map
+      ? '{"version":3,"sources":["input.css"],"names":[],"mappings":"AAAA"}'
+      : undefined;
     process.stdout.write(JSON.stringify({
       jsonrpc: '2.0',
       id: request.id,
-      result: { css: '.from-ast { color: blue; }' },
+      result: { css: '.from-ast { color: blue; }', map },
     }) + '\\n');
   }
 });
@@ -210,6 +213,13 @@ test('NodePostcssGoService parses, processes, and stringifies through the bridge
 
   const css = await service.stringify({ type: 'root', nodes: [] });
   expect(css).toBe('.from-ast { color: blue; }');
+
+  const stringified = await service.stringifyResult(
+    { type: 'root', nodes: [] },
+    { from: 'input.css', map: { inline: false } },
+  );
+  expect(stringified.css).toBe('.from-ast { color: blue; }');
+  expect(stringified.map).toContain('"version":3');
 
   await service.close();
 });

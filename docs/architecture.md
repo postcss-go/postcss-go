@@ -15,8 +15,8 @@ flowchart LR
     Service --> Browser[Browser / WASM service]
 ```
 
-- **Go core** — parse, AST mutation, plugin visitors, stringify, warnings, source maps
-- **Node.js packages** — public API, CLI, plugin loading, process management
+- **Go core** — parse, canonical AST operations, stringify, warnings, source maps
+- **Node.js packages** — public API, CLI, plugin loading, process management, and the synchronous AST facade required by JavaScript plugins
 - **Bridge** — serialize requests and AST results between JavaScript and Go
 - **Browser / WASM** — same service contract as Node, via a Worker and Go WASM
 
@@ -77,7 +77,7 @@ sequenceDiagram
 - **cli** — config, JS plugins, message combining, writing Go-generated CSS and maps
 - **shared** — dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; used by core and vendored compat overrides
 
-JavaScript stays responsible for ecosystem-facing behavior; Go handles parse, AST, process, no-work map handling, and stringify.
+JavaScript stays responsible for ecosystem-facing behavior and synchronous JavaScript plugin callbacks. Go handles parse, the canonical AST implementation, process, no-work map handling, and all pipeline/plugin-result stringify and source-map generation. The TypeScript AST stringifier is only the synchronous compatibility fallback required by `Node#toString()`.
 
 ## Source maps
 

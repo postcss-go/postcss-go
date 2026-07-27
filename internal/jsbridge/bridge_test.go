@@ -148,6 +148,40 @@ func TestStringifyBridgePreservesRawsFromDTO(t *testing.T) {
 	}
 }
 
+func TestStringifyBridgeGeneratesSourceMapFromAST(t *testing.T) {
+	source := &SourceLocationDTO{
+		Start: SourcePositionDTO{Line: 1, Column: 1, Offset: 0},
+		End:   SourcePositionDTO{Line: 1, Column: 15, Offset: 14},
+		File:  "input.css",
+		CSS:   ".a{color:red}",
+	}
+	resp := Execute(Request{
+		Command: "stringify",
+		Options: RequestOpts{Map: true, From: "input.css", To: "output.css"},
+		AST: &NodeDTO{
+			Type:   "root",
+			Source: source,
+			Nodes: []*NodeDTO{{
+				Type:     "rule",
+				Selector: ".a",
+				Source:   source,
+				Nodes: []*NodeDTO{{
+					Type:   "decl",
+					Prop:   "color",
+					Value:  "red",
+					Source: source,
+				}},
+			}},
+		},
+	})
+	if !resp.OK || resp.CSS == "" || resp.Map == "" {
+		t.Fatalf("expected mapped AST stringify result, got %#v", resp)
+	}
+	if !strings.Contains(resp.Map, `"sources":["input.css"]`) {
+		t.Fatalf("expected source map to reference input.css, got %q", resp.Map)
+	}
+}
+
 func TestDocumentDTOStringifiesAndRoundTrips(t *testing.T) {
 	document := &NodeDTO{
 		Type: "document",

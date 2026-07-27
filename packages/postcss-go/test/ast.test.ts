@@ -1,6 +1,18 @@
 import { expect, test } from 'vitest';
 
-import { Comment, Declaration, Document, Root, Rule, fromAst, toAst } from '../src/index.ts';
+import {
+  Comment,
+  Container,
+  Declaration,
+  Document,
+  Input,
+  Node,
+  Root,
+  Rule,
+  fromAst,
+  fromJSON,
+  toAst,
+} from '../src/index.ts';
 
 test('round-trips a document DTO with stylesheet roots', () => {
   const dto = {
@@ -142,6 +154,25 @@ test('supports PostCSS-style walking and filtered visitors', () => {
   expect(visited).toEqual(['color:red', 'note', 'media', 'a, :is(b, c)']);
 });
 
+test('filtered walkers recognize custom nodes by their PostCSS type', () => {
+  class CustomDeclaration extends Node {
+    prop = 'custom';
+    value = 'value';
+
+    constructor() {
+      super({ type: 'decl' });
+    }
+  }
+
+  const root = new Root();
+  root.push(new CustomDeclaration() as unknown as Declaration);
+  const visited: Node[] = [];
+
+  root.walkDecls((node) => visited.push(node));
+
+  expect(visited).toEqual([root.first]);
+});
+
 test('supports Node and Container mutation helpers', () => {
   const root = new Root();
   const rule = new Rule({ selector: 'a, :is(b, c)', raws: { before: '  ', between: ' ' } });
@@ -190,8 +221,21 @@ test('provides synchronous PostCSS-style stringification and raw helpers', () =>
   root.append(rule);
 
   expect(rule.raw('between', 'beforeOpen')).toBe(' ');
-  expect(rule.toString()).toBe('.a {color: red;}');
-  expect(String(root)).toBe('.a {color: red;}');
+  expect(rule.toString()).toBe('.a {color: red;\n}');
+  expect(String(root)).toBe('.a {color: red;\n}');
+});
+
+test('matches PostCSS default formatting and comment whitespace raws', () => {
+  const root = new Root({
+    nodes: [new Declaration({ prop: 'a', value: 'b' }), new Declaration({ prop: 'c', value: 'd' })],
+  });
+  const comment = new Comment({
+    text: 'note',
+    raws: { left: ' ', right: ' ' },
+  });
+
+  expect(root.toString()).toBe('a: b;\nc: d');
+  expect(comment.toString()).toBe('/* note */');
 });
 
 test('preserves empty at-rule blocks and afterName spacing', () => {
@@ -211,10 +255,23 @@ test('preserves empty at-rule blocks and afterName spacing', () => {
   });
 
   expect(emptyBlock.toString()).toBe('@media x {}');
-  expect(importRule.toString()).toBe('@import "y";');
+  expect(importRule.toString()).toBe('@import "y"');
   expect(toAst(emptyBlock)).toMatchObject({ block: true, nodes: [] });
   expect(toAst(importRule)).not.toHaveProperty('block');
   expect(toAst(importRule)).not.toHaveProperty('nodes');
+});
+
+test('keeps childless at-rule nodes undefined until a child is appended', () => {
+  const atRule = fromAst({
+    type: 'atrule',
+    name: 'charset',
+    params: '"UTF-8"',
+  });
+
+  expect(atRule.nodes).toBeUndefined();
+  atRule.append({ prop: 'color', value: 'red' });
+  expect(atRule.nodes).toHaveLength(1);
+  expect(atRule.toString()).toContain('{');
 });
 
 test('toProxy marks property writes dirty for rewalk', () => {
@@ -260,4 +317,282 @@ test('attaches PostCSS-style warning and syntax error metadata', () => {
   expect(error.line).toBe(2);
   expect(error.column).toBe(3);
   expect(error.file).toBe('input.css');
+});
+
+test('matches indexed Container mutations and mutation-safe iteration', () => {
+  const root = new Root({
+    nodes: [
+      { type: 'comment', text: 'a' },
+      { type: 'comment', text: 'b' },
+    ],
+  });
+  const visited: string[] = [];
+
+  root.each((node) => {
+    visited.push((node as Comment).text);
+    if ((node as Comment).text === 'a') node.cloneBefore({ text: 'clone' });
+  });
+  root.insertAfter(0, { text: 'after' });
+  root.removeChild(0);
+
+  expect(visited).toEqual(['a', 'b']);
+  expect(root.nodes.map((node) => (node as Comment).text)).toEqual(['after', 'a', 'b']);
+});
+
+test('replaceValues accepts a string replacement', () => {
+  const root = new Root({
+    nodes: [{ prop: 'content', value: 'foo foo' }],
+  });
+
+  root.replaceValues(/foo/g, 'bar');
+
+  expect((root.first as Declaration).value).toBe('bar bar');
+});
+
+test('recomputes insertion indexes when moving existing children', () => {
+  const root = new Root({
+    nodes: [
+      { type: 'comment', text: 'a' },
+      { type: 'comment', text: 'b' },
+      { type: 'comment', text: 'c' },
+    ],
+  });
+  const [a, b, c] = root.nodes;
+
+  root.insertBefore(c, a);
+  expect(root.nodes).toEqual([b, a, c]);
+
+  root.insertAfter(b, c);
+  expect(root.nodes).toEqual([b, c, a]);
+});
+
+test('normalizes CSS strings, nested arrays, and undefined children', () => {
+  const root = new Root();
+
+  root.append(undefined, ['a { color: red }', [{ text: 'note' }]]);
+
+  expect(root.nodes).toHaveLength(2);
+  expect(root.first).toBeInstanceOf(Rule);
+  expect((root.first as Rule).first).toBeInstanceOf(Declaration);
+  expect(root.last).toBeInstanceOf(Comment);
+  expect(root.nodes.every((node) => node.source === undefined)).toBe(true);
+});
+
+test('keeps replaceWith stable when the replacement includes the current node', () => {
+  const detached = new Comment({ text: 'detached' });
+  expect(detached.replaceWith({ text: 'ignored' })).toBe(detached);
+
+  const root = new Root({ nodes: [{ text: 'current' }] });
+  const current = root.first as Comment;
+  current.replaceWith({ text: 'before' }, current, { text: 'after' });
+
+  expect(root.nodes.map((node) => (node as Comment).text)).toEqual(['before', 'current', 'after']);
+});
+
+test('preserves custom nodes, properties, prototypes, and JSON values', () => {
+  class Word extends Node {
+    value: string;
+
+    constructor(value: string) {
+      super({ type: 'word', metadata: { toJSON: () => 'serialized' } });
+      this.value = value;
+    }
+  }
+
+  const root = new Container({ type: 'custom-root', nodes: [new Word('hello')] });
+  const clone = root.first?.clone() as Word;
+  const json = root.toJSON() as {
+    inputs: unknown[];
+    nodes: Array<{ metadata: string; type: string; value: string }>;
+  };
+  const hydrated = fromJSON(json) as Container;
+
+  expect(clone).toBeInstanceOf(Word);
+  expect(clone.value).toBe('hello');
+  expect(json.nodes[0]).toMatchObject({
+    metadata: 'serialized',
+    type: 'word',
+    value: 'hello',
+  });
+  expect(json.inputs).toEqual([]);
+  expect(json.nodes[0]).not.toHaveProperty('inputs');
+  expect(hydrated).toBeInstanceOf(Container);
+  expect(hydrated.type).toBe('custom-root');
+  expect(hydrated.first?.type).toBe('word');
+});
+
+test('accepts custom stringifier functions and syntax objects', () => {
+  const node = new Node({ type: 'word', value: 'hello' });
+  const stringify = (current: Node, builder: (chunk: string) => void) => {
+    builder(String((current as Node & { value: string }).value).toUpperCase());
+  };
+
+  expect(node.toString(stringify)).toBe('HELLO');
+  expect(node.toString({ stringify })).toBe('HELLO');
+});
+
+test('deduplicates source inputs in JSON and restores them in fromJSON', () => {
+  const input = {
+    css: 'a{color:red;background:white}',
+    from: 'input.css',
+    toJSON() {
+      return { css: this.css, from: this.from };
+    },
+  };
+  const source = {
+    start: { line: 1, column: 3, offset: 2 },
+    end: { line: 1, column: 12, offset: 11 },
+    input,
+  };
+  const root = new Root({
+    nodes: [
+      { prop: 'color', value: 'red', source },
+      { prop: 'background', value: 'white', source },
+    ],
+  });
+
+  const json = root.toJSON() as {
+    inputs: unknown[];
+    nodes: Array<{ source: { inputId: number } }>;
+  };
+  const hydrated = fromJSON(json) as Root;
+  const ast = toAst(root);
+
+  expect(json.inputs).toEqual([{ css: input.css, from: 'input.css' }]);
+  expect(json.nodes.map((node) => node.source.inputId)).toEqual([0, 0]);
+  expect(hydrated.first?.source?.input).toBe(hydrated.last?.source?.input);
+  expect(ast.nodes[0].source?.file).toBe('input.css');
+});
+
+function twoRuleRoot(): Root {
+  return new Root({
+    nodes: [
+      new Rule({ selector: 'a', nodes: [], raws: { before: '' } }),
+      new Rule({ selector: 'b', nodes: [], raws: { before: '\n' } }),
+    ],
+  });
+}
+
+test('root children hand over raws.before when the first one is removed', () => {
+  const removed = twoRuleRoot();
+  const ignored = twoRuleRoot();
+
+  removed.removeChild(0);
+  ignored.removeChild(0, true);
+
+  expect(removed.toString()).toBe('b {}');
+  expect(ignored.toString()).toBe('\nb {}');
+});
+
+test('root prepend re-indents the displaced first child', () => {
+  const root = twoRuleRoot();
+
+  root.prepend(new Rule({ selector: 'z', nodes: [] }));
+
+  expect(root.toString()).toBe('z {}\na {}\nb {}');
+});
+
+test('root insertion normalizes an explicit raws.before to its sibling', () => {
+  const root = twoRuleRoot();
+
+  root.append(new Rule({ selector: 'z', nodes: [], raws: { before: 'XX' } }));
+
+  expect(root.last?.raws.before).toBe('\n');
+});
+
+test('hydration keeps serialized root raws instead of normalizing them', () => {
+  const hydrated = fromJSON({
+    type: 'root',
+    nodes: [
+      { type: 'rule', selector: 'a', nodes: [], raws: { before: '' } },
+      { type: 'comment', text: 'note', raws: { before: '\n\n', left: ' ', right: ' ' } },
+      { type: 'rule', selector: 'b', nodes: [], raws: { before: '\n' } },
+    ],
+  }) as Root;
+
+  expect(hydrated.nodes.map((node) => node.raws.before)).toEqual(['', '\n\n', '\n']);
+  expect(hydrated.toString()).toBe('a {}\n\n/* note */\nb {}');
+});
+
+test('JSON omits unset PostCSS keys while the bridge DTO keeps block', () => {
+  const root = new Root({
+    nodes: [
+      { type: 'atrule', name: 'media', params: 'x', block: true, nodes: [] },
+      { type: 'decl', prop: 'color', value: 'red' },
+      { type: 'decl', prop: 'width', value: '1px', important: true },
+    ],
+  });
+  const json = root.toJSON() as { nodes: Array<Record<string, unknown>> };
+  const ast = toAst(root) as unknown as { nodes: Array<Record<string, unknown>> };
+
+  expect(json.nodes[0]).not.toHaveProperty('block');
+  expect(json.nodes[0]).toHaveProperty('nodes', []);
+  expect(json.nodes[1]).not.toHaveProperty('important');
+  expect(json.nodes[2]).toHaveProperty('important', true);
+  expect(ast.nodes[0]).toMatchObject({ block: true, nodes: [] });
+});
+
+test('fromJSON restores the Input prototype for shared sources', () => {
+  const serialized = { hasBOM: false, css: 'a {\n  color: red;\n}\n', file: '/tmp/in.css' };
+  const hydrated = fromJSON({
+    type: 'root',
+    inputs: [serialized],
+    nodes: [
+      {
+        type: 'rule',
+        selector: 'a',
+        nodes: [
+          {
+            type: 'decl',
+            prop: 'color',
+            value: 'red',
+            source: {
+              start: { line: 2, column: 3, offset: 6 },
+              end: { line: 2, column: 13, offset: 16 },
+              inputId: 0,
+            },
+          },
+        ],
+      },
+    ],
+  }) as Root;
+  const input = (hydrated.first as Rule).first?.source?.input as unknown as Input;
+
+  expect(input).toBeInstanceOf(Input);
+  expect(input.from).toBe('/tmp/in.css');
+  expect(input.fromOffset(6)).toEqual({ col: 3, line: 2 });
+  expect(input.toJSON()).toEqual(serialized);
+});
+
+test('shares the top-level JSON input table with nodes in custom properties', () => {
+  const input = {
+    css: 'a{color:red}',
+    from: 'input.css',
+    toJSON() {
+      return { css: this.css, from: this.from };
+    },
+  };
+  const root = new Root({
+    nodes: [
+      {
+        prop: 'color',
+        value: 'red',
+        source: {
+          start: { line: 1, column: 3, offset: 2 },
+          end: { line: 1, column: 12, offset: 11 },
+          input,
+        },
+      },
+    ],
+  }) as Root & { related?: Node };
+  root.related = root.first;
+
+  const json = root.toJSON() as {
+    inputs: unknown[];
+    related: { inputs?: unknown[]; source: { inputId: number } };
+  };
+
+  expect(json.inputs).toHaveLength(1);
+  expect(json.related.inputs).toBeUndefined();
+  expect(json.related.source.inputId).toBe(0);
 });

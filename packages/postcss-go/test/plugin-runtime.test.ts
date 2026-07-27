@@ -7,8 +7,13 @@ import { runPluginsWithBridge } from '../src/plugin-runtime.ts';
 import type { AstNode, ProcessResult } from '../src/types.ts';
 
 function bridge() {
+  let sourceCss = '';
+  const stringify = vi.fn(async (ast: AstNode) => fromAst(ast).toString());
   return {
-    parse: vi.fn(async (css: string) => ({ root: postcss.parse(css).toJSON() as AstNode })),
+    parse: vi.fn(async (css: string) => {
+      sourceCss = css;
+      return { root: postcss.parse(css).toJSON() as AstNode };
+    }),
     process: vi.fn(
       async (css: string): Promise<ProcessResult> => ({
         css,
@@ -23,7 +28,23 @@ function bridge() {
         messages: [],
       }),
     ),
-    stringify: vi.fn(async (ast: AstNode) => fromAst(ast).toString()),
+    stringify,
+    stringifyResult: vi.fn(
+      async (ast: AstNode, options: { from?: string; map?: unknown } = {}) => ({
+        css: await stringify(ast),
+        ...(options.map
+          ? {
+              map: JSON.stringify({
+                version: 3,
+                sources: [options.from ?? 'to.css'],
+                sourcesContent: [sourceCss],
+                names: [],
+                mappings: 'AAAA',
+              }),
+            }
+          : {}),
+      }),
+    ),
   };
 }
 
@@ -85,7 +106,7 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
     expect.objectContaining({ type: 'warning', text: 'checked', plugin: 'bridge-lifecycle' }),
   ]);
   expect(service.parse).toHaveBeenCalledOnce();
-  expect(service.stringify).toHaveBeenCalledOnce();
+  expect(service.stringifyResult).toHaveBeenCalledOnce();
   expect(service.process).not.toHaveBeenCalled();
 });
 
@@ -106,7 +127,7 @@ test('plugin runtime builds AST-based maps that keep original source content', a
 
   expect(result.css).toContain('color: blue');
   expect(service.process).not.toHaveBeenCalled();
-  expect(service.stringify).not.toHaveBeenCalled();
+  expect(service.stringifyResult).toHaveBeenCalledOnce();
 
   const map = JSON.parse(result.map ?? '{}') as {
     sources: string[];

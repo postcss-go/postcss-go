@@ -49,7 +49,7 @@ async function handleRequest(request: WasmRequest): Promise<void> {
       id: request.id,
       result:
         request.method === 'stringify'
-          ? { css: response.css ?? '' }
+          ? { css: response.css ?? '', map: response.map }
           : request.method === 'parse'
             ? { root: response.root }
             : request.method === 'noWork'

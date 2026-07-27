@@ -8,6 +8,22 @@ vi.mock('../src/node.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/node.ts')>();
   const parse = async (css: string) => ({ root: postcss.parse(css).toJSON() });
   const stringify = async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString();
+  const stringifyResult = async (
+    ast: Parameters<typeof fromAst>[0],
+    options?: { map?: unknown },
+  ) => ({
+    css: await stringify(ast),
+    ...(options?.map
+      ? {
+          map: JSON.stringify({
+            version: 3,
+            sources: ['input.css'],
+            names: [],
+            mappings: 'AAAA',
+          }),
+        }
+      : {}),
+  });
   return {
     ...actual,
     createNodeService: vi.fn(() => ({
@@ -15,6 +31,7 @@ vi.mock('../src/node.ts', async (importOriginal) => {
       noWork: vi.fn(),
       parse: vi.fn(parse),
       stringify: vi.fn(stringify),
+      stringifyResult: vi.fn(stringifyResult),
       close: vi.fn().mockResolvedValue(undefined),
     })),
   };
@@ -35,6 +52,7 @@ function mockEngine(service: {
   noWork?: ReturnType<typeof vi.fn>;
   parse?: ReturnType<typeof vi.fn>;
   stringify?: ReturnType<typeof vi.fn>;
+  stringifyResult?: ReturnType<typeof vi.fn>;
 }) {
   return {
     name: 'go' as const,
@@ -46,6 +64,21 @@ function mockEngine(service: {
       stringify:
         service.stringify ??
         vi.fn(async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString()),
+      stringifyResult:
+        service.stringifyResult ??
+        vi.fn(async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
+          css: fromAst(ast).toString(),
+          ...(options?.map
+            ? {
+                map: JSON.stringify({
+                  version: 3,
+                  sources: ['input.css'],
+                  names: [],
+                  mappings: 'AAAA',
+                }),
+              }
+            : {}),
+        })),
       close: vi.fn().mockResolvedValue(undefined),
     },
   };

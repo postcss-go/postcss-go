@@ -11,7 +11,27 @@ export {
   fromAst,
   fromJSON,
   toAst,
+  type AnyNode,
+  type AtRuleInit,
+  type Builder,
+  type ChildNode,
+  type CommentInit,
+  type ContainerInit,
+  type DeclarationInit,
+  type DocumentInit,
+  type InsertMode,
+  type NodeChild,
+  type NodeFromJSON,
+  type NodeInit,
+  type NodeInput,
+  type NodeType,
+  type RootInit,
+  type RuleInit,
+  type Stringifier,
+  type Syntax,
+  type WalkCallback,
 } from './ast.js';
+export { Input, hydrateInput, type InputJSON } from './input.js';
 export { parseCliArgs, type CliArgv } from './args.js';
 export { runCLI } from './cli.js';
 export {
@@ -58,6 +78,7 @@ export { getBundledGoBridgeBinPath, resolveGoBridgeServiceOptions } from './reso
 export { UnsupportedServiceError, type PostcssGoService } from './service.js';
 export type {
   AstNode,
+  AstStringifyResult,
   AtRuleNode,
   CommentNode,
   DeclarationNode,
@@ -72,6 +93,7 @@ export type {
   RawValue,
   Raws,
   RuleNode,
+  SourceInput,
   SourceLocation,
   SourcePosition,
   SourceMapOptions,
