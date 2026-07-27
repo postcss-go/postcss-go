@@ -29,8 +29,7 @@
   },
   "files": [
     "dist",
-    "bin",
-    "native/prebuilds/**/*.node"
+    "bin"
   ],
   "scripts": {
     "build": "pnpm --filter @postcss-go/shared build && tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs && node ./native/build.mjs",
@@ -50,6 +49,16 @@
     "read-cache": "^1.0.0",
     "slash": "^5.1.0",
     "tinyglobby": "^0.2.15"
+  },
+  "optionalDependencies": {
+    "@postcss-go/native-darwin-arm64": "workspace:*",
+    "@postcss-go/native-darwin-x64": "workspace:*",
+    "@postcss-go/native-linux-arm64-gnu": "workspace:*",
+    "@postcss-go/native-linux-arm64-musl": "workspace:*",
+    "@postcss-go/native-linux-x64-gnu": "workspace:*",
+    "@postcss-go/native-linux-x64-musl": "workspace:*",
+    "@postcss-go/native-win32-arm64-msvc": "workspace:*",
+    "@postcss-go/native-win32-x64-msvc": "workspace:*"
   },
   "peerDependencies": {
     "postcss": "^8.0.0"

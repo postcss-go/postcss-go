@@ -33,21 +33,36 @@ export type LiveParseResult = { root: Root };
 
 let cachedAddon: NativeAddon | null | undefined;
 
+/** Platform package tuples to try, matching `@postcss-go/native-<tuple>`. */
+function hostTuples(): string[] {
+  const { platform, arch } = process;
+  if (platform === 'linux') return [`linux-${arch}-gnu`, `linux-${arch}-musl`];
+  if (platform === 'win32') return [`win32-${arch}-msvc`];
+  return [`${platform}-${arch}`];
+}
+
 function loadAddon(): NativeAddon | null {
   if (cachedAddon !== undefined) return cachedAddon;
   try {
     const require = createRequire(import.meta.url);
     const here = dirname(fileURLToPath(import.meta.url));
-    const platform = `${process.platform}-${process.arch}`;
-    const candidates = [
-      // Published packages keep platform-specific addons outside npm's
-      // implicitly ignored build/ directory.
-      resolve(here, `../native/prebuilds/${platform}/postcss_go.node`),
-      // Development fallback before/without copying the prebuild.
+
+    // Prefer the published / workspace platform package (same path in
+    // development after `native/build.mjs` and in production after install).
+    for (const tuple of hostTuples()) {
+      try {
+        cachedAddon = require(`@postcss-go/native-${tuple}`) as NativeAddon;
+        return cachedAddon;
+      } catch {
+        // try next tuple or local fallback
+      }
+    }
+
+    // Local node-gyp output before the place step finishes.
+    for (const candidate of [
       resolve(here, '../native/build/Release/postcss_go.node'),
       resolve(here, '../../native/build/Release/postcss_go.node'),
-    ];
-    for (const candidate of candidates) {
+    ]) {
       try {
         cachedAddon = require(candidate) as NativeAddon;
         return cachedAddon;
@@ -76,7 +91,7 @@ export function createNativeService(): NativePostcssGoService {
   const addon = loadAddon();
   if (!addon) {
     throw new Error(
-      'postcss-go native addon is unavailable; run `node packages/postcss-go/native/build.mjs`',
+      'postcss-go native addon is unavailable; run `pnpm --filter @postcss-go/core build:native`',
     );
   }
   return new NativePostcssGoService(addon);

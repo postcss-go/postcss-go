@@ -42,6 +42,22 @@ importers:
         specifier: ^8.61.0
         version: 8.61.0(eslint@10.4.1(jiti@2.7.0))(typescript@6.0.3)
 
+  npm/postcss-go/darwin-arm64: {}
+
+  npm/postcss-go/darwin-x64: {}
+
+  npm/postcss-go/linux-arm64-gnu: {}
+
+  npm/postcss-go/linux-arm64-musl: {}
+
+  npm/postcss-go/linux-x64-gnu: {}
+
+  npm/postcss-go/linux-x64-musl: {}
+
+  npm/postcss-go/win32-arm64-msvc: {}
+
+  npm/postcss-go/win32-x64-msvc: {}
+
   packages/postcss-compat:
     dependencies:
       '@postcss-go/core':
@@ -123,6 +139,31 @@ importers:
       tinyglobby:
         specifier: ^0.2.15
         version: 0.2.17
+    optionalDependencies:
+      '@postcss-go/native-darwin-arm64':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/darwin-arm64
+      '@postcss-go/native-darwin-x64':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/darwin-x64
+      '@postcss-go/native-linux-arm64-gnu':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/linux-arm64-gnu
+      '@postcss-go/native-linux-arm64-musl':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/linux-arm64-musl
+      '@postcss-go/native-linux-x64-gnu':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/linux-x64-gnu
+      '@postcss-go/native-linux-x64-musl':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/linux-x64-musl
+      '@postcss-go/native-win32-arm64-msvc':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/win32-arm64-msvc
+      '@postcss-go/native-win32-x64-msvc':
+        specifier: workspace:*
+        version: link:../../npm/postcss-go/win32-x64-msvc
     devDependencies:
       node-api-headers:
         specifier: ^1.9.0
