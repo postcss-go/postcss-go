@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/go-sourcemap/sourcemap"
 	"postcss-go/internal/csserrors"
@@ -35,11 +36,18 @@ type Options struct {
 }
 
 type Input struct {
-	CSS           string
-	Document      string
-	File          string
-	HasBOM        bool
-	lineIdx       []int
+	CSS       string
+	Document  string
+	File      string
+	HasBOM    bool
+	lineIdx   []int
+	asciiOnly bool
+	// colScan* caches the last FromOffset UTF-16 scan on non-ASCII input.
+	// Parser queries are typically ascending, so continuing from the cursor
+	// keeps total scan cost linear even on a single long line.
+	colScanLine   int
+	colScanOffset int
+	colScanColumn int
 	consumer      *sourcemap.Consumer
 	originCache   map[string]*Input
 	originContent map[string]bool
@@ -170,9 +178,11 @@ func (i *Input) FromOffset(offset int) Position {
 			hi = mid - 1
 		}
 	}
+	lineStart := i.lineIdx[line]
+	column := i.utf16ColumnAt(line, lineStart, offset)
 	return Position{
 		Line:   line + 1,
-		Column: utf16Column(i.CSS[i.lineIdx[line]:offset]) + 1,
+		Column: column + 1,
 		Offset: offset,
 	}
 }
@@ -182,10 +192,20 @@ func (i *Input) FromLineAndColumn(line, column int) (int, error) {
 	if line <= 0 || line > len(i.lineIdx) {
 		return 0, fmt.Errorf("line out of range: %d", line)
 	}
+	if column <= 0 {
+		return 0, fmt.Errorf("column out of range: %d", column)
+	}
 	lineStart := i.lineIdx[line-1]
 	lineEnd := len(i.CSS)
 	if line < len(i.lineIdx) {
 		lineEnd = i.lineIdx[line] - 1
+	}
+	if i.asciiOnly {
+		offset := lineStart + column - 1
+		if offset > lineEnd {
+			return 0, fmt.Errorf("column out of range: %d", column)
+		}
+		return offset, nil
 	}
 	offset, ok := byteOffsetForUTF16Column(i.CSS[lineStart:lineEnd], column-1)
 	if !ok {
@@ -196,7 +216,12 @@ func (i *Input) FromLineAndColumn(line, column int) (int, error) {
 
 func (i *Input) buildLineIndex() {
 	i.lineIdx = []int{0}
-	for idx, ch := range i.CSS {
+	asciiOnly := true
+	for idx := 0; idx < len(i.CSS); idx++ {
+		ch := i.CSS[idx]
+		if ch >= 0x80 {
+			asciiOnly = false
+		}
 		if ch == '\n' {
 			i.lineIdx = append(i.lineIdx, idx+1)
 		}
@@ -204,6 +229,36 @@ func (i *Input) buildLineIndex() {
 	if len(i.lineIdx) == 0 {
 		i.lineIdx = []int{0}
 	}
+	i.asciiOnly = asciiOnly
+	i.colScanLine = 0
+	i.colScanOffset = 0
+	i.colScanColumn = 0
+}
+
+// utf16ColumnAt returns the 0-based UTF-16 column of offset within line.
+func (i *Input) utf16ColumnAt(line, lineStart, offset int) int {
+	if offset <= lineStart {
+		return 0
+	}
+	if i.asciiOnly {
+		return offset - lineStart
+	}
+	cacheable := offset == len(i.CSS) || utf8.RuneStart(i.CSS[offset])
+	if line == i.colScanLine && offset >= i.colScanOffset && i.colScanOffset >= lineStart {
+		column := i.colScanColumn + utf16Column(i.CSS[i.colScanOffset:offset])
+		if cacheable {
+			i.colScanOffset = offset
+			i.colScanColumn = column
+		}
+		return column
+	}
+	column := utf16Column(i.CSS[lineStart:offset])
+	if cacheable {
+		i.colScanLine = line
+		i.colScanOffset = offset
+		i.colScanColumn = column
+	}
+	return column
 }
 
 func (i *Input) ensureLineIndex() {

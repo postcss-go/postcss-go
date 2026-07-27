@@ -11,6 +11,7 @@ import {
 import { getMapfile, joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
 import postcss, { type AcceptedPlugin, type SourceMap } from 'postcss';
 
+import { createNativeService, isNativeBridgeAvailable } from './native.js';
 import { createNodeService, type NodePostcssGoService } from './node.js';
 import { runPluginsWithBridge, type PluginResult } from './plugin-runtime.js';
 import { resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
@@ -75,10 +76,16 @@ export function assertGoCompatibility(
 }
 
 export function createGoEngine(): GoEngine {
+  const preferChild =
+    process.env.POSTCSS_GO_BRIDGE === 'child' || process.env.POSTCSS_GO_BRIDGE === 'stdio';
+  const service =
+    !preferChild && isNativeBridgeAvailable()
+      ? createNativeService()
+      : createNodeService(resolveGoBridgeServiceOptions());
   return {
     name: 'go',
     queue: Promise.resolve(),
-    service: createNodeService(resolveGoBridgeServiceOptions()),
+    service,
     async close() {
       await this.service.close();
     },

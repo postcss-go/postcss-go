@@ -16,14 +16,14 @@ pnpm install
 
 Use the narrowest command that covers your change:
 
-| Change           | Command          |
-| ---------------- | ---------------- |
-| Go core          | `pnpm test:go`   |
-| Node.js packages | `pnpm test`      |
-| Package checks   | `pnpm check`     |
-| Full validation  | `pnpm check:all` |
+| Change            | Command          |
+| ----------------- | ---------------- |
+| Go core           | `pnpm test:go`   |
+| Node.js packages  | `pnpm test`      |
+| TypeScript checks | `pnpm check`     |
+| Full validation   | `pnpm check:all` |
 
-Run `pnpm check:all` before opening a pull request. It covers formatting, linting, upstream compatibility, tests, and builds.
+Run `pnpm check:all` before opening a pull request. It runs formatting, linting, TypeScript type checks, upstream sync verification, JS/Go/upstream tests (including `test:upstream:go`), and builds.
 
 ## Upstream compatibility
 
@@ -44,12 +44,6 @@ pnpm sync:upstream
 See [the Go compatibility overrides](../packages/postcss-compat/src/README.md) for coverage details.
 
 ## Benchmarks
-
-Compare the Go engine with upstream PostCSS:
-
-```bash
-pnpm bench
-```
 
 See [benchmark.md](benchmark.md) for workloads and individual benchmark commands.
 

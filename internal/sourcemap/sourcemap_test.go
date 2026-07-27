@@ -135,6 +135,87 @@ func TestInputColumnsUseUTF16CodeUnits(t *testing.T) {
 	}
 }
 
+func TestFromOffsetAscendingOnLongASCIILine(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 50_000; i++ {
+		b.WriteString(".c{color:red}")
+	}
+	css := b.String()
+	input, err := NewInput(css, Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+	_ = input.FromOffset(0)
+	if !input.asciiOnly {
+		t.Fatal("expected ASCII-only input")
+	}
+
+	for offset := 0; offset <= len(css); offset += 137 {
+		pos := input.FromOffset(offset)
+		if pos.Line != 1 || pos.Column != offset+1 || pos.Offset != offset {
+			t.Fatalf("offset %d: got %#v", offset, pos)
+		}
+	}
+	mapped, err := input.FromLineAndColumn(1, len(css)/2+1)
+	if err != nil || mapped != len(css)/2 {
+		t.Fatalf("ASCII line/column mapping failed: offset=%d err=%v", mapped, err)
+	}
+}
+
+func TestFromOffsetCursorOnNonASCIILine(t *testing.T) {
+	css := "中文" + strings.Repeat("a", 1000) + "🔥尾"
+	input, err := NewInput(css, Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+	_ = input.FromOffset(0)
+	if input.asciiOnly {
+		t.Fatal("expected non-ASCII input")
+	}
+
+	// Ascending then a rewind, then ascending again — exercises the cursor reset path.
+	offsets := []int{
+		len("中"),
+		len("中文"),
+		len("中文") + 500,
+		len("中文"),
+		len(css) - len("尾"),
+		len(css),
+	}
+	for _, offset := range offsets {
+		got := input.FromOffset(offset)
+		want := utf16Column(css[:offset]) + 1
+		if got.Column != want {
+			t.Fatalf("offset %d: column=%d want %d", offset, got.Column, want)
+		}
+	}
+}
+
+func TestFromOffsetCursorDoesNotCacheInsideUTF8Rune(t *testing.T) {
+	css := "中a🔥尾"
+	input, err := NewInput(css, Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("new input failed: %v", err)
+	}
+
+	// Public offsets are byte offsets and may land inside a UTF-8 sequence.
+	// Such a lookup must not poison a later ascending lookup at a rune boundary.
+	offsets := []int{
+		1,
+		len("中"),
+		len("中a") + 1,
+		len("中a🔥"),
+		len(css),
+	}
+	for _, offset := range offsets {
+		got := input.FromOffset(offset)
+		want := utf16Column(css[:offset]) + 1
+		if got.Column != want {
+			t.Fatalf("offset %d: column=%d want %d", offset, got.Column, want)
+		}
+	}
+}
+
 func TestNewInputWithSourceMap(t *testing.T) {
 	const sourceMap = `{
 		"version": 3,

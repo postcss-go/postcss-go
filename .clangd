@@ -1,0 +1,9 @@
+---
+If:
+  PathMatch: .*/packages/postcss-go/native/.*
+CompileFlags:
+  Add:
+    - -std=c11
+    - -Ipackages/postcss-go/native
+    - -Ipackages/postcss-go/node_modules/node-api-headers/include
+    - -DNAPI_VERSION=8
