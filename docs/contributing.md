@@ -45,12 +45,6 @@ See [the Go compatibility overrides](../packages/postcss-compat/src/README.md) f
 
 ## Benchmarks
 
-Compare the Go engine with upstream PostCSS:
-
-```bash
-pnpm bench
-```
-
 See [benchmark.md](benchmark.md) for workloads and individual benchmark commands.
 
 ## Pull requests

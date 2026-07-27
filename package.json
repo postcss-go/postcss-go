@@ -50,7 +50,8 @@
     "bench": "node scripts/compare-benchmarks.mjs",
     "bench:go": "go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5",
     "bench:postcss": "node benchmark/postcss.bench.mjs",
-    "bench:compare": "node scripts/compare-benchmarks.mjs"
+    "bench:boundary": "node benchmark/boundary/run-all.mjs",
+    "bench:boundary:go": "go test -mod=mod ./benchmark/boundary/ -bench=. -benchmem -benchtime=100ms"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",
