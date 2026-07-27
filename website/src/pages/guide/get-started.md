@@ -1,6 +1,6 @@
 ---
 layout: ../../layouts/GuideLayout.astro
-title: Get started
+title: Get Started
 section: get-started
 ---
 

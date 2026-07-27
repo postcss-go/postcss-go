@@ -1,12 +1,43 @@
 ---
 import '../styles/global.css';
+import PageHead from '../components/PageHead.astro';
 import SiteNav from '../components/SiteNav.astro';
+import { parseRequiredProgress } from '../lib/progress';
+import progressSource from '../pages/progress.md?raw';
 
 interface Props {
-  title: string;
+  title?: string;
+  frontmatter?: {
+    title?: string;
+  };
 }
 
-const { title } = Astro.props;
+const { frontmatter, title: propTitle } = Astro.props;
+const title = frontmatter?.title ?? propTitle ?? '';
+const progress = parseRequiredProgress(progressSource);
+const progressColors = [
+  'text-acid',
+  'text-violet',
+  'text-orange-300',
+  'text-cyan-300',
+  'text-acid',
+  'text-violet',
+  'text-sky-300',
+];
+const progressBars = [
+  'bg-acid',
+  'bg-violet',
+  'bg-orange-300',
+  'bg-cyan-300',
+  'bg-acid',
+  'bg-violet',
+  'bg-sky-300',
+];
+const progressGroups = progress.groups.map((group, index) => ({
+  ...group,
+  colorClass: progressColors[index % progressColors.length],
+  barClass: progressBars[index % progressBars.length],
+}));
 
 const tabClass =
   'shrink-0 cursor-pointer rounded-lg border-0 bg-transparent px-[.85rem] py-[.65rem] font-mono text-[.72rem] text-white/50 transition-colors duration-150 hover:bg-acid/10 hover:text-acid aria-selected:bg-acid/10 aria-selected:text-acid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acid';
@@ -14,24 +45,7 @@ const tabClass =
 
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="description" content={title} />
-    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
-    <title>{title} · postcss-go</title>
-    <script is:inline>
-      (() => {
-        const system = window.matchMedia('(prefers-color-scheme: light)').matches
-          ? 'light'
-          : 'dark';
-        try {
-          document.documentElement.dataset.theme =
-            localStorage.getItem('postcss-go-theme') || system;
-        } catch {
-          document.documentElement.dataset.theme = system;
-        }
-      })();
-    </script>
+    <PageHead title={`${title} · postcss-go`} description={title} />
   </head>
   <body>
     <div class="fixed inset-0 -z-10 grid-bg"></div>
@@ -41,85 +55,68 @@ const tabClass =
       <section class="mb-8 border-t border-white/10 pt-8" aria-labelledby="breakdown-title">
         <div class="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <p class="mt-0 font-mono text-[.68rem] tracking-[.14em]">MODULE BREAKDOWN</p>
+            <p class="mt-0 font-mono text-[.68rem] tracking-[.14em]">REQUIRED WORK</p>
             <h1
               id="breakdown-title"
               class="m-0 text-[clamp(1.8rem,4vw,2.8rem)] leading-none tracking-[-.06em]"
             >
-              Where the work lives.
+              {progress.percent}% complete.
             </h1>
           </div>
           <div
             class="flex items-center justify-between gap-2 font-mono text-[.68rem] text-white/40"
           >
-            <p>4 surfaces / 1 engine</p>
+            <p>{progress.completed} / {progress.total} required criteria</p>
             <p aria-hidden="true">·</p>
-            <p>BASELINE / POSTCSS 8.5.15</p>
+            <p>7 workstreams / 1 release target</p>
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-[.65rem] sm:grid-cols-2">
+        <div
+          class="mb-[.65rem] h-[.65rem] overflow-hidden rounded-full border border-white/10 bg-black/25"
+          role="progressbar"
+          aria-label="Required completion criteria"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={progress.percent}
+        >
           <div
-            class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 rounded-[.65rem] border border-white/[.08] bg-white/[.025] p-[.9rem]"
+            class="h-full rounded-[inherit] bg-gradient-to-r from-acid to-[#e5ff9a]"
+            style={`width: ${progress.percent}%`}
           >
-            <div>
-              <span class="block font-mono text-[.62rem] text-white/40">01</span>
-              <strong class="mb-[.2rem] mt-[.35rem] block font-mono text-[.78rem]">Syntax</strong>
-              <small class="block font-mono text-[.62rem] text-white/40"
-                >Tokenizer · parser · AST · errors</small
-              >
-            </div>
-            <b class="font-mono text-[1.3rem] text-acid">100%</b>
-            <i class="col-span-full h-[.3rem] overflow-hidden rounded-full bg-white/[.08]"
-              ><em class="block h-full rounded-[inherit] bg-acid" style="width: 100%"></em></i
-            >
           </div>
-          <div
-            class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 rounded-[.65rem] border border-white/[.08] bg-white/[.025] p-[.9rem]"
-          >
-            <div>
-              <span class="block font-mono text-[.62rem] text-white/40">02</span>
-              <strong class="mb-[.2rem] mt-[.35rem] block font-mono text-[.78rem]">Output</strong>
-              <small class="block font-mono text-[.62rem] text-white/40"
-                >Stringifier · raws · source maps</small
-              >
-            </div>
-            <b class="font-mono text-[1.3rem] text-acid">100%</b>
-            <i class="col-span-full h-[.3rem] overflow-hidden rounded-full bg-white/[.08]"
-              ><em class="block h-full rounded-[inherit] bg-acid" style="width: 100%"></em></i
-            >
-          </div>
-          <div
-            class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 rounded-[.65rem] border border-white/[.08] bg-white/[.025] p-[.9rem]"
-          >
-            <div>
-              <span class="block font-mono text-[.62rem] text-white/40">03</span>
-              <strong class="mb-[.2rem] mt-[.35rem] block font-mono text-[.78rem]">Node API</strong>
-              <small class="block font-mono text-[.62rem] text-white/40"
-                >Mutation · traversal · cloning</small
-              >
-            </div>
-            <b class="font-mono text-[1.3rem] text-violet">88%</b>
-            <i class="col-span-full h-[.3rem] overflow-hidden rounded-full bg-white/[.08]"
-              ><em class="block h-full rounded-[inherit] bg-violet" style="width: 88%"></em></i
-            >
-          </div>
-          <div
-            class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 rounded-[.65rem] border border-white/[.08] bg-white/[.025] p-[.9rem]"
-          >
-            <div>
-              <span class="block font-mono text-[.62rem] text-white/40">04</span>
-              <strong class="mb-[.2rem] mt-[.35rem] block font-mono text-[.78rem]"
-                >JS runtime</strong
-              >
-              <small class="block font-mono text-[.62rem] text-white/40"
-                >Plugins · lazy result · callbacks</small
-              >
-            </div>
-            <b class="font-mono text-[1.3rem] text-orange-300">42%</b>
-            <i class="col-span-full h-[.3rem] overflow-hidden rounded-full bg-white/[.08]"
-              ><em class="block h-full rounded-[inherit] bg-orange-300" style="width: 42%"></em></i
-            >
-          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-[.65rem] sm:grid-cols-2 lg:grid-cols-3">
+          {
+            progressGroups.map((group, index) => (
+              <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 rounded-[.65rem] border border-white/[.08] bg-white/[.025] p-[.9rem]">
+                <div>
+                  <span class="block font-mono text-[.62rem] text-white/40">
+                    {String(index + 1).padStart(2, '0')} · {group.completed}/{group.total}
+                  </span>
+                  <strong class="mb-[.2rem] mt-[.35rem] block font-mono text-[.78rem]">
+                    {group.shortName}
+                  </strong>
+                  <small class="block font-mono text-[.62rem] text-white/40">
+                    {group.description}
+                  </small>
+                </div>
+                <b class:list={['font-mono text-[1.3rem]', group.colorClass]}>{group.percent}%</b>
+                <i
+                  class="col-span-full h-[.3rem] overflow-hidden rounded-full bg-white/[.08]"
+                  role="progressbar"
+                  aria-label={group.name}
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={group.percent}
+                >
+                  <em
+                    class:list={['block h-full rounded-[inherit]', group.barClass]}
+                    style={`width: ${group.percent}%`}
+                  />
+                </i>
+              </div>
+            ))
+          }
         </div>
       </section>
 
@@ -140,14 +137,14 @@ const tabClass =
           type="button"
           role="tab"
           aria-selected="false"
-          data-progress-tab="compatibility">PostCSS parity work</button
+          data-progress-tab="required">Required work</button
         >
         <button
           class={tabClass}
           type="button"
           role="tab"
           aria-selected="false"
-          data-progress-tab="completion">Completion criteria</button
+          data-progress-tab="validation">Optional & gates</button
         >
         <button
           class={tabClass}
@@ -167,9 +164,11 @@ const tabClass =
 
       if (progressContent && progressHeadings.length) {
         const groupFor = (id: string) => {
-          if (id === 'current-status') return 'current';
-          if (id === 'postcss-parity-work') return 'compatibility';
-          if (id === 'scope-and-completion-criteria') return 'completion';
+          if (id === 'product-target' || id === 'current-status') return 'current';
+          if (id === 'required-completion-criteria') return 'required';
+          if (id === 'optional-performance-work' || id === 'validation-and-release-gates') {
+            return 'validation';
+          }
           return 'plan';
         };
         let activeGroup: string | undefined;

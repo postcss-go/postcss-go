@@ -1,31 +1,19 @@
 ---
 import '../styles/global.css';
+import PageHead from '../components/PageHead.astro';
 import SiteNav from '../components/SiteNav.astro';
+import { parseRequiredProgress } from '../lib/progress';
+import progressSource from './progress.md?raw';
+
+const progress = parseRequiredProgress(progressSource);
 ---
 
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta
-      name="description"
-      content="A Go implementation of the PostCSS core architecture, built for speed and compatibility."
+    <PageHead
+      title="postcss-go — CSS, compiled at the speed of Go"
+      description="A Go implementation of the PostCSS core architecture, built for speed and compatibility."
     />
-    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
-    <title>postcss-go — CSS, compiled at the speed of Go</title>
-    <script is:inline>
-      (() => {
-        const system = window.matchMedia('(prefers-color-scheme: light)').matches
-          ? 'light'
-          : 'dark';
-        try {
-          document.documentElement.dataset.theme =
-            localStorage.getItem('postcss-go-theme') || system;
-        } catch {
-          document.documentElement.dataset.theme = system;
-        }
-      })();
-    </script>
   </head>
   <body>
     <main class="overflow-hidden">
@@ -77,11 +65,13 @@ import SiteNav from '../components/SiteNav.astro';
             <p class="mb-4 font-mono text-xs uppercase tracking-[.25em] text-violet">
               Compatibility progress
             </p>
-            <h2 class="text-4xl font-bold tracking-tighter md:text-6xl">64% to parity.</h2>
+            <h2 class="text-4xl font-bold tracking-tighter md:text-6xl">
+              {progress.percent}% of required work complete.
+            </h2>
           </div>
           <p class="max-w-md text-sm leading-6 text-white/45">
-            The overall engineering estimate for a complete PostCSS JavaScript-compatible runtime.
-            See Progress for the module breakdown and remaining work.
+            Calculated from the required completion criteria for a PostCSS-free runtime, explicit
+            sync and async APIs, and supported release backends.
           </p>
         </div>
         <div class="rounded-2xl border border-acid/30 bg-white/[.035] p-[clamp(1.25rem,4vw,2rem)]">
@@ -90,7 +80,7 @@ import SiteNav from '../components/SiteNav.astro';
           >
             <span>FULL POSTCSS JS PARITY</span><strong
               class="text-[clamp(2.5rem,7vw,4.5rem)] leading-[.8] tracking-[-.08em] text-acid"
-              >64<span class="text-[.45em] opacity-70">%</span></strong
+              >{progress.percent}<span class="text-[.45em] opacity-70">%</span></strong
             >
           </div>
           <div
@@ -98,14 +88,14 @@ import SiteNav from '../components/SiteNav.astro';
           >
             <div
               class="h-full rounded-[inherit] bg-gradient-to-r from-acid to-[#e5ff9a]"
-              style="width: 64%"
+              style={`width: ${progress.percent}%`}
             >
             </div>
           </div>
           <div
             class="flex items-center justify-between gap-4 font-mono text-[.68rem] text-white/40"
           >
-            <span>Go CSS data path / complete</span><a
+            <span>{progress.completed} / {progress.total} required criteria complete</span><a
               class="text-acid transition-colors duration-150 hover:text-white"
               href={`${import.meta.env.BASE_URL}progress/`}>View module breakdown ↗</a
             >

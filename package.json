@@ -15,6 +15,13 @@
   "engines": {
     "pnpm": ">=9.12.3"
   },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "tree-sitter": "*"
+      }
+    }
+  },
   "scripts": {
     "build": "pnpm -r build",
     "check": "pnpm -r check",
@@ -46,20 +53,32 @@
     "bench": "node scripts/compare-benchmarks.mjs",
     "bench:go": "go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5",
     "bench:postcss": "node benchmark/postcss.bench.mjs",
+    "bench:lightningcss": "node benchmark/lightningcss.bench.mjs",
+    "bench:csstree": "node benchmark/csstree.bench.mjs",
+    "bench:esbuild": "node benchmark/esbuild.bench.mjs",
+    "bench:lezer": "node benchmark/lezer.bench.mjs",
+    "bench:tree-sitter": "node benchmark/tree-sitter.bench.mjs",
     "bench:boundary": "node benchmark/boundary/run-all.mjs",
     "bench:boundary:go": "go test -mod=mod ./benchmark/boundary/ -bench=. -benchmem -benchtime=100ms"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
+    "@lezer/css": "^1.3.4",
     "@types/node": "^22.10.1",
     "@vitest/coverage-v8": "^3.2.6",
+    "css-tree": "^3.2.1",
+    "esbuild": "^0.28.1",
     "eslint": "^10.4.1",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.6.0",
+    "lightningcss": "^1.33.0",
     "postcss": "^8.5.15",
     "prettier": "^3.8.4",
+    "tree-sitter": "npm:web-tree-sitter@^0.26.9",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.0"
+    "tree-sitter-css": "^0.25.0",
+    "typescript-eslint": "^8.61.0",
+    "web-tree-sitter": "^0.26.9"
   }
 }
