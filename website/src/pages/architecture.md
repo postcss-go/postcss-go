@@ -1,6 +1,6 @@
 ---
 layout: ../layouts/ContentLayout.astro
-title: postcss-go architecture
+title: Architecture
 ---
 
 <section class="mb-14 border-b border-violet/40 pb-12" aria-labelledby="architecture-title">

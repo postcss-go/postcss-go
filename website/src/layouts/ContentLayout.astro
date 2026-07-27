@@ -1,35 +1,25 @@
 ---
 import '../styles/global.css';
+import PageHead from '../components/PageHead.astro';
 import SiteNav from '../components/SiteNav.astro';
 
 interface Props {
-  title: string;
+  title?: string;
   variant?: 'default' | 'api';
+  frontmatter?: {
+    title?: string;
+    variant?: 'default' | 'api';
+  };
 }
 
-const { title, variant = 'default' } = Astro.props;
+const { frontmatter, title: propTitle, variant: propVariant } = Astro.props;
+const title = frontmatter?.title ?? propTitle ?? '';
+const variant = frontmatter?.variant ?? propVariant ?? 'default';
 ---
 
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="description" content={title} />
-    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
-    <title>{title} · postcss-go</title>
-    <script is:inline>
-      (() => {
-        const system = window.matchMedia('(prefers-color-scheme: light)').matches
-          ? 'light'
-          : 'dark';
-        try {
-          document.documentElement.dataset.theme =
-            localStorage.getItem('postcss-go-theme') || system;
-        } catch {
-          document.documentElement.dataset.theme = system;
-        }
-      })();
-    </script>
+    <PageHead title={`${title} · postcss-go`} description={title} />
   </head>
   <body>
     <div class="fixed inset-0 -z-10 grid-bg"></div>
