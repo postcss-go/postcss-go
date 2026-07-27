@@ -73,6 +73,8 @@ export {
   NodePostcssGoService,
   type NodePostcssGoServiceOptions,
 } from './node.js';
+export { createNativeService, isNativeBridgeAvailable, NativePostcssGoService } from './native.js';
+export { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
 export { getPollInterval, usePolling } from './poll.js';
 export { getBundledGoBridgeBinPath, resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
 export { UnsupportedServiceError, type PostcssGoService } from './service.js';

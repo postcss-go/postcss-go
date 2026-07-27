@@ -258,6 +258,25 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 	return toDTO(node, true)
 }
 
+// SourceToBridgeDTO applies the PostCSS-facing source-column adjustments used by
+// ToDTO. The binary codec calls this while walking a live AST so it can skip
+// allocating an intermediate NodeDTO tree.
+func SourceToBridgeDTO(
+	loc *postcss.SourceLocation,
+	nodeEnd, block, preserveEndColumn, includeInput bool,
+) *SourceLocationDTO {
+	return sourceToDTO(loc, nodeEnd, block, preserveEndColumn, includeInput)
+}
+
+// SourceFromBridgeDTO rebuilds a Go source location from a bridge DTO, sharing
+// inherited input across siblings the same way FromDTO does.
+func SourceFromBridgeDTO(
+	loc *SourceLocationDTO,
+	inheritedInput *postcss.Input,
+) (*postcss.Input, *postcss.SourceLocation, error) {
+	return sourceFromDTO(loc, inheritedInput)
+}
+
 func toDTO(node ast.Node, includeInput bool) (*NodeDTO, error) {
 	switch current := node.(type) {
 	case *ast.Document:

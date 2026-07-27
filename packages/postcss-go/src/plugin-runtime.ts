@@ -18,7 +18,10 @@ import {
 import type { PostcssGoService } from './service.js';
 import type { AstNode as AstDTO, ProcessOptions } from './types.js';
 
-type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'>;
+type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
+  parseSync?(css: string, options?: ProcessOptions): { root: AstDTO | Root };
+  stringifyResultSync?(ast: AstDTO | Root, options?: ProcessOptions): { css: string; map?: string };
+};
 
 type Message = Record<string, unknown> & { type?: string; text?: string };
 type Listener = (node: Node, helpers: PluginHelpers) => unknown;
@@ -188,8 +191,12 @@ export async function runPluginsWithBridge(
 ): Promise<PluginResult> {
   ensurePostcssInstanceofCompat();
   const normalized = normalizePlugins(plugins);
-  const parsed = await service.parse(css, { from: options.from });
-  const hydrated = fromAst(parsed.root);
+  const parsed =
+    typeof service.parseSync === 'function'
+      ? service.parseSync(css, { from: options.from })
+      : await service.parse(css, { from: options.from });
+  // Native parseSync already returns a live Root; fromAst is then a no-op.
+  const hydrated = parsed.root instanceof Root ? parsed.root : fromAst(parsed.root);
   if (!(hydrated instanceof Root)) {
     throw new Error('postcss-go plugin bridge parse response is not a root');
   }
@@ -216,7 +223,11 @@ export async function runPluginsWithBridge(
     await runListener(plugin, plugin.OnceExit, hydrated, helpers);
   }
 
-  const stringified = await service.stringifyResult(toAst(hydrated), options as ProcessOptions);
+  // Native stringifyResultSync accepts the live tree and skips toAst.
+  const stringified =
+    typeof service.stringifyResultSync === 'function'
+      ? service.stringifyResultSync(hydrated, options as ProcessOptions)
+      : await service.stringifyResult(toAst(hydrated), options as ProcessOptions);
   result.css = stringified.css;
   result.map = stringified.map;
   return result;

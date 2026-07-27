@@ -84,14 +84,19 @@ node scripts/compare-benchmarks.mjs
 
 ## Boundary cost
 
-Lives in `benchmark/boundary/`. Today a plugin run serializes the AST to a JSON DTO, ships it over stdio, rebuilds it as TypeScript objects, and reverses all of that on the way back. This suite prices each stage so the serialization design can be argued from measurements instead of intuition.
+Lives in `benchmark/boundary/`. Today a plugin run can cross the Go↔JS boundary in two ways:
+
+1. **Native sync + binary codec (preferred when the addon builds)** — `packages/postcss-go/native` links a Go c-archive into a Node-API addon. `parse` returns a compact binary AST (`internal/codec`); JavaScript hydrates it with `fromAst`. After plugins run, `toAst` + binary encode feeds `stringify`. Set `POSTCSS_GO_BRIDGE=child` to force the stdio fallback.
+2. **Stdio JSON-RPC (fallback)** — the original child-process bridge. Still used when the native addon is unavailable.
+
+The boundary benchmark suite prices each stage so the serialization design can be argued from measurements instead of intuition.
 
 It also prices a single **synchronous** crossing, by building two things that do not otherwise exist in the repo:
 
 - a Node-API addon — Go compiled with `-buildmode=c-archive`, linked into a `.node` through a thin C shim
 - a wasip1 reactor module — Go compiled with `//go:wasmexport` and `-buildmode=c-shared`, callable synchronously from Node
 
-Both are isolated in nested modules (`napi/go.mod`, `wasm/go.mod`) so their cgo and WASM code never reaches `go build ./...` or CI.
+Both spike artifacts under `benchmark/boundary/` are isolated in nested modules (`napi/go.mod`, `wasm/go.mod`) so their cgo and WASM code never reaches `go build ./...` or CI. The production native path lives in `cmd/native` + `packages/postcss-go/native`.
 
 ### The two halves
 

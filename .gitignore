@@ -34,3 +34,10 @@ coverage/
 
 # Local Go bridge binary for @postcss-go/core
 packages/postcss-go/bin/postcss-go
+# Native addon build artifacts
+packages/postcss-go/native/go-out/
+packages/postcss-go/native/build/
+packages/postcss-go/native/*.node
+packages/postcss-go/native/compile_flags.txt
+packages/postcss-go/native/compile_commands.json
+packages/postcss-go/native/.cache/
