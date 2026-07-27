@@ -11,7 +11,17 @@ Both share the fixtures in `benchmark/fixtures/`.
 
 ## Engine comparison
 
-Compares **postcss-go** (Go) against upstream **[postcss](https://github.com/postcss/postcss)** (Node.js) on the same workloads.
+Compares **postcss-go** (Go) against upstream
+**[postcss](https://github.com/postcss/postcss)** (Node.js) and
+the independent CSS engines
+**[Lightning CSS](https://github.com/parcel-bundler/lightningcss)**,
+**[CSSTree](https://github.com/csstree/csstree)**, and
+**[esbuild](https://github.com/evanw/esbuild)** on the same workloads where
+their public APIs permit an equivalent comparison.
+
+The Parse scenario also includes parser-only baselines:
+**[Lezer CSS](https://github.com/lezer-parser/css)** and
+**[Tree-sitter CSS](https://github.com/tree-sitter/tree-sitter-css)**.
 
 ### Workloads
 
@@ -53,6 +63,33 @@ Three scenarios are measured for each workload:
 2. **ParseStringify** — parse, then stringify back to CSS
 3. **Process** — parse, walk the AST, then stringify (empty plugin list on the Go side; equivalent manual pipeline on the postcss side — upstream `process([])` skips parsing and is not used here)
 
+Lightning CSS's Node API exposes parsing and printing together through
+`transform()`, without exposing its AST parser or an equivalent PostCSS-style
+empty walk. It is therefore included only in **ParseStringify**. The benchmark
+sets `minify: false` and does not configure browser targets, CSS Modules, or
+bundling. Input strings are converted to `Buffer` before timing because the
+Lightning CSS API accepts bytes; the measured operation includes native
+parse/print and output allocation.
+
+CSSTree exposes separate parser, walker, and generator APIs, so it participates
+in all three scenarios. Source positions are enabled to keep its AST workload
+closer to postcss-go and PostCSS. esbuild, like Lightning CSS, exposes CSS
+parsing and printing as one transform operation, so it participates only in
+**ParseStringify** with minification, source maps, and target lowering disabled.
+
+`@parcel/css` is not included because it re-exports Lightning CSS. SWC's public
+CSS package is focused on its minification pipeline, which is not equivalent to
+these non-minifying workloads.
+
+Lezer and Tree-sitter produce concrete syntax trees for editor and incremental
+parsing use cases. They do not expose equivalent CSS stringifiers, so they
+appear in separate parser-only tables and participate only in **Parse**.
+Tree-sitter runs through its official WASM runtime for portable CI installation;
+each measured operation explicitly deletes the returned tree. The
+`tree-sitter-css` package's optional native-runtime peer is satisfied by an npm
+alias to `web-tree-sitter`, preventing pnpm from installing the unused native
+addon.
+
 ### Run locally
 
 Install dependencies once:
@@ -70,8 +107,13 @@ pnpm bench
 Run each side separately:
 
 ```bash
-pnpm bench:go        # Go only
-pnpm bench:postcss   # postcss (Node) only
+pnpm bench:go           # Go only
+pnpm bench:postcss      # postcss (Node) only
+pnpm bench:lightningcss # Lightning CSS parse + stringify only
+pnpm bench:csstree      # CSSTree parser, walker, and generator
+pnpm bench:esbuild      # esbuild CSS transform only
+pnpm bench:lezer        # Lezer CSS parser only
+pnpm bench:tree-sitter  # Tree-sitter CSS parser only
 ```
 
 Equivalent raw commands:
@@ -79,6 +121,11 @@ Equivalent raw commands:
 ```bash
 go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5
 node benchmark/postcss.bench.mjs
+node benchmark/lightningcss.bench.mjs
+node benchmark/csstree.bench.mjs
+node benchmark/esbuild.bench.mjs
+node benchmark/lezer.bench.mjs
+node benchmark/tree-sitter.bench.mjs
 node scripts/compare-benchmarks.mjs
 ```
 
@@ -154,6 +201,8 @@ The boundary suite uses `ModernNormalize`, `TailwindPreflight`, `AnimateMin`, an
 
 - Results vary by CPU, Go version, and Node version. Treat numbers as directional, not absolute.
 - Node benchmarks use a fixed iteration count with warmup; Go uses `testing.B` until stable.
+- Lightning CSS results cover only its public Node `transform()` call with optimization features disabled; they are not pure parser timings.
+- esbuild results cover `transformSync()` with the CSS loader and optimization features disabled; they are not pure parser timings.
 - Real-world fixtures require postcss-go to parse real CSS correctly; `go test ./benchmark/ -run TestRealWorldFixturesParse` verifies this first.
 - The engine comparison covers core parse/stringify/process paths only — not JS plugin execution or source maps.
 - postcss-go is still incomplete relative to upstream; benchmark gaps may shrink or grow as the port matures.
