@@ -1,0 +1,27 @@
+{
+  "name": "@postcss-go/native-darwin-x64",
+  "version": "0.0.1",
+  "license": "MIT",
+  "description": "postcss-go native addon for darwin-x64",
+  "bugs": "https://github.com/eryue0220/postcss-go/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eryue0220/postcss-go"
+  },
+  "exports": {
+    ".": "./postcss-go.darwin-x64.node",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "postcss-go.darwin-x64.node"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

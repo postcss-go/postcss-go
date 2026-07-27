@@ -1,0 +1,30 @@
+{
+  "name": "@postcss-go/native-linux-arm64-musl",
+  "version": "0.0.1",
+  "license": "MIT",
+  "description": "postcss-go native addon for linux-arm64-musl",
+  "bugs": "https://github.com/eryue0220/postcss-go/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eryue0220/postcss-go"
+  },
+  "exports": {
+    ".": "./postcss-go.linux-arm64-musl.node",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "postcss-go.linux-arm64-musl.node"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "musl"
+  ]
+}

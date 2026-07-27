@@ -1,3 +1,4 @@
 packages:
   - 'packages/*'
+  - 'npm/postcss-go/*'
   - 'website'

@@ -1,0 +1,27 @@
+{
+  "name": "@postcss-go/native-win32-arm64-msvc",
+  "version": "0.0.1",
+  "license": "MIT",
+  "description": "postcss-go native addon for win32-arm64-msvc",
+  "bugs": "https://github.com/eryue0220/postcss-go/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eryue0220/postcss-go"
+  },
+  "exports": {
+    ".": "./postcss-go.win32-arm64-msvc.node",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "postcss-go.win32-arm64-msvc.node"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

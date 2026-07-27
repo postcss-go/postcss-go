@@ -2,7 +2,19 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@postcss-go/core",
+      "@postcss-go/native-darwin-arm64",
+      "@postcss-go/native-darwin-x64",
+      "@postcss-go/native-linux-arm64-gnu",
+      "@postcss-go/native-linux-arm64-musl",
+      "@postcss-go/native-linux-x64-gnu",
+      "@postcss-go/native-linux-x64-musl",
+      "@postcss-go/native-win32-arm64-msvc",
+      "@postcss-go/native-win32-x64-msvc"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
