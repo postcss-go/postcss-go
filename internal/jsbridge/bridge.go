@@ -120,12 +120,14 @@ type NoWorkResult struct {
 }
 
 type StringifyParams struct {
-	AST     *NodeDTO `json:"ast"`
-	Builder bool     `json:"builder,omitempty"`
+	AST     *NodeDTO    `json:"ast"`
+	Builder bool        `json:"builder,omitempty"`
+	Options RequestOpts `json:"options,omitempty"`
 }
 
 type StringifyResult struct {
 	CSS   string                    `json:"css"`
+	Map   string                    `json:"map,omitempty"`
 	Parts []stringifier.BuilderPart `json:"parts"`
 }
 
@@ -163,11 +165,11 @@ func Execute(req Request) Response {
 		}
 		return Response{OK: true, CSS: result.CSS, Map: result.Map}
 	case "stringify":
-		result, err := StringifyRPC(context.Background(), StringifyParams{AST: req.AST})
+		result, err := StringifyRPC(context.Background(), StringifyParams{AST: req.AST, Options: req.Options})
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, CSS: result.CSS}
+		return Response{OK: true, CSS: result.CSS, Map: result.Map}
 	default:
 		return errorResponse(fmt.Errorf("unsupported command %q", req.Command))
 	}
@@ -223,7 +225,25 @@ func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, 
 	if err != nil {
 		return nil, err
 	}
-	result := &StringifyResult{CSS: postcss.Stringify(node)}
+	result := &StringifyResult{}
+	if params.Options.Map || params.Options.MapAuto {
+		stringified, err := stringifier.StringifyWithSourceMap(node, stringifier.SourceMapOptions{
+			From:               params.Options.From,
+			To:                 params.Options.To,
+			MapFile:            params.Options.MapFile,
+			SourceMapFrom:      params.Options.SourceMapFrom,
+			SourcesContent:     params.Options.SourcesContent,
+			Absolute:           params.Options.Absolute,
+			PreserveAnnotation: params.Options.PreserveAnnotation,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result.CSS = stringified.CSS
+		result.Map = stringified.Map
+	} else {
+		result.CSS = postcss.Stringify(node)
+	}
 	if params.Builder {
 		result.Parts = stringifier.StringifyWithBuilder(node)
 	}

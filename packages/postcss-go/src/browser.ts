@@ -5,7 +5,14 @@ import {
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 import type { PostcssGoService } from './service.js';
-import type { AstNode, NoWorkResult, ParseResult, ProcessOptions, ProcessResult } from './types.js';
+import type {
+  AstNode,
+  AstStringifyResult,
+  NoWorkResult,
+  ParseResult,
+  ProcessOptions,
+  ProcessResult,
+} from './types.js';
 
 export interface BrowserWorkerLike {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -104,11 +111,21 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   async stringify(ast: AstNode): Promise<string> {
-    const result = await this.call<{ css: string }>('stringify', { ast });
+    return (await this.stringifyResult(ast)).css;
+  }
+
+  async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    const result = await this.call<AstStringifyResult>('stringify', {
+      ast,
+      options: normalizeProcessOptions(
+        options as NormalizeProcessOptionsInput,
+        joinMapAnnotationPath,
+      ) as ProcessOptions,
+    });
     if (typeof result?.css !== 'string') {
       throw new Error('postcss-go WASM stringify response is missing css');
     }
-    return result.css;
+    return result;
   }
 
   async close(): Promise<void> {

@@ -1,7 +1,6 @@
 import type { AcceptedPlugin } from 'postcss';
 import postcss from 'postcss';
 import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
-import { SourceMapGenerator } from 'source-map-js';
 
 import {
   AtRule,
@@ -14,11 +13,12 @@ import {
   Node,
   Root,
   Rule,
+  toAst,
 } from './ast.js';
 import type { PostcssGoService } from './service.js';
-import type { AstNode as AstDTO } from './types.js';
+import type { AstNode as AstDTO, ProcessOptions } from './types.js';
 
-type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'process' | 'stringify'>;
+type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'>;
 
 type Message = Record<string, unknown> & { type?: string; text?: string };
 type Listener = (node: Node, helpers: PluginHelpers) => unknown;
@@ -216,17 +216,9 @@ export async function runPluginsWithBridge(
     await runListener(plugin, plugin.OnceExit, hydrated, helpers);
   }
 
-  if (options.map) {
-    const mapped = stringifyWithMap(hydrated, css, options);
-    result.css = mapped.css;
-    result.map = mapped.map;
-  } else {
-    // Prefer the Go stringifier when maps are off so intermediate CSS matches
-    // the engine's final process path as closely as possible.
-    result.css = await service.stringify(
-      hydrated.toJSON() as Parameters<PluginBridgeService['stringify']>[0],
-    );
-  }
+  const stringified = await service.stringifyResult(toAst(hydrated), options as ProcessOptions);
+  result.css = stringified.css;
+  result.map = stringified.map;
   return result;
 }
 
@@ -395,7 +387,7 @@ async function visitNode(node: Node, listeners: Listeners, helpers: PluginHelper
 
   for (const event of getEvents(node)) {
     if (event === CHILDREN) {
-      if (node instanceof Container && node.nodes.length) {
+      if (node instanceof Container && node.nodes?.length) {
         node.markClean();
         let index = 0;
         while (index < node.nodes.length) {
@@ -449,119 +441,6 @@ function pluginName(plugin: RuntimePlugin | undefined): string | undefined {
   return plugin?.postcssPlugin;
 }
 
-/**
- * Build CSS and a source map from AST `source` locations so plugin transforms
- * keep pointing at the original input instead of reparsed transformed text.
- */
-function stringifyWithMap(
-  root: Root,
-  originalCss: string,
-  options: ProcessFileOptions,
-): { css: string; map: string } {
-  const sourceFile = options.from || 'to.css';
-  const map = new SourceMapGenerator({ file: `${sourceFile}.map` });
-  map.setSourceContent(sourceFile, originalCss);
-
-  let css = '';
-  let line = 1;
-  let column = 0;
-
-  const write = (chunk: string, node?: Node): void => {
-    if (node?.source?.start && chunk.length > 0) {
-      map.addMapping({
-        generated: { line, column },
-        original: {
-          line: node.source.start.line,
-          column: Math.max(0, node.source.start.column - 1),
-        },
-        source: sourceFile,
-      });
-    }
-    for (const char of chunk) {
-      if (char === '\n') {
-        line += 1;
-        column = 0;
-      } else {
-        column += 1;
-      }
-    }
-    css += chunk;
-  };
-
-  stringifyNodeInto(root, write);
-  return { css, map: map.toString() };
-}
-
-function rawValue(value: unknown, fallback: string): string {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object' && !Array.isArray(value) && 'raw' in value) {
-    const raw = value as { raw: unknown; value?: unknown };
-    if (raw.value === undefined || String(raw.value) === fallback) return String(raw.raw);
-  }
-  return fallback;
-}
-
-function stringifyAtRulePrelude(node: AtRule): string {
-  let name = `@${node.name}`;
-  const params = node.params ? rawValue(node.raws.params, node.params) : '';
-  if (node.raws.afterName !== undefined) {
-    name += rawValue(node.raws.afterName, '');
-  } else if (params) {
-    name += ' ';
-  }
-  return name + params;
-}
-
-function stringifyNodeInto(node: Node, write: (chunk: string, node?: Node) => void): void {
-  const before = rawValue(node.raws.before, '');
-  if (before) write(before, node);
-
-  if (node instanceof Document || node instanceof Root) {
-    for (const child of node.nodes) stringifyNodeInto(child, write);
-    const after = rawValue(node.raws.after, '');
-    if (after) write(after, node);
-    return;
-  }
-  if (node instanceof Rule) {
-    write(rawValue(node.raws.selector, node.selector), node);
-    write(rawValue(node.raws.between, ' '), node);
-    write('{', node);
-    for (const child of node.nodes) stringifyNodeInto(child, write);
-    write(rawValue(node.raws.after, ''), node);
-    write('}', node);
-    return;
-  }
-  if (node instanceof AtRule) {
-    write(stringifyAtRulePrelude(node), node);
-    if (node.hasBlock) {
-      write(rawValue(node.raws.between, ' '), node);
-      write('{', node);
-      for (const child of node.nodes) stringifyNodeInto(child, write);
-      write(rawValue(node.raws.after, ''), node);
-      write('}', node);
-    } else {
-      write(';', node);
-    }
-    return;
-  }
-  if (node instanceof Declaration) {
-    write(node.prop, node);
-    write(rawValue(node.raws.between, ': '), node);
-    write(rawValue(node.raws.value, node.value), node);
-    if (node.important) write(rawValue(node.raws.important, ' !important'), node);
-    const parent = node.parent;
-    const semicolon =
-      node.raws.ownSemicolon === ';' ||
-      (parent !== undefined && parent.raws.semicolon === true && parent.last === node);
-    if (semicolon) write(';', node);
-    return;
-  }
-  if (node instanceof Comment) {
-    write(`/*${node.text}*/`, node);
-    write(rawValue(node.raws.after, ''), node);
-  }
-}
-
 function hasPreviousMap(css: string, options: ProcessFileOptions): boolean {
   const map = options.map;
   if (map && typeof map === 'object' && map.prev !== undefined) {
@@ -576,7 +455,13 @@ function attachPreviousMapMetadata(root: Root, css: string, options: ProcessFile
   const url = annotations.at(-1)?.[1]?.trim();
   const mapOptions = options.map && typeof options.map === 'object' ? options.map : undefined;
   const previous = mapOptions?.prev;
-  (root.source as unknown as { input: { map: { inline: boolean; text?: string } } }).input = {
+  (
+    root.source as unknown as {
+      input: { css: string; from?: string; map: { inline: boolean; text?: string } };
+    }
+  ).input = {
+    css,
+    from: options.from,
     map: {
       inline: url?.startsWith('data:') === true,
       ...(typeof previous === 'string' ? { text: previous } : {}),

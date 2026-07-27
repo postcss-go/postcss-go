@@ -30,9 +30,9 @@ The sections below track the user-visible compatibility limits and the engineeri
 
 - [ ] Match the PostCSS entry point, processor lifecycle, lazy result, result objects, input objects, previous maps, and public exports.
 - [ ] Match lazy execution and synchronous/asynchronous result behavior.
-- [ ] Complete Node/Container method, property, JSON, custom-node, and type declaration parity.
+- [x] Complete Node/Container method, property, JSON, custom-node, and type declaration parity.
 - [ ] Complete error and warning object parity, including source/input/plugin metadata.
-- [ ] Complete `fromJSON` and custom AST node support.
+- [x] Complete `fromJSON` and custom AST node support.
 - [ ] Define and implement the supported custom syntax/parser/stringifier contract.
 
 ### Plugin execution

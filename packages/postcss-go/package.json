@@ -47,7 +47,6 @@
     "pretty-hrtime": "^1.0.3",
     "read-cache": "^1.0.0",
     "slash": "^5.1.0",
-    "source-map-js": "^1.2.1",
     "tinyglobby": "^0.2.15"
   },
   "peerDependencies": {
@@ -55,6 +54,7 @@
   },
   "devDependencies": {
     "postcss": "^8.5.15",
+    "source-map-js": "^1.2.1",
     "vitest": "^3.2.4"
   },
   "keywords": [

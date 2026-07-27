@@ -4,10 +4,21 @@ export interface SourcePosition {
   offset: number;
 }
 
+export interface SourceInput {
+  css?: string;
+  file?: string;
+  from?: string;
+  id?: string;
+  map?: Record<string, unknown>;
+  toJSON?: () => Record<string, unknown>;
+  [property: string]: unknown;
+}
+
 export interface SourceLocation {
   start: SourcePosition;
   end: SourcePosition;
   file?: string;
+  input?: SourceInput;
 }
 
 export interface Warning {
@@ -148,6 +159,11 @@ export interface ProcessResult {
 }
 
 export interface NoWorkResult {
+  css: string;
+  map?: string;
+}
+
+export interface AstStringifyResult {
   css: string;
   map?: string;
 }

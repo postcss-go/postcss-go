@@ -11,6 +11,7 @@ import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 import type { PostcssGoService } from './service.js';
 import type {
   AstNode,
+  AstStringifyResult,
   NoWorkResult,
   ParseResult,
   ProcessOptions,
@@ -20,7 +21,9 @@ import type {
 
 type BridgeMethod = 'parse' | 'process' | 'noWork' | 'stringify';
 
-type BridgeParams = { css: string; options?: ProcessOptions } | { ast: AstNode };
+type BridgeParams =
+  | { css: string; options?: ProcessOptions }
+  | { ast: AstNode; options?: ProcessOptions };
 
 type BridgeCommand = { command: string; args: string[]; cwd: string };
 
@@ -128,12 +131,19 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   async stringify(ast: AstNode): Promise<string> {
-    const response = await this.request('stringify', { ast });
-    const css = response.result?.css;
-    if (typeof css !== 'string') {
+    return (await this.stringifyResult(ast)).css;
+  }
+
+  async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    const normalized = normalizeProcessOptions(
+      options as NormalizeProcessOptionsInput,
+      joinMapAnnotationPath,
+    ) as ProcessOptions;
+    const response = await this.request('stringify', { ast, options: normalized });
+    if (typeof response.result?.css !== 'string') {
       throw new Error('postcss-go bridge stringify response is missing css');
     }
-    return css;
+    return { css: response.result.css, map: response.result.map };
   }
 
   async close(): Promise<void> {

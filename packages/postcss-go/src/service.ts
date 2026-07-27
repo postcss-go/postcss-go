@@ -1,4 +1,11 @@
-import type { AstNode, NoWorkResult, ParseResult, ProcessOptions, ProcessResult } from './types.js';
+import type {
+  AstNode,
+  AstStringifyResult,
+  NoWorkResult,
+  ParseResult,
+  ProcessOptions,
+  ProcessResult,
+} from './types.js';
 
 /**
  * Transport-independent contract implemented by the Node and browser/WASM
@@ -14,6 +21,8 @@ export interface PostcssGoService {
   noWork(css: string, options?: ProcessOptions): Promise<NoWorkResult>;
   /** Stringify a serializable AST with the Go stringifier. */
   stringify(ast: AstNode): Promise<string>;
+  /** Stringify an AST and optionally generate a source map entirely in Go. */
+  stringifyResult(ast: AstNode, options?: ProcessOptions): Promise<AstStringifyResult>;
   /** Release the underlying worker or bridge process. */
   close(): Promise<void>;
 }

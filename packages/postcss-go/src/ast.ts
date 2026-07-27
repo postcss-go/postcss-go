@@ -4,45 +4,76 @@ import type {
   CommentNode as CommentDTO,
   DeclarationNode as DeclarationDTO,
   DocumentNode as DocumentDTO,
-  RawField,
   Raws,
   RootNode as RootDTO,
   RuleNode as RuleDTO,
   SourceLocation,
 } from './types.js';
+import postcss from 'postcss';
+import {
+  cloneRaws,
+  cloneValue,
+  finishJSON,
+  INTERNAL_NODE_PROPERTIES,
+  markBridgeBlocks,
+  removeSource,
+  restoreBridgeSources,
+  serializeJSONValue,
+  splitList,
+} from './ast-utils.js';
+import { defaultRaw, stringifyNode } from './ast-stringifier.js';
+import { hydrateInput } from './input.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
 
-export type NodeType = AstDTO['type'] | 'document';
+export type NodeType = AstDTO['type'] | (string & {});
 
 export interface NodeInit {
   type?: NodeType;
   source?: SourceLocation;
   raws?: Raws;
+  [property: string]: unknown;
 }
 
-type NodeInput = Node | AstDTO | NodeInit;
-type NodeChild = NodeInput | NodeInput[];
-type ContainerInit = NodeInit & { nodes?: NodeChild[] };
+export type NodeInput = Node | AstDTO | NodeInit;
+export type NodeChild = NodeInput | readonly NodeChild[] | string | undefined;
+export type ChildNode = AtRule | Comment | Declaration | Rule;
+export type AnyNode = ChildNode | Document | Root;
+export interface ContainerInit extends NodeInit {
+  nodes?: readonly NodeChild[];
+}
+export type RootInit = ContainerInit;
+export type DocumentInit = ContainerInit;
+export interface RuleInit extends ContainerInit {
+  selector?: string;
+  selectors?: readonly string[];
+}
+export interface AtRuleInit extends ContainerInit {
+  name?: string;
+  params?: string;
+  block?: boolean;
+}
+export interface DeclarationInit extends NodeInit {
+  prop?: string;
+  value?: string | number;
+  important?: boolean;
+}
+export interface CommentInit extends NodeInit {
+  text?: string;
+}
+
+export type Builder = (chunk: string, node?: Node, type?: string) => void;
+export type Stringifier = (node: Node, builder: Builder) => void;
+export type Syntax = { stringify: Stringifier };
+export type WalkCallback<T extends Node = Node> = (node: T, index: number) => unknown;
+/**
+ * Insertion hint passed to `Container#normalize()`. `prepend` matches the PostCSS hint of the same
+ * name; `hydrate` marks the constructor path, where children already carry authoritative raws.
+ */
+export type InsertMode = 'hydrate' | 'prepend' | undefined;
 
 function isNode(value: unknown): value is Node {
   return value instanceof Node;
-}
-
-function cloneRaw(value: RawField | undefined): RawField | undefined {
-  if (Array.isArray(value)) return value.map((item) => cloneRaw(item)) as RawField[];
-  if (value && typeof value === 'object') {
-    const result: Record<string, RawField | undefined> = {};
-    for (const [key, item] of Object.entries(value)) result[key] = cloneRaw(item);
-    return result;
-  }
-  return value;
-}
-
-function cloneRaws(raws: Raws | undefined): Raws {
-  const result: Raws = {};
-  for (const [key, value] of Object.entries(raws ?? {})) result[key] = cloneRaw(value);
-  return result;
 }
 
 function asNode(value: Node | AstDTO | NodeInit): Node {
@@ -62,7 +93,11 @@ function asNode(value: Node | AstDTO | NodeInit): Node {
     case 'comment':
       return new Comment(node);
     default:
-      if ('prop' in node) return new Declaration(node as NodeInit & DeclarationDTO);
+      if (node.type) return 'nodes' in node ? new Container(node) : new Node(node);
+      if ('prop' in node) {
+        if (node.value === undefined) throw new Error('Value field is missed in node creation');
+        return new Declaration(node as NodeInit & DeclarationDTO);
+      }
       if ('selector' in node) return new Rule(node as ContainerInit & RuleDTO);
       if ('name' in node) return new AtRule(node as ContainerInit & AtRuleDTO);
       if ('text' in node) return new Comment(node as NodeInit & CommentDTO);
@@ -71,31 +106,55 @@ function asNode(value: Node | AstDTO | NodeInit): Node {
   }
 }
 
-export abstract class Node {
-  readonly type: NodeType;
+function flattenNodeChildren(children: readonly NodeChild[]): Array<NodeInput | string> {
+  const flattened: Array<NodeInput | string> = [];
+  for (const child of children) {
+    if (child === undefined) continue;
+    if (Array.isArray(child)) {
+      flattened.push(...flattenNodeChildren(child));
+    } else {
+      flattened.push(child as NodeInput | string);
+    }
+  }
+  return flattened;
+}
+
+export class Node {
+  type: NodeType;
   source?: SourceLocation;
   raws: Raws;
   private readonly rawsProvided: boolean;
-  private parentNode?: Container;
+  private parentNode?: Container<any>;
   private clean = false;
   private proxyCache?: this;
 
-  protected constructor(type: NodeType, init: NodeInit = {}) {
-    this.type = type;
+  constructor(defaults?: NodeInit);
+  constructor(type: NodeType, defaults?: NodeInit);
+  constructor(typeOrDefaults: NodeType | NodeInit = {}, defaults: NodeInit = {}) {
+    const init = typeof typeOrDefaults === 'string' ? defaults : typeOrDefaults;
+    this.type = typeof typeOrDefaults === 'string' ? typeOrDefaults : (init.type ?? '');
     this.source = init.source;
     this.raws = cloneRaws(init.raws);
     this.rawsProvided = init.raws !== undefined;
+    for (const [name, value] of Object.entries(init)) {
+      if (name === 'type' || name === 'source' || name === 'raws' || name === 'nodes') continue;
+      (this as unknown as Record<string, unknown>)[name] = value;
+    }
   }
 
-  get parent(): Container | undefined {
+  get parent(): Container<any> | undefined {
     return this.parentNode;
+  }
+
+  set parent(parent: Container<any> | undefined) {
+    this.parentNode = parent;
   }
 
   get proxyOf(): this {
     return this;
   }
 
-  setParent(parent: Container | undefined): void {
+  setParent(parent: Container<any> | undefined): void {
     this.parentNode = parent;
   }
 
@@ -130,12 +189,12 @@ export abstract class Node {
 
   next(): Node | undefined {
     if (!this.parent) return undefined;
-    return this.parent.nodes[this.parent.index(this) + 1];
+    return this.parent.nodes?.[this.parent.index(this) + 1];
   }
 
   prev(): Node | undefined {
     if (!this.parent) return undefined;
-    return this.parent.nodes[this.parent.index(this) - 1];
+    return this.parent.nodes?.[this.parent.index(this) - 1];
   }
 
   remove(): this {
@@ -143,52 +202,66 @@ export abstract class Node {
     return this;
   }
 
-  replaceWith(...nodes: Array<Node | AstDTO | NodeInit>): this {
-    if (!this.parent) throw new Error('Cannot replace a node without a parent');
-    const parent = this.parent;
-    const index = parent.index(this);
-    parent.removeChild(this);
-    parent.insertBeforeIndex(index, nodes.map(asNode));
+  replaceWith(...nodes: NodeChild[]): this {
+    if (!this.parent) return this;
+
+    let bookmark: Node | undefined;
+    let foundSelf = false;
+
+    for (const input of flattenNodeChildren(nodes)) {
+      if (input === this) {
+        foundSelf = true;
+      } else if (foundSelf) {
+        const parent = this.parent;
+        const reference = bookmark ?? this;
+        parent?.insertAfter(reference, input);
+        if (parent) bookmark = parent.nodes?.[parent.index(reference) + 1];
+      } else {
+        this.parent?.insertBefore(this, input);
+      }
+    }
+
+    if (!foundSelf) this.remove();
+
     return this;
   }
 
-  clone(overrides: NodeInit = {}): this {
-    const copy = asNode(this.toJSON()) as this;
+  clone(overrides: Record<string, unknown> = {}): this {
+    const copy = cloneNode(this);
     Object.assign(copy, overrides);
     return copy;
   }
 
-  cloneBefore(overrides: NodeInit = {}): this {
+  cloneBefore(overrides: Record<string, unknown> = {}): this {
     const copy = this.clone(overrides);
     if (!this.parent) throw new Error('Cannot clone before a node without a parent');
     this.parent.insertBefore(this, copy);
     return copy;
   }
 
-  cloneAfter(overrides: NodeInit = {}): this {
+  cloneAfter(overrides: Record<string, unknown> = {}): this {
     const copy = this.clone(overrides);
     if (!this.parent) throw new Error('Cannot clone after a node without a parent');
     this.parent.insertAfter(this, copy);
     return copy;
   }
 
-  before(...nodes: Array<Node | AstDTO | NodeInit>): this {
+  before(...nodes: NodeChild[]): this {
     if (!this.parent) throw new Error('Cannot insert before a node without a parent');
     this.parent.insertBefore(this, ...nodes);
     return this;
   }
 
-  after(...nodes: Array<Node | AstDTO | NodeInit>): this {
+  after(...nodes: NodeChild[]): this {
     if (!this.parent) throw new Error('Cannot insert after a node without a parent');
     this.parent.insertAfter(this, ...nodes);
     return this;
   }
 
-  cleanRaws(keepBetween = false): this {
+  cleanRaws(keepBetween = false): void {
     delete this.raws.before;
     delete this.raws.after;
     if (!keepBetween) delete this.raws.between;
-    return this;
   }
 
   get isClean(): boolean {
@@ -207,13 +280,14 @@ export abstract class Node {
     return this;
   }
 
-  raw(prop: string, defaultType?: string): string {
+  raw(prop: string, defaultType?: string): boolean | string {
     const value = this.raws[prop];
     if (typeof value === 'string') return value;
+    if (typeof value === 'boolean') return value;
     if (value && typeof value === 'object' && !Array.isArray(value) && 'raw' in value) {
       return String(value.raw);
     }
-    return defaultRaw(this, defaultType);
+    return defaultRaw(this, prop, defaultType);
   }
 
   positionInside(index: number): SourceLocation['start'] {
@@ -329,8 +403,13 @@ export abstract class Node {
     return this.proxyCache;
   }
 
-  toString(): string {
-    return stringifyNode(this);
+  toString(stringifier: Stringifier | Syntax = defaultStringifier): string {
+    const stringify = typeof stringifier === 'function' ? stringifier : stringifier.stringify;
+    let result = '';
+    stringify(this, (chunk) => {
+      result += chunk;
+    });
+    return result;
   }
 
   warn(
@@ -354,30 +433,76 @@ export abstract class Node {
     return warning;
   }
 
-  protected jsonMeta(): { source?: SourceLocation; raws?: Raws } {
-    const meta: { source?: SourceLocation; raws?: Raws } = {};
-    if (this.source !== undefined) meta.source = this.source;
+  protected jsonMeta(inputs: Map<unknown, number>): { source?: object; raws?: Raws } {
+    const meta: { source?: object; raws?: Raws } = {};
+    if (this.source !== undefined) {
+      if (this.source.input) {
+        let inputId = inputs.get(this.source.input);
+        if (inputId === undefined) {
+          inputId = inputs.size;
+          inputs.set(this.source.input, inputId);
+        }
+        const { input: _input, file: _file, ...source } = this.source;
+        meta.source = { ...source, inputId };
+      } else {
+        meta.source = { ...this.source };
+      }
+    }
     if (this.rawsProvided || Object.keys(this.raws).length > 0) meta.raws = cloneRaws(this.raws);
     return meta;
   }
 
-  abstract toJSON(): AstDTO;
+  protected jsonExtras(
+    known: readonly string[],
+    inputs?: Map<unknown, number>,
+  ): Record<string, unknown> {
+    const excluded = new Set(['type', 'source', 'raws', 'nodes', ...known]);
+    const extras: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(this)) {
+      if (excluded.has(name) || INTERNAL_NODE_PROPERTIES.has(name)) continue;
+      extras[name] = serializeJSONValue(value, inputs);
+    }
+    return extras;
+  }
+
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): object {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras([], sharedInputs),
+        type: this.type,
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    );
+  }
 }
 
-export abstract class Container extends Node {
-  nodes: Node[];
+export class Container<Child extends Node = ChildNode> extends Node {
+  nodes: Child[] | undefined;
+  private lastEach = 0;
+  private readonly indexes = new Map<number, number>();
 
-  protected constructor(type: NodeType, init: ContainerInit = {}) {
+  constructor(defaults?: ContainerInit);
+  constructor(type: NodeType, defaults?: ContainerInit);
+  constructor(typeOrDefaults: NodeType | ContainerInit = {}, defaults: ContainerInit = {}) {
+    const type = typeof typeOrDefaults === 'string' ? typeOrDefaults : (typeOrDefaults.type ?? '');
+    const init = typeof typeOrDefaults === 'string' ? defaults : typeOrDefaults;
     super(type, init);
     this.nodes = [];
-    for (const child of init.nodes ?? []) this.append(child);
+    for (const child of init.nodes ?? []) {
+      for (const node of this.normalize([child], this.last, 'hydrate')) {
+        this.nodes.push(node as Child);
+      }
+    }
   }
 
-  get first(): Node | undefined {
-    return this.nodes[0];
+  get first(): Child | undefined {
+    return this.nodes?.[0];
   }
-  get last(): Node | undefined {
-    return this.nodes[this.nodes.length - 1];
+  get last(): Child | undefined {
+    return this.nodes?.[this.nodes.length - 1];
   }
 
   protected getProxyProcessor(): ProxyHandler<this> {
@@ -385,7 +510,7 @@ export abstract class Container extends Node {
       get: (node, prop) => {
         if (prop === 'proxyOf') return node;
         if (prop === 'root') return () => node.root().toProxy();
-        if (prop === 'nodes') return node.nodes.map((child) => child.toProxy());
+        if (prop === 'nodes') return node.nodes?.map((child) => child.toProxy());
         if (prop === 'first' || prop === 'last') {
           const child = Reflect.get(node, prop, node) as Node | undefined;
           return child?.toProxy();
@@ -425,79 +550,121 @@ export abstract class Container extends Node {
   }
 
   append(...children: NodeChild[]): this {
-    const nodes = this.normalize(children);
-    for (const node of nodes) {
-      if (node.parent) node.parent.removeChild(node);
-      this.inheritBefore(node, this.last);
-      node.setParent(this);
-      this.nodes.push(node);
+    this.nodes ??= [];
+    let added = 0;
+    for (const child of children) {
+      const nodes = this.normalize([child], this.last);
+      for (const node of nodes) this.nodes.push(node as Child);
+      added += nodes.length;
     }
-    if (nodes.length) this.markDirty();
+    if (added) this.markDirty();
     return this;
   }
 
-  push(child: NodeChild): this {
-    return this.append(child);
+  push(child: Child): this {
+    this.nodes ??= [];
+    child.parent = this;
+    this.nodes.push(child);
+    return this;
   }
 
-  each(callback: (node: Node, index: number) => unknown): unknown {
-    let index = 0;
+  each(callback: WalkCallback<Child>): false | undefined {
+    if (!this.nodes) return undefined;
+    const iterator = ++this.lastEach;
+    this.indexes.set(iterator, 0);
     let result: unknown;
-    while (index < this.nodes.length) {
+    while ((this.indexes.get(iterator) ?? 0) < this.nodes.length) {
+      const index = this.indexes.get(iterator) ?? 0;
       const child = this.nodes[index];
       result = callback(child, index);
       if (result === false) break;
-      if (this.nodes[index] === child) index++;
+      this.indexes.set(iterator, (this.indexes.get(iterator) ?? index) + 1);
     }
-    return result;
+    this.indexes.delete(iterator);
+    return result === false ? false : undefined;
   }
 
   prepend(...children: NodeChild[]): this {
-    const nodes = this.normalize(children).reverse();
-    for (const node of nodes) {
-      if (node.parent) node.parent.removeChild(node);
-      this.inheritBefore(node, this.first);
-      node.setParent(this);
-      this.nodes.unshift(node);
+    this.nodes ??= [];
+    let added = 0;
+    for (const child of [...children].reverse()) {
+      const nodes = this.normalize([child], this.first, 'prepend').reverse();
+      for (const node of nodes) this.nodes.unshift(node as Child);
+      for (const [id, index] of this.indexes) this.indexes.set(id, index + nodes.length);
+      added += nodes.length;
     }
-    if (nodes.length) this.markDirty();
+    if (added) this.markDirty();
     return this;
   }
 
-  insertBefore(existing: Node, ...children: NodeChild[]): this {
-    const index = this.index(existing);
-    if (index < 0) throw new Error('Node is not a child of this container');
-    this.insertBeforeIndex(index, this.normalize(children), existing);
+  insertBefore(existing: Node | number, ...children: NodeChild[]): this {
+    const initialIndex = this.index(existing);
+    if (initialIndex < 0) throw new Error('Node is not a child of this container');
+    const sample = this.nodes?.[initialIndex];
+    const nodes = this.normalize(children, sample, initialIndex === 0 ? 'prepend' : undefined);
+    const index = typeof existing === 'number' ? initialIndex : this.index(existing);
+    this.insertBeforeIndex(index, nodes, sample);
     return this;
   }
 
-  insertAfter(existing: Node, ...children: NodeChild[]): this {
-    const index = this.index(existing);
-    if (index < 0) throw new Error('Node is not a child of this container');
-    this.insertBeforeIndex(index + 1, this.normalize(children), existing);
+  insertAfter(existing: Node | number, ...children: NodeChild[]): this {
+    const initialIndex = this.index(existing);
+    if (initialIndex < 0) throw new Error('Node is not a child of this container');
+    const sample = this.nodes?.[initialIndex];
+    const nodes = this.normalize(children, sample);
+    const index = typeof existing === 'number' ? initialIndex : this.index(existing);
+    this.insertBeforeIndex(index + 1, nodes, sample);
     return this;
   }
 
   insertBeforeIndex(index: number, children: Node[], sample?: Node): void {
-    for (const node of children) {
+    const detached = children.filter(
+      (node) => node.parent !== this || (this.nodes?.includes(node as Child) ?? false),
+    );
+    for (const node of detached) {
       if (node.parent) node.parent.removeChild(node);
-      this.inheritBefore(node, sample ?? this.nodes[index]);
-      node.setParent(this);
     }
-    this.nodes.splice(index, 0, ...children);
+    if (detached.length) this.inheritBefore(detached, sample ?? this.nodes?.[index]);
+    for (const node of detached) node.setParent(this);
+    this.nodes?.splice(index, 0, ...(children as Child[]));
+    for (const [id, iteratorIndex] of this.indexes) {
+      if (index <= iteratorIndex) this.indexes.set(id, iteratorIndex + children.length);
+    }
     if (children.length) this.markDirty();
   }
 
-  private normalize(children: NodeChild[]): Node[] {
+  protected normalize(children: readonly NodeChild[], sample?: Node, mode?: InsertMode): Node[] {
+    const nodes = this.convert(children);
+    for (const node of nodes) {
+      if (node.parent) node.parent.removeChild(node);
+    }
+    this.inheritBefore(nodes, sample, mode);
+    for (const node of nodes) node.setParent(this);
+    return nodes;
+  }
+
+  private convert(children: readonly NodeChild[]): Node[] {
     const nodes: Node[] = [];
     for (const child of children) {
+      if (child === undefined) continue;
       if (Array.isArray(child)) {
-        nodes.push(...this.normalize(child));
+        nodes.push(...this.convert(child));
         continue;
       }
-      const node = asNode(child);
+      if (typeof child === 'string') {
+        const parsed = postcss.parse(child);
+        nodes.push(
+          ...parsed.nodes.map((node) => {
+            const json = node.toJSON() as unknown as AstDTO;
+            removeSource(json);
+            return asNode(json);
+          }),
+        );
+        continue;
+      }
+      const node = asNode(child as NodeInput);
       if (this.type !== 'document' && node.type === 'root') {
-        nodes.push(...(node as Root).nodes);
+        nodes.push(...((node as Root).nodes ?? []));
       } else {
         nodes.push(node);
       }
@@ -505,64 +672,103 @@ export abstract class Container extends Node {
     return nodes;
   }
 
-  private inheritBefore(node: Node, sample: Node | undefined): void {
-    if (!sample || node.raws.before !== undefined || sample.raws.before === undefined) return;
-    node.raws.before = sample.raws.before.replace(/\S/g, '');
+  protected inheritBefore(
+    nodes: readonly Node[],
+    sample: Node | undefined,
+    _mode?: InsertMode,
+  ): void {
+    if (!sample || sample.raws.before === undefined) return;
+    const before = sample.raws.before.replace(/\S/g, '');
+    for (const node of nodes) {
+      if (node.raws.before === undefined) node.raws.before = before;
+    }
   }
 
-  removeChild(child: Node): this {
+  removeChild(child: Node | number): this {
     const index = this.index(child);
     if (index < 0) throw new Error('Node is not a child of this container');
-    this.nodes[index].setParent(undefined);
-    this.nodes.splice(index, 1);
+    this.nodes?.[index]?.setParent(undefined);
+    this.nodes?.splice(index, 1);
+    for (const [id, iteratorIndex] of this.indexes) {
+      if (iteratorIndex >= index) this.indexes.set(id, iteratorIndex - 1);
+    }
     this.markDirty();
     return this;
   }
 
   index(child: Node | number): number {
-    return typeof child === 'number' ? child : this.nodes.indexOf(child);
+    if (typeof child === 'number') return child;
+    return this.nodes?.indexOf(child.proxyOf as Child) ?? -1;
   }
 
   removeAll(): this {
-    for (const node of this.nodes) node.setParent(undefined);
+    for (const node of this.nodes ?? []) node.setParent(undefined);
     this.nodes = [];
     this.markDirty();
     return this;
   }
 
-  cleanRaws(keepBetween = false): this {
+  cleanRaws(keepBetween = false): void {
     super.cleanRaws(keepBetween);
-    for (const node of this.nodes) node.cleanRaws(keepBetween);
-    return this;
+    for (const node of this.nodes ?? []) node.cleanRaws(keepBetween);
   }
 
+  replaceValues(pattern: string | RegExp, replacement: string): this;
+  replaceValues(pattern: string | RegExp, callback: (...args: any[]) => string): this;
   replaceValues(
     pattern: string | RegExp,
-    optionsOrCallback: { props?: string[]; fast?: string } | ((...args: any[]) => string),
+    options: { props?: readonly string[]; fast?: string },
+    callback: (...args: any[]) => string,
+  ): this;
+  replaceValues(
+    pattern: string | RegExp,
+    optionsOrReplacement:
+      | string
+      | { props?: readonly string[]; fast?: string }
+      | ((...args: any[]) => string),
     maybeCallback?: (...args: any[]) => string,
   ): this {
-    const options = typeof optionsOrCallback === 'function' ? {} : optionsOrCallback;
-    const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback;
-    if (!callback) throw new Error('replaceValues requires a callback');
+    const options = typeof optionsOrReplacement === 'object' ? optionsOrReplacement : {};
+    const replacement =
+      typeof optionsOrReplacement === 'object' ? maybeCallback : optionsOrReplacement;
+    if (replacement === undefined) throw new Error('replaceValues requires a replacement');
     this.walkDecls((decl) => {
       if (options.props && !options.props.includes(decl.prop)) return;
       if (options.fast && !decl.value.includes(options.fast)) return;
-      decl.value = decl.value.replace(pattern as never, callback as never);
+      decl.value =
+        typeof replacement === 'string'
+          ? decl.value.replace(pattern, replacement)
+          : decl.value.replace(pattern as never, replacement as never);
     });
     return this;
   }
 
-  some(callback: (node: Node, index: number) => boolean): boolean {
-    return this.nodes.some(callback);
+  some(callback: (node: Child, index: number, nodes: Child[]) => boolean): boolean {
+    return this.nodes!.some(callback);
   }
-  every(callback: (node: Node, index: number) => boolean): boolean {
-    return this.nodes.every(callback);
+  every(callback: (node: Child, index: number, nodes: Child[]) => boolean): boolean {
+    return this.nodes!.every(callback);
   }
 
-  walk(callback: (node: Node, index: number) => unknown): unknown {
+  walk(callback: WalkCallback): false | undefined {
     return this.each((child, index) => {
-      const result = callback(child, index);
-      if (result !== false && child instanceof Container) return child.walk(callback);
+      let result: unknown;
+      try {
+        result = callback(child, index);
+      } catch (error) {
+        throw child.addToError(error instanceof Error ? error : new Error(String(error)));
+      }
+      if (
+        result !== false &&
+        'walk' in child &&
+        typeof (child as Node & { walk?: unknown }).walk === 'function'
+      ) {
+        return (
+          child as unknown as Node & {
+            walk(callback: WalkCallback): false | undefined;
+          }
+        ).walk(callback);
+      }
       return result;
     });
   }
@@ -570,79 +776,144 @@ export abstract class Container extends Node {
   walkAtRules(
     nameOrCallback: string | RegExp | ((node: AtRule, index: number) => unknown),
     callback?: (node: AtRule, index: number) => unknown,
-  ): unknown {
-    const matches = (node: Node): node is AtRule => {
-      if (!(node instanceof AtRule)) return false;
+  ): false | undefined {
+    const matches = (node: Node): boolean => {
+      if (node.type !== 'atrule') return false;
+      const atRule = node as AtRule;
       if (typeof nameOrCallback === 'function') return true;
       if (nameOrCallback instanceof RegExp) {
         nameOrCallback.lastIndex = 0;
-        return nameOrCallback.test(node.name);
+        return nameOrCallback.test(atRule.name);
       }
-      return node.name === nameOrCallback;
+      return atRule.name === nameOrCallback;
     };
     const visit = typeof nameOrCallback === 'function' ? nameOrCallback : callback;
     if (!visit) throw new Error('walkAtRules requires a callback');
-    return this.walk((node, index) => (matches(node) ? visit(node, index) : undefined));
+    return this.walk((node, index) => (matches(node) ? visit(node as AtRule, index) : undefined));
   }
 
-  walkComments(callback: (node: Comment, index: number) => unknown): unknown {
+  walkComments(callback: WalkCallback<Comment>): false | undefined {
     return this.walk((node, index) =>
-      node instanceof Comment ? callback(node, index) : undefined,
+      node.type === 'comment' ? callback(node as Comment, index) : undefined,
     );
   }
 
   walkDecls(
     propOrCallback: string | RegExp | ((node: Declaration, index: number) => unknown),
     callback?: (node: Declaration, index: number) => unknown,
-  ): unknown {
-    const matches = (node: Node): node is Declaration => {
-      if (!(node instanceof Declaration)) return false;
+  ): false | undefined {
+    const matches = (node: Node): boolean => {
+      if (node.type !== 'decl') return false;
+      const declaration = node as Declaration;
       if (typeof propOrCallback === 'function') return true;
       if (propOrCallback instanceof RegExp) {
         propOrCallback.lastIndex = 0;
-        return propOrCallback.test(node.prop);
+        return propOrCallback.test(declaration.prop);
       }
-      return node.prop === propOrCallback;
+      return declaration.prop === propOrCallback;
     };
     const visit = typeof propOrCallback === 'function' ? propOrCallback : callback;
     if (!visit) throw new Error('walkDecls requires a callback');
-    return this.walk((node, index) => (matches(node) ? visit(node, index) : undefined));
+    return this.walk((node, index) =>
+      matches(node) ? visit(node as Declaration, index) : undefined,
+    );
   }
 
   walkRules(
     selectorOrCallback: string | RegExp | ((node: Rule, index: number) => unknown),
     callback?: (node: Rule, index: number) => unknown,
-  ): unknown {
-    const matches = (node: Node): node is Rule => {
-      if (!(node instanceof Rule)) return false;
+  ): false | undefined {
+    const matches = (node: Node): boolean => {
+      if (node.type !== 'rule') return false;
+      const rule = node as Rule;
       if (typeof selectorOrCallback === 'function') return true;
       if (selectorOrCallback instanceof RegExp) {
         selectorOrCallback.lastIndex = 0;
-        return selectorOrCallback.test(node.selector);
+        return selectorOrCallback.test(rule.selector);
       }
-      return node.selector === selectorOrCallback;
+      return rule.selector === selectorOrCallback;
     };
     const visit = typeof selectorOrCallback === 'function' ? selectorOrCallback : callback;
     if (!visit) throw new Error('walkRules requires a callback');
-    return this.walk((node, index) => (matches(node) ? visit(node, index) : undefined));
+    return this.walk((node, index) => (matches(node) ? visit(node as Rule, index) : undefined));
+  }
+
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): object {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras([], sharedInputs),
+        type: this.type,
+        nodes: (this.nodes ?? []).map((node) => node.toJSON(null, sharedInputs)),
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    );
   }
 }
 
-export class Root extends Container {
-  constructor(init: ContainerInit = {}) {
+export class Root extends Container<ChildNode> {
+  declare nodes: ChildNode[];
+  constructor(init: RootInit = {}) {
     super('root', init);
   }
+
+  /**
+   * A root has no indentation of its own, so children exchange `raws.before` when the first one
+   * moves. Hydration keeps the serialized raws instead: unlike PostCSS, which only rebuilds a tree
+   * from JSON in `fromJSON()`, every stylesheet crossing the Go bridge is rebuilt this way.
+   */
+  protected inheritBefore(
+    nodes: readonly Node[],
+    sample: Node | undefined,
+    mode?: InsertMode,
+  ): void {
+    if (mode === 'hydrate') {
+      super.inheritBefore(nodes, sample, mode);
+      return;
+    }
+    if (!sample) return;
+    if (mode === 'prepend') {
+      if (this.nodes.length > 1) sample.raws.before = this.nodes[1].raws.before;
+      else delete sample.raws.before;
+      return;
+    }
+    if (this.first !== sample) {
+      for (const node of nodes) node.raws.before = sample.raws.before;
+    }
+  }
+
+  removeChild(child: Node | number, ignore = false): this {
+    const index = this.index(child);
+    if (!ignore && index === 0 && this.nodes.length > 1) {
+      this.nodes[1].raws.before = this.nodes[index].raws.before;
+    }
+    return super.removeChild(index);
+  }
+
   async toResult(options: ProcessOptions = {}, service?: PostcssGoService) {
     const { toResult } = await import('./api.js');
     return toResult(this, options, service);
   }
-  toJSON(): RootDTO {
-    return { type: 'root', nodes: this.nodes.map((node) => node.toJSON()), ...this.jsonMeta() };
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): RootDTO {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras([], sharedInputs),
+        type: 'root',
+        nodes: this.nodes.map((node) => node.toJSON(null, sharedInputs) as AstDTO),
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    ) as unknown as RootDTO;
   }
 }
 
-export class Document extends Container {
-  constructor(init: ContainerInit = {}) {
+export class Document extends Container<Root> {
+  declare nodes: Root[];
+  constructor(init: DocumentInit = {}) {
     super('document', init);
   }
 
@@ -651,20 +922,27 @@ export class Document extends Container {
     return toResult(this, options, service);
   }
 
-  toJSON(): DocumentDTO {
-    return {
-      type: 'document',
-      nodes: this.nodes.map((node) => node.toJSON()) as RootDTO[],
-      ...this.jsonMeta(),
-    };
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): DocumentDTO {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras([], sharedInputs),
+        type: 'document',
+        nodes: this.nodes.map((node) => node.toJSON(null, sharedInputs)) as RootDTO[],
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    ) as unknown as DocumentDTO;
   }
 }
 
-export class Rule extends Container {
+export class Rule extends Container<ChildNode> {
+  declare nodes: ChildNode[];
   selector: string;
-  constructor(init: ContainerInit = {}) {
+  constructor(init: RuleInit = {}) {
     super('rule', init);
-    this.selector = String((init as RuleDTO).selector ?? '');
+    this.selector = String(init.selector ?? init.selectors?.join(',') ?? '');
   }
   get selectors(): string[] {
     return splitList(this.selector, ',');
@@ -673,43 +951,69 @@ export class Rule extends Container {
     const match = this.selector.match(/,\s*/);
     this.selector = values.join(match?.[0] ?? ',');
   }
-  toJSON(): RuleDTO {
-    return {
-      type: 'rule',
-      selector: this.selector,
-      nodes: this.nodes.map((node) => node.toJSON()),
-      ...this.jsonMeta(),
-    };
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): RuleDTO {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras(['selector'], sharedInputs),
+        type: 'rule',
+        selector: this.selector,
+        nodes: this.nodes.map((node) => node.toJSON(null, sharedInputs) as AstDTO),
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    ) as unknown as RuleDTO;
   }
 }
 
-export class AtRule extends Container {
+export class AtRule extends Container<ChildNode> {
+  declare nodes: ChildNode[] | undefined;
   name: string;
   params: string;
   /** True when this at-rule has a `{}` block, including empty blocks. */
   block: boolean;
 
-  constructor(init: ContainerInit = {}) {
-    const dto = init as ContainerInit & Partial<AtRuleDTO>;
+  constructor(init: AtRuleInit = {}) {
+    const dto = init;
     const explicitBlock = dto.block === true || Object.prototype.hasOwnProperty.call(init, 'nodes');
     super('atrule', init);
     this.name = String(dto.name ?? '');
     this.params = String(dto.params ?? '');
     this.block = explicitBlock;
+    if (!explicitBlock) this.nodes = undefined;
   }
 
   get hasBlock(): boolean {
-    return this.block || this.nodes.length > 0;
+    return this.block || (this.nodes?.length ?? 0) > 0;
   }
 
-  toJSON(): AtRuleDTO {
-    return {
-      type: 'atrule',
-      name: this.name,
-      params: this.params,
-      ...(this.hasBlock ? { block: true, nodes: this.nodes.map((node) => node.toJSON()) } : {}),
-      ...this.jsonMeta(),
-    };
+  append(...children: NodeChild[]): this {
+    this.block = true;
+    return super.append(...children);
+  }
+
+  prepend(...children: NodeChild[]): this {
+    this.block = true;
+    return super.prepend(...children);
+  }
+
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): AtRuleDTO {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras(['block', 'name', 'params'], sharedInputs),
+        type: 'atrule',
+        name: this.name,
+        params: this.params,
+        ...(this.hasBlock
+          ? { nodes: (this.nodes ?? []).map((node) => node.toJSON(null, sharedInputs) as AstDTO) }
+          : {}),
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    ) as unknown as AtRuleDTO;
   }
 }
 
@@ -717,160 +1021,140 @@ export class Declaration extends Node {
   prop: string;
   value: string;
   important: boolean;
-  constructor(init: NodeInit = {}) {
+  constructor(init: DeclarationInit = {}) {
     super('decl', init);
-    this.prop = String((init as DeclarationDTO).prop ?? '');
-    this.value = String((init as DeclarationDTO).value ?? '');
-    this.important = Boolean((init as DeclarationDTO).important);
+    this.prop = String(init.prop ?? '');
+    this.value = String(init.value ?? '');
+    this.important = Boolean(init.important);
   }
   get variable(): boolean {
     return this.prop.startsWith('--') || this.prop.startsWith('$');
   }
-  toJSON(): DeclarationDTO {
-    return {
-      type: 'decl',
-      prop: this.prop,
-      value: this.value,
-      important: this.important,
-      ...this.jsonMeta(),
-    };
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): DeclarationDTO {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras(['important', 'prop', 'value'], sharedInputs),
+        type: 'decl',
+        prop: this.prop,
+        value: this.value,
+        ...(this.important ? { important: true } : {}),
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    ) as unknown as DeclarationDTO;
   }
 }
 
 export class Comment extends Node {
   text: string;
-  constructor(init: NodeInit = {}) {
+  constructor(init: CommentInit = {}) {
     super('comment', init);
-    this.text = String((init as CommentDTO).text ?? '');
+    this.text = String(init.text ?? '');
   }
-  toJSON(): CommentDTO {
-    return { type: 'comment', text: this.text, ...this.jsonMeta() };
+  toJSON(_key?: unknown, inputs?: Map<unknown, number>): CommentDTO {
+    const sharedInputs = inputs ?? new Map<unknown, number>();
+    return finishJSON(
+      {
+        ...this.jsonExtras(['text'], sharedInputs),
+        type: 'comment',
+        text: this.text,
+        ...this.jsonMeta(sharedInputs),
+      },
+      inputs,
+      sharedInputs,
+    ) as unknown as CommentDTO;
   }
 }
 
-export function fromAst(node: AstDTO): Node {
-  return asNode(node);
+export type NodeFromJSON<T> = T extends DocumentDTO
+  ? Document
+  : T extends RootDTO
+    ? Root
+    : T extends RuleDTO
+      ? Rule
+      : T extends AtRuleDTO
+        ? AtRule
+        : T extends DeclarationDTO
+          ? Declaration
+          : T extends CommentDTO
+            ? Comment
+            : T extends readonly (infer Child)[]
+              ? NodeFromJSON<Child>[]
+              : Node;
+
+export function fromAst<T extends AstDTO>(node: T): NodeFromJSON<T> {
+  return asNode(node) as NodeFromJSON<T>;
 }
 
 /** Rehydrate a serialized PostCSS-shaped AST, including arrays of nodes. */
-export function fromJSON<T extends AstDTO | AstDTO[]>(
-  value: T,
-): T extends AstDTO[] ? Node[] : Node {
-  if (Array.isArray(value))
-    return value.map((node) => asNode(node)) as T extends AstDTO[] ? Node[] : Node;
-  return asNode(value) as T extends AstDTO[] ? Node[] : Node;
+export function fromJSON<T extends AstDTO | readonly AstDTO[]>(value: T): NodeFromJSON<T>;
+export function fromJSON(value: readonly object[]): Node[];
+export function fromJSON(value: object): Node;
+export function fromJSON(value: object | readonly object[]): Node | Node[] {
+  return hydrateJSON(value);
 }
 
 export function toAst(node: Node): AstDTO {
-  return node.toJSON();
+  const inputs = new Map<unknown, number>();
+  const ast = node.toJSON(null, inputs) as AstDTO;
+  restoreBridgeSources(ast, [...inputs.keys()]);
+  markBridgeBlocks(ast);
+  return ast;
 }
 
-function rawValue(value: unknown, fallback: string): string {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object' && !Array.isArray(value) && 'raw' in value) {
-    const rawValue = value as { raw: unknown; value?: unknown };
-    if (rawValue.value === undefined || String(rawValue.value) === fallback) {
-      return String(rawValue.raw);
-    }
-  }
-  return fallback;
+function defaultStringifier(node: Node, builder: Builder): void {
+  builder(stringifyNode(node), node);
 }
 
-/** Match PostCSS: use afterName when present; otherwise insert one space before params. */
-function stringifyAtRulePrelude(node: AtRule): string {
-  let name = `@${node.name}`;
-  const params = node.params ? rawValue(node.raws.params, node.params) : '';
-  if (node.raws.afterName !== undefined) {
-    name += rawValue(node.raws.afterName, '');
-  } else if (params) {
-    name += ' ';
+function hydrateJSON(
+  value: object | readonly object[],
+  inheritedInputs?: readonly unknown[],
+): Node | Node[] {
+  if (Array.isArray(value)) {
+    return (value as readonly object[]).map((node) => hydrateJSON(node, inheritedInputs) as Node);
   }
-  return name + params;
+  const json = value as NodeInit & {
+    inputs?: readonly unknown[];
+    nodes?: readonly object[];
+    source?: SourceLocation & { inputId?: number };
+  };
+  const inputs = json.inputs ? json.inputs.map(hydrateInput) : inheritedInputs;
+  const { inputs: _ownInputs, ...defaults } = json;
+  if (json.nodes) defaults.nodes = json.nodes.map((child) => hydrateJSON(child, inputs) as Node);
+  if (json.source) {
+    const { inputId, ...source } = json.source;
+    defaults.source =
+      inputId === undefined ? source : ({ ...source, input: inputs?.[inputId] } as SourceLocation);
+  }
+  return asNode(defaults);
 }
 
-function defaultRaw(node: Node, type?: string): string {
-  if (type === 'beforeOpen') return node instanceof Rule ? ' ' : '';
-  if (type === 'beforeDecl') return node.parent?.first === node ? '' : '\n';
-  if (type === 'beforeComment') return node.parent?.first === node ? '' : '\n';
-  if (type === 'beforeRule') return node.parent?.first === node ? '' : '\n';
-  if (type === 'colon') return ': ';
-  if (type === 'emptyBody') return '';
-  return '';
-}
-
-function stringifyNode(node: Node): string {
-  const before = rawValue(node.raws.before, '');
-  if (node instanceof Document || node instanceof Root) {
-    const body = node.nodes.map(stringifyNode).join('');
-    return `${before}${body}${rawValue(node.raws.after, '')}`;
-  }
-  if (node instanceof Rule) {
-    const selector = rawValue(node.raws.selector, node.selector);
-    const body = node.nodes.map(stringifyNode).join('');
-    const after = rawValue(node.raws.after, '');
-    return `${before}${selector}${rawValue(node.raws.between, ' ')}{${body}${after}}`;
-  }
-  if (node instanceof AtRule) {
-    const name = stringifyAtRulePrelude(node);
-    if (node.hasBlock) {
-      const body = node.nodes.map(stringifyNode).join('');
-      return `${before}${name}${rawValue(node.raws.between, ' ')}{${body}${rawValue(node.raws.after, '')}}`;
-    }
-    return `${before}${name};`;
-  }
-  if (node instanceof Declaration) {
-    const value = rawValue(node.raws.value, node.value);
-    const important = node.important ? rawValue(node.raws.important, ' !important') : '';
-    const parent = node.parent;
-    const semicolon =
-      node.raws.ownSemicolon === ';' ||
-      (parent !== undefined && parent.raws.semicolon === true && parent.last === node);
-    return `${before}${node.prop}${rawValue(node.raws.between, ': ')}${value}${important}${semicolon ? ';' : ''}`;
-  }
-  if (node instanceof Comment) {
-    return `${before}/*${node.text}*/${rawValue(node.raws.after, '')}`;
-  }
-  return before;
-}
-
-function splitList(value: string, separator: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let depth = 0;
-  let quote = '';
-  let escaped = false;
-  for (const char of value) {
-    if (escaped) {
-      current += char;
-      escaped = false;
+function cloneNode<T extends Node>(node: T, parent?: Container<any>): T {
+  const cloned = Object.create(Object.getPrototypeOf(node)) as T;
+  for (const [name, value] of Object.entries(node)) {
+    if (
+      name === 'indexes' ||
+      name === 'lastEach' ||
+      name === 'proxyCache' ||
+      name === 'parentNode'
+    ) {
       continue;
     }
-    if (char === '\\') {
-      current += char;
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      current += char;
-      if (char === quote) quote = '';
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      current += char;
-    } else if (char === '(') {
-      depth++;
-      current += char;
-    } else if (char === ')') {
-      depth = Math.max(0, depth - 1);
-      current += char;
-    } else if (char === separator && depth === 0) {
-      result.push(current.trim());
-      current = '';
+    if (name === 'source') {
+      (cloned as unknown as Record<string, unknown>)[name] = value;
+    } else if (name === 'nodes' && Array.isArray(value)) {
+      (cloned as unknown as { nodes: Node[] }).nodes = value.map((child) =>
+        cloneNode(child as Node, cloned as unknown as Container<any>),
+      );
     } else {
-      current += char;
+      (cloned as unknown as Record<string, unknown>)[name] = cloneValue(value);
     }
   }
-  if (current !== '' || value.endsWith(separator)) result.push(current.trim());
-  return result;
+  if (node instanceof Container) {
+    Object.assign(cloned, { indexes: new Map<number, number>(), lastEach: 0 });
+  }
+  cloned.setParent(parent);
+  return cloned;
 }

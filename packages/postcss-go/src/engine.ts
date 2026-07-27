@@ -25,7 +25,10 @@ export interface CliConfig {
 export interface GoEngine {
   name: 'go';
   queue: Promise<unknown>;
-  service: Pick<NodePostcssGoService, 'process' | 'noWork' | 'parse' | 'stringify' | 'close'>;
+  service: Pick<
+    NodePostcssGoService,
+    'process' | 'noWork' | 'parse' | 'stringify' | 'stringifyResult' | 'close'
+  >;
   close(): Promise<void>;
 }
 
@@ -244,13 +247,18 @@ export function runPluginChain(
   config: CliConfig | undefined,
   css: string,
   options: ProcessFileOptions,
-  service?: Pick<NodePostcssGoService, 'parse' | 'process' | 'stringify' | 'close'>,
+  service?: Pick<
+    NodePostcssGoService,
+    'parse' | 'process' | 'stringify' | 'stringifyResult' | 'close'
+  >,
 ): Promise<PluginResult> {
   return runWithPluginService(service, getPlugins(config), css, options);
 }
 
 async function runWithPluginService(
-  service: Pick<NodePostcssGoService, 'parse' | 'process' | 'stringify' | 'close'> | undefined,
+  service:
+    | Pick<NodePostcssGoService, 'parse' | 'process' | 'stringify' | 'stringifyResult' | 'close'>
+    | undefined,
   plugins: AcceptedPlugin[],
   css: string,
   options: ProcessFileOptions,
