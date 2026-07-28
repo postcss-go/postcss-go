@@ -1,16 +1,14 @@
-import postcss from 'postcss';
-import PostcssStringifier from 'postcss/lib/stringifier';
 import type { Raws } from './types.js';
 
 export interface StringifiableNode {
   type: string;
   raws: Raws;
-  parent?: {
+  parent?: StringifiableNode & {
     first?: StringifiableNode;
     last?: StringifiableNode;
-    raws: Raws;
   };
   nodes?: StringifiableNode[];
+  last?: StringifiableNode;
   selector?: string;
   name?: string;
   params?: string;
@@ -19,26 +17,202 @@ export interface StringifiableNode {
   value?: string;
   important?: boolean;
   text?: string;
+  root?: () => StringifiableNode;
 }
 
-// This small synchronous fallback exists only for PostCSS's Node#toString()
-// contract. Pipeline and plugin-result stringification are Go-owned.
+export type Builder = (chunk: string, node?: StringifiableNode, type?: string) => void;
+
+const DEFAULT_RAW: Record<string, string | boolean> = {
+  after: '\n',
+  beforeClose: '\n',
+  beforeComment: '\n',
+  beforeDecl: '\n',
+  beforeOpen: ' ',
+  beforeRule: '\n',
+  colon: ': ',
+  commentLeft: ' ',
+  commentRight: ' ',
+  emptyBody: '',
+  indent: '    ',
+  semicolon: false,
+};
+
+function rawValue(node: StringifiableNode, property: keyof StringifiableNode): string {
+  const value = String(node[property] ?? '');
+  const raw = node.raws[property as string];
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'raw' in raw && raw.value === value) {
+    return String(raw.raw);
+  }
+  return value;
+}
+
+function rootOf(node: StringifiableNode): StringifiableNode {
+  let current = node;
+  while (current.parent && current.parent.type !== 'document') current = current.parent;
+  return current;
+}
+
+function walk(node: StringifiableNode, callback: (node: StringifiableNode) => boolean | void): boolean {
+  for (const child of node.nodes ?? []) {
+    if (callback(child) === false) return false;
+    if (walk(child, callback) === false) return false;
+  }
+  return true;
+}
+
+function detectRaw(node: StringifiableNode, own: string | null, detect: string): string | boolean {
+  if (own && node.raws[own] !== undefined) return node.raws[own] as string | boolean;
+  const parent = node.parent;
+  if (detect === 'before') {
+    if (!parent || (parent.type === 'root' && parent.first === node) || parent.type === 'document') {
+      return '';
+    }
+    detect = node.type === 'decl'
+      ? 'beforeDecl'
+      : node.type === 'comment'
+        ? 'beforeComment'
+        : 'beforeRule';
+  }
+  if (detect === 'after') detect = 'beforeClose';
+
+  const root = rootOf(node);
+  let found: string | boolean | undefined;
+  if (detect === 'beforeOpen') {
+    walk(root, (candidate) => {
+      if (candidate.type !== 'decl' && candidate.raws.between !== undefined) {
+        found = candidate.raws.between as string | boolean;
+        return false;
+      }
+    });
+  } else if (detect === 'colon') {
+    walk(root, (candidate) => {
+      if (candidate.type === 'decl' && typeof candidate.raws.between === 'string') {
+        found = candidate.raws.between.replace(/[^\s:]/g, '');
+        return false;
+      }
+    });
+  } else if (detect === 'semicolon') {
+    walk(root, (candidate) => {
+      if (candidate.nodes?.length && candidate.last?.type === 'decl' && candidate.raws.semicolon !== undefined) {
+        found = candidate.raws.semicolon as boolean;
+        return false;
+      }
+    });
+  } else if (detect === 'emptyBody') {
+    walk(root, (candidate) => {
+      if (candidate.nodes?.length === 0 && candidate.raws.after !== undefined) {
+        found = candidate.raws.after as string;
+        return false;
+      }
+    });
+  } else if (detect === 'indent') {
+    if (typeof root.raws.indent === 'string') found = root.raws.indent;
+  } else if (detect === 'beforeClose') {
+    walk(root, (candidate) => {
+      if (candidate.nodes?.length && typeof candidate.raws.after === 'string') {
+        found = candidate.raws.after.includes('\n')
+          ? candidate.raws.after.replace(/[^\n]+$/, '').replace(/\S/g, '')
+          : candidate.raws.after.replace(/\S/g, '');
+        return false;
+      }
+    });
+  } else if (detect.startsWith('before')) {
+    const wanted =
+      detect === 'beforeDecl' ? 'decl' : detect === 'beforeComment' ? 'comment' : undefined;
+    walk(root, (candidate) => {
+      if ((!wanted || candidate.type === wanted) && typeof candidate.raws.before === 'string') {
+        found = candidate.raws.before.includes('\n')
+          ? candidate.raws.before.replace(/[^\n]+$/, '').replace(/\S/g, '')
+          : candidate.raws.before.replace(/\S/g, '');
+        return false;
+      }
+    });
+  } else if (own) {
+    walk(root, (candidate) => {
+      if (candidate.raws[own] !== undefined) {
+        found = candidate.raws[own] as string | boolean;
+        return false;
+      }
+    });
+  }
+  return found ?? DEFAULT_RAW[detect] ?? '';
+}
+
 export function defaultRaw(
   node: StringifiableNode,
   prop: string,
   defaultType?: string,
 ): boolean | string {
-  const stringifier = new PostcssStringifier(() => {});
-  return stringifier.raw(
-    node as unknown as Parameters<typeof stringifier.raw>[0],
-    prop,
-    defaultType,
-  );
+  return detectRaw(node, prop, defaultType ?? prop);
+}
+
+export function stringify(
+  node: StringifiableNode,
+  builder: Builder,
+): void {
+  const raw = (target: StringifiableNode, own: string | null, detect = own ?? '') =>
+    detectRaw(target, own, detect);
+  const body = (container: StringifiableNode): void => {
+    const nodes = container.nodes ?? [];
+    let lastNonComment = nodes.length - 1;
+    while (lastNonComment > 0 && nodes[lastNonComment].type === 'comment') lastNonComment -= 1;
+    const semicolon = Boolean(raw(container, 'semicolon'));
+    for (let index = 0; index < nodes.length; index++) {
+      const child = nodes[index];
+      const before = String(raw(child, 'before'));
+      if (before) builder(before);
+      emit(child, index !== lastNonComment || semicolon);
+    }
+  };
+  const block = (target: StringifiableNode, start: string): void => {
+    builder(`${start}${String(raw(target, 'between', 'beforeOpen'))}{`, target, 'start');
+    if (target.nodes?.length) body(target);
+    const after = String(raw(target, 'after', target.nodes?.length ? 'beforeClose' : 'emptyBody'));
+    if (after) builder(after);
+    builder('}', target, 'end');
+  };
+  const emit = (target: StringifiableNode, semicolon = false): void => {
+    switch (target.type) {
+      case 'root':
+      case 'document':
+        body(target);
+        if (target.type === 'root' && target.raws.after) builder(String(target.raws.after));
+        break;
+      case 'rule':
+        block(target, rawValue(target, 'selector'));
+        if (target.raws.ownSemicolon) builder(String(target.raws.ownSemicolon), target, 'end');
+        break;
+      case 'atrule': {
+        const params = target.params ? rawValue(target, 'params') : '';
+        const afterName =
+          target.raws.afterName !== undefined ? String(target.raws.afterName) : params ? ' ' : '';
+        const start = `@${target.name ?? ''}${afterName}${params}`;
+        if (target.nodes) block(target, start);
+        else builder(`${start}${String(target.raws.between ?? '')}${semicolon ? ';' : ''}`, target);
+        break;
+      }
+      case 'decl': {
+        let value = `${target.prop ?? ''}${String(raw(target, 'between', 'colon'))}${rawValue(target, 'value')}`;
+        if (target.important) value += String(target.raws.important ?? ' !important');
+        builder(`${value}${semicolon ? ';' : ''}`, target);
+        break;
+      }
+      case 'comment':
+        builder(
+          `/*${String(raw(target, 'left', 'commentLeft'))}${target.text ?? ''}${String(raw(target, 'right', 'commentRight'))}*/`,
+          target,
+        );
+        break;
+      default:
+        throw new Error(`Unknown AST node type ${target.type}. Provide a custom stringifier.`);
+    }
+  };
+  emit(node);
 }
 
 export function stringifyNode(node: StringifiableNode): string {
   let result = '';
-  postcss.stringify(node as never, (chunk) => {
+  stringify(node, (chunk) => {
     result += chunk;
   });
   return result;

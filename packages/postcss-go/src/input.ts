@@ -1,3 +1,5 @@
+import { CssSyntaxError } from './errors.js';
+
 export interface InputJSON {
   css?: string;
   file?: string;
@@ -25,6 +27,19 @@ export class Input {
     return this.file ?? this.id ?? '';
   }
 
+  error(
+    message: string,
+    line: number,
+    column: number,
+    options: {
+      plugin?: string;
+      endLine?: number;
+      endColumn?: number;
+    } = {},
+  ): CssSyntaxError {
+    return createInputError(this, message, line, column, options);
+  }
+
   fromOffset(offset: number): { col: number; line: number } | null {
     if (offset < 0) return null;
     this.lineToIndex ??= buildLineIndex(this.css ?? '');
@@ -47,6 +62,22 @@ export class Input {
     if (this.map) json.map = { ...this.map };
     return json;
   }
+}
+
+function createInputError(
+  input: Input,
+  message: string,
+  line: number,
+  column: number,
+  options: { plugin?: string; endLine?: number; endColumn?: number },
+): CssSyntaxError {
+  return new CssSyntaxError(message, {
+    file: input.file,
+    source: input.css,
+    line,
+    column,
+    ...options,
+  });
 }
 
 function buildLineIndex(css: string): number[] {

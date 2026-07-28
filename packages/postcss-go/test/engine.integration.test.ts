@@ -97,7 +97,7 @@ test('the Go engine runs config plugins by default', async () => {
   expect(await read(output)).toContain('color: tomato');
 });
 
-test('the CLI supports config parser overrides through PostCSS fallback', async () => {
+test('the CLI recognizes a default parser delegate without a fallback', async () => {
   const fixtureDir = 'test/fixtures/config-parser';
   const output = path.resolve(tmp('output.css'));
 

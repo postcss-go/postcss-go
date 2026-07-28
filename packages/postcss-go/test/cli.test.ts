@@ -13,7 +13,7 @@ test('works with defaults', async () => {
   expect((await read(output)).trim()).toBe((await read('test/fixtures/a.css')).trim());
 });
 
-test('supports custom parser, syntax, and stringifier modules through PostCSS fallback', async () => {
+test('recognizes default parser, syntax, and stringifier delegates without a fallback', async () => {
   const output = tmp('output.css');
   const { error, stderr } = await cli([
     'test/fixtures/a.css',

@@ -207,7 +207,7 @@ test('dirty rewalk visits nodes appended during RootExit', async () => {
   expect(seen).toEqual(['.a', '.added']);
 });
 
-test('nodes are instanceof postcss node classes', async () => {
+test('nodes use postcss-go classes without patching PostCSS constructors', async () => {
   let ruleIsPostcssRule = false;
   let ruleIsHelpersRule = false;
   await runPluginsWithBridge(
@@ -225,7 +225,7 @@ test('nodes are instanceof postcss node classes', async () => {
     { from: 'input.css', map: false },
   );
 
-  expect(ruleIsPostcssRule).toBe(true);
+  expect(ruleIsPostcssRule).toBe(false);
   expect(ruleIsHelpersRule).toBe(true);
   expect(postcss.rule({ selector: '.real' }) instanceof postcss.Rule).toBe(true);
   expect({} instanceof postcss.Rule).toBe(false);

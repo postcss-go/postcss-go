@@ -9,11 +9,10 @@ import {
   type ProcessFileOptions,
 } from '@postcss-go/shared/map-options';
 import { getMapfile, joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
-import postcss, { type AcceptedPlugin, type SourceMap } from 'postcss';
-
 import { createNativeService, isNativeBridgeAvailable } from './native.js';
 import { createNodeService, type NodePostcssGoService } from './node.js';
 import { runPluginsWithBridge, type PluginResult } from './plugin-runtime.js';
+import type { AcceptedPlugin } from './plugin-types.js';
 import { resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
 import type { ProcessOptions, SourceMapOptions } from './types.js';
 
@@ -47,7 +46,7 @@ export interface CliMessage {
 
 export interface CliProcessResult {
   css: string;
-  map?: string | SourceMap;
+  map?: string | { toString(): string };
   mapFile?: string;
   messages: CliMessage[];
   warnings(): CliMessage[];
@@ -101,7 +100,7 @@ export async function processWithGoEngine(
   const run = async (): Promise<CliProcessResult> => {
     const inputCss = typeof css === 'string' ? css : css.toString('utf8');
     if (hasCustomSyntax(options)) {
-      return processWithPostcss(config, inputCss, options);
+      throw new UnsupportedSyntaxError();
     }
     const mapEnabled = isSourceMapEnabled(options.map);
     // With no plugins, sending the input straight to Go avoids PostCSS's
@@ -232,24 +231,6 @@ export async function processWithGoEngine(
   return next;
 }
 
-async function processWithPostcss(
-  config: CliConfig | undefined,
-  css: string,
-  options: ProcessFileOptions,
-): Promise<CliProcessResult> {
-  const plugins = getPlugins(config);
-  const result = await postcss(plugins).process(css, options as postcss.ProcessOptions);
-  return {
-    css: result.css,
-    map: result.map,
-    mapFile: isExternalSourceMap(options.map) ? getSourceMapFile(options) : undefined,
-    warnings() {
-      return result.warnings() as unknown as CliMessage[];
-    },
-    messages: result.messages as unknown as CliMessage[],
-  };
-}
-
 export function runPluginChain(
   config: CliConfig | undefined,
   css: string,
@@ -293,10 +274,8 @@ function hasPlugins(plugins: CliConfig['plugins']): boolean {
 function hasCustomSyntax(options?: ProcessFileOptions): boolean {
   if (!options) return false;
 
-  // Explicit references to PostCSS's defaults do not change AST or output
-  // semantics and should not force the whole pipeline onto the fallback.
-  if (options.parser && options.parser !== postcss.parse) return true;
-  if (options.stringifier && options.stringifier !== postcss.stringify) return true;
+  if (options.parser && !looksLikeDefaultFunction(options.parser, 'parse')) return true;
+  if (options.stringifier && !looksLikeDefaultFunction(options.stringifier, 'stringify')) return true;
   if (options.syntax && !isDefaultSyntax(options.syntax)) return true;
   return false;
 }
@@ -304,7 +283,23 @@ function hasCustomSyntax(options?: ProcessFileOptions): boolean {
 function isDefaultSyntax(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const syntax = value as { parse?: unknown; stringify?: unknown };
-  return syntax.parse === postcss.parse && syntax.stringify === postcss.stringify;
+  return (
+    looksLikeDefaultFunction(syntax.parse, 'parse') &&
+    looksLikeDefaultFunction(syntax.stringify, 'stringify')
+  );
+}
+
+function looksLikeDefaultFunction(value: unknown, name: 'parse' | 'stringify'): boolean {
+  return typeof value === 'function' && value.name === name && value.length > 0;
+}
+
+export class UnsupportedSyntaxError extends Error {
+  constructor() {
+    super(
+      'Custom parser, syntax, and stringifier options are not supported by the postcss-go bridge',
+    );
+    this.name = 'UnsupportedSyntaxError';
+  }
 }
 
 function getSourceMapFile(

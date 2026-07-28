@@ -24,7 +24,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Go tokenizer, parser, AST, processor, stringifier, source-map layer, JSON-RPC bridge, Node service, and WASM service are implemented.
 - [x] The current Node N-API addon provides synchronous in-process parse and stringify transport with a compact binary AST.
 - [x] The JavaScript plugin runtime implements the baseline plugin lifecycle over the postcss-go AST.
-- [ ] Remove every production runtime and type dependency on the `postcss` package.
+- [x] Remove every production runtime and type dependency on the `postcss` package.
 - [ ] Complete the documented PostCSS-compatible public API using postcss-go-owned implementations.
 - [ ] Export and validate the complete N-API synchronous API.
 - [ ] Build, test, and publish every declared native platform package.
@@ -33,13 +33,13 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 
 ### Zero PostCSS production dependency
 
-- [ ] Remove every production `import`, `require`, and type reference to `postcss`.
-- [ ] Remove the `postcss` runtime, peer, optional, and transitive dependency from `@postcss-go/core`.
-- [ ] Replace `postcss-load-config` and `postcss-reporter` with postcss-go-owned configuration loading and reporting.
-- [ ] Implement plugin helpers, AST classes, parsing, stringifying, results, warnings, and errors without loading PostCSS.
-- [ ] Remove PostCSS class `Symbol.hasInstance` patches and other runtime coupling.
-- [ ] Remove every execution path that falls back to the `postcss` package.
-- [ ] Keep PostCSS only as a development/test dependency for differential tests, upstream fixtures, and benchmarks.
+- [x] Remove every production `import`, `require`, and type reference to `postcss`.
+- [x] Remove the `postcss` runtime, peer, optional, and transitive dependency from `@postcss-go/core`.
+- [x] Replace `postcss-load-config` and `postcss-reporter` with postcss-go-owned configuration loading and reporting.
+- [x] Implement plugin helpers, AST classes, parsing, stringifying, results, warnings, and errors without loading PostCSS.
+- [x] Remove PostCSS class `Symbol.hasInstance` patches and other runtime coupling.
+- [x] Remove every execution path that falls back to the `postcss` package.
+- [x] Keep PostCSS only as a development/test dependency for differential tests, upstream fixtures, and benchmarks.
 - [ ] Verify a clean packed-package installation with `npm ls postcss`.
 
 ### Public JavaScript API
@@ -63,7 +63,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Support plugin normalization, `postcssPlugin`, `prepare`, `Once`, node enter/exit visitors, and `OnceExit` ordering.
 - [x] Support synchronous and asynchronous plugin callbacks and Promise rejection on the asynchronous path.
 - [x] Preserve baseline AST mutation, dirty rewalk, traversal, and visitor ordering semantics.
-- [ ] Implement `helpers.postcss` entirely with postcss-go-owned classes and services.
+- [x] Implement `helpers.postcss` entirely with postcss-go-owned classes and services.
 - [ ] Preserve complete plugin context: `result`, `root`, `opts`, `from`, `to`, source/input data, custom messages, and `lastPlugin`.
 - [ ] Complete warning, dependency message, directory-dependency message, and plugin error behavior.
 - [ ] Detect thenables returned by plugin creators, `prepare`, visitors, custom parsers, custom stringifiers, and annotation callbacks during `processSync()`.
@@ -108,9 +108,9 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 
 - [x] Replace the previous PostCSS plugin-chain execution in `packages/postcss-go/src/engine.ts` with the postcss-go plugin runtime.
 - [ ] Define a standalone configuration contract for plugins, parser, syntax, stringifier, maps, and environment context.
-- [ ] Load `.js`, `.mjs`, and `.cjs` configuration without `postcss-load-config`.
-- [ ] Format warnings, errors, and dependency messages without `postcss-reporter`.
-- [ ] Remove the `postcss` peer dependency without replacing it with another runtime path to PostCSS.
+- [x] Load `.js`, `.mjs`, and `.cjs` configuration without `postcss-load-config`.
+- [x] Format warnings, errors, and dependency messages without `postcss-reporter`.
+- [x] Remove the `postcss` peer dependency without replacing it with another runtime path to PostCSS.
 - [ ] Report the backend used for processing and whether a fallback from native to async stdio occurred.
 - [ ] Update package README, type declarations, examples, compatibility tables, and migration documentation.
 

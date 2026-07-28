@@ -9,7 +9,6 @@ import type {
   RuleNode as RuleDTO,
   SourceLocation,
 } from './types.js';
-import postcss from 'postcss';
 import {
   cloneRaws,
   cloneValue,
@@ -21,8 +20,12 @@ import {
   serializeJSONValue,
   splitList,
 } from './ast-utils.js';
-import { defaultRaw, stringifyNode } from './ast-stringifier.js';
+import { defaultRaw } from './ast-stringifier.js';
+import { stringify as stringifyOwned } from './ast-stringifier.js';
+import { CssSyntaxError } from './errors.js';
 import { hydrateInput } from './input.js';
+import { parseSync } from './parser.js';
+import { Warning } from './warning.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
 
@@ -354,18 +357,16 @@ export class Node {
     } = {},
   ): Error {
     const range = this.rangeBy(options);
-    const error = new Error(message);
-    Object.assign(error, {
-      name: 'CssSyntaxError',
-      reason: message,
+    const error = new CssSyntaxError(message, {
       plugin: options.plugin,
       line: range.start.line,
       column: range.start.column,
       endLine: range.end.line,
       endColumn: range.end.column,
       file: this.source?.file,
-      postcssNode: this,
+      source: typeof this.source?.input?.css === 'string' ? this.source.input.css : undefined,
     });
+    error.postcssNode = this;
     return error;
   }
 
@@ -422,13 +423,11 @@ export class Node {
   ): Record<string, unknown> {
     const lastPlugin =
       typeof result.lastPlugin === 'string' ? result.lastPlugin : result.lastPlugin?.postcssPlugin;
-    const warning = {
-      type: 'warning',
-      text,
+    const warning = new Warning(text, {
       plugin: options.plugin ?? lastPlugin,
       node: this,
-      ...this.rangeBy(options),
-    };
+      ...options,
+    });
     (result.messages ??= []).push(warning);
     return warning;
   }
@@ -652,7 +651,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
         continue;
       }
       if (typeof child === 'string') {
-        const parsed = postcss.parse(child);
+        const parsed = parseSync(child);
         nodes.push(
           ...parsed.nodes.map((node) => {
             const json = node.toJSON() as unknown as AstDTO;
@@ -1105,7 +1104,7 @@ export function toAst(node: Node): AstDTO {
 }
 
 function defaultStringifier(node: Node, builder: Builder): void {
-  builder(stringifyNode(node), node);
+  stringifyOwned(node, builder as never);
 }
 
 function hydrateJSON(
