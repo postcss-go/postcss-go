@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+/**
+ * Refresh the vendored real-world CSS fixtures used by both benchmark suites.
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

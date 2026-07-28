@@ -1,4 +1,13 @@
-export { parse, parseAst, process, stringifyAst, toResult, type DocumentResult } from './api.js';
+export {
+  noWork,
+  parse,
+  parseAst,
+  process,
+  stringify,
+  stringifyAst,
+  toResult,
+  type DocumentResult,
+} from './api.js';
 export {
   AtRule,
   Comment,
@@ -11,6 +20,7 @@ export {
   fromAst,
   fromJSON,
   toAst,
+  asProcessRoot,
   type AnyNode,
   type AtRuleInit,
   type Builder,
@@ -25,6 +35,7 @@ export {
   type NodeInit,
   type NodeInput,
   type NodeType,
+  type ProcessRoot,
   type RootInit,
   type RuleInit,
   type Stringifier,
@@ -32,11 +43,44 @@ export {
   type WalkCallback,
 } from './ast.js';
 export { Input, hydrateInput, type InputJSON } from './input.js';
-export { CssSyntaxError, type CssSyntaxErrorOptions } from './errors.js';
+export {
+  AsyncPluginError,
+  CssSyntaxError,
+  SyncBackendUnavailableError,
+  UnsupportedAstNodeError,
+  UnsupportedSyntaxError,
+  type CssSyntaxErrorOptions,
+} from './errors.js';
 export { Warning, type WarningOptions } from './warning.js';
-export { Result, type ResultProcessor } from './result.js';
-export { parseSync, type Parser } from './parser.js';
-export { stringify as stringifySync } from './ast-stringifier.js';
+export { Result, ResultMap, type ResultProcessor } from './result.js';
+export type { Parser } from './parser.js';
+export {
+  noWorkSync,
+  getBackendCapabilities,
+  parseSync,
+  postcss,
+  processSync,
+  Processor,
+  stringifySync,
+  type CssInput,
+  type PostcssGoCapabilities,
+  type Postcss,
+  type ProcessorOptions,
+  type PublicResult,
+} from './processor.js';
+export {
+  NATIVE_BACKEND_CAPABILITIES,
+  STDIO_BACKEND_CAPABILITIES,
+  WASM_WORKER_BACKEND_CAPABILITIES,
+  isSyncPostcssGoService,
+  type AsyncOnlyBackendCapabilities,
+  type BackendCapabilities,
+  type BackendKind,
+  type PostcssGoService,
+  type SyncPostcssGoService,
+  type SynchronousBackendCapabilities,
+} from './service.js';
+export { PreviousMap, type PreviousMapOptions } from './previous-map.js';
 export {
   list,
   postcssApi,
@@ -73,10 +117,10 @@ export {
   type CliMessage,
   type CliProcessResult,
   type GoEngine,
-  UnsupportedSyntaxError,
 } from './engine.js';
 export {
   applyMapAnnotation,
+  applyMapAnnotationAsync,
   mapDefersInlineMode,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
@@ -98,7 +142,7 @@ export { createNativeService, isNativeBridgeAvailable, NativePostcssGoService } 
 export { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
 export { getPollInterval, usePolling } from './poll.js';
 export { getBundledGoBridgeBinPath, resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
-export { UnsupportedServiceError, type PostcssGoService } from './service.js';
+export { UnsupportedServiceError } from './service.js';
 export type {
   AstNode,
   AstStringifyResult,
@@ -110,6 +154,11 @@ export type {
   ParseResult,
   ProcessOptions,
   ProcessResult,
+  SourceMap,
+  StringifierBuilder,
+  CustomParser,
+  CustomParserResult,
+  CustomStringifier,
   PreviousSourceMap,
   RootNode,
   RawField,
@@ -121,3 +170,5 @@ export type {
   SourcePosition,
   SourceMapOptions,
 } from './types.js';
+
+export { postcss as default } from './processor.js';

@@ -97,14 +97,14 @@ test('the Go engine runs config plugins by default', async () => {
   expect(await read(output)).toContain('color: tomato');
 });
 
-test('the CLI recognizes a default parser delegate without a fallback', async () => {
+test('the CLI rejects a parser delegate instead of silently ignoring it', async () => {
   const fixtureDir = 'test/fixtures/config-parser';
   const output = path.resolve(tmp('output.css'));
 
   const { error, stderr } = await cli(['input.css', '-o', output, '--no-map'], fixtureDir);
 
-  expect(error, stderr).toBeFalsy();
-  expect(await read(output)).toContain('color: red');
+  expect(error).toBeTruthy();
+  expect(stderr).toContain('UnsupportedSyntaxError');
 });
 
 test('the Go engine writes external sourcemaps by default', async () => {

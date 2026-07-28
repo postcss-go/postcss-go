@@ -2,7 +2,7 @@
  * Benchmark CSSTree (https://github.com/csstree/csstree) using the same
  * workloads as benchmark/bench_test.go.
  *
- * Output is JSON lines for scripts/compare-benchmarks.mjs.
+ * Output is JSON lines for benchmark/run.mjs.
  */
 import * as csstree from 'css-tree';
 import { performance } from 'node:perf_hooks';

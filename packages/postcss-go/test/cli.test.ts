@@ -13,7 +13,7 @@ test('works with defaults', async () => {
   expect((await read(output)).trim()).toBe((await read('test/fixtures/a.css')).trim());
 });
 
-test('recognizes default parser, syntax, and stringifier delegates without a fallback', async () => {
+test('rejects parser, syntax, and stringifier delegates instead of ignoring them', async () => {
   const output = tmp('output.css');
   const { error, stderr } = await cli([
     'test/fixtures/a.css',
@@ -28,8 +28,8 @@ test('recognizes default parser, syntax, and stringifier delegates without a fal
     './test/fixtures/custom-modules/stringifier.mjs',
   ]);
 
-  expect(error, stderr).toBeFalsy();
-  expect(await read(output)).toContain('color: red');
+  expect(error).toBeTruthy();
+  expect(stderr).toContain('UnsupportedSyntaxError');
 });
 
 test('rejects the removed --engine option', async () => {

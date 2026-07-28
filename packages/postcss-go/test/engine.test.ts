@@ -290,7 +290,7 @@ test('processWithGoEngine resolves dynamic source map annotations before the Go 
     messages: [],
   });
   const parseSpy = vi.fn().mockResolvedValue({ root });
-  const annotation = vi.fn((_to, receivedRoot) => {
+  const annotation = vi.fn(async (_to, receivedRoot) => {
     expect(receivedRoot).toBe(root);
     return 'maps/custom.map';
   });
@@ -385,7 +385,7 @@ test('assertGoCompatibility identifies custom config parser options', () => {
   ).toBe(false);
 });
 
-test('assertGoCompatibility allows explicit PostCSS default syntax delegates', () => {
+test('assertGoCompatibility rejects explicit PostCSS default syntax delegates', () => {
   expect(
     assertGoCompatibility(
       {},
@@ -397,7 +397,7 @@ test('assertGoCompatibility allows explicit PostCSS default syntax delegates', (
         },
       },
     ),
-  ).toBe(true);
+  ).toBe(false);
 });
 
 test('assertGoCompatibility still rejects a genuinely custom syntax', () => {

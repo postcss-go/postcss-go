@@ -1,6 +1,6 @@
 export type MapOptions = {
   absolute?: boolean;
-  annotation?: boolean | string | ((file?: string, root?: unknown) => string);
+  annotation?: boolean | string | ((file?: string, root?: unknown) => string | Promise<string>);
   from?: string;
   inline?: boolean;
   prev?: unknown;
@@ -50,12 +50,44 @@ export function applyMapAnnotation<T extends { to?: string; map?: unknown }>(
     return options;
   }
   const mapOptions = map as MapOptions;
-  const annotation = mapOptions.annotation as (file?: string, root?: unknown) => string;
+  const callback = mapOptions.annotation as (
+    file?: string,
+    root?: unknown,
+  ) => string | Promise<string>;
+  const annotation = callback(options.to, root);
+  if (isThenable(annotation)) {
+    void Promise.resolve(annotation).catch(() => undefined);
+    throw new Error('map.annotation returned a Promise during synchronous annotation resolution');
+  }
   return {
     ...options,
     map: {
       ...mapOptions,
-      annotation: annotation(options.to, root),
+      annotation,
+    },
+  };
+}
+
+/** Materialize synchronous or asynchronous `map.annotation` callbacks. */
+export async function applyMapAnnotationAsync<T extends { to?: string; map?: unknown }>(
+  options: T,
+  root?: unknown,
+): Promise<T> {
+  const map = options.map;
+  if (!map || typeof map !== 'object' || typeof (map as MapOptions).annotation !== 'function') {
+    return options;
+  }
+  const mapOptions = map as MapOptions;
+  const callback = mapOptions.annotation as (
+    file?: string,
+    root?: unknown,
+  ) => string | Promise<string>;
+  const annotation = await callback(options.to, root);
+  return {
+    ...options,
+    map: {
+      ...mapOptions,
+      annotation,
     },
   };
 }
@@ -168,5 +200,13 @@ function hasFlatMapOutputOptions(options: NormalizeProcessOptionsInput): boolean
     options.mapAnnotation !== undefined ||
     options.mapAnnotationDefault !== undefined ||
     options.mapAnnotationDisabled !== undefined
+  );
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
   );
 }

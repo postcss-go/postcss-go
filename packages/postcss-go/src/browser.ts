@@ -1,10 +1,12 @@
 import {
-  applyMapAnnotation,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
-import type { PostcssGoService } from './service.js';
+import { WASM_WORKER_BACKEND_CAPABILITIES, type PostcssGoService } from './service.js';
+import { asProcessRoot, fromAst } from './ast.js';
+import { assertSupportedAst } from './codec.js';
+import { attachInputMetadata } from './input.js';
 import type {
   AstNode,
   AstStringifyResult,
@@ -13,6 +15,8 @@ import type {
   ProcessOptions,
   ProcessResult,
 } from './types.js';
+import { assertSupportedSyntax } from './syntax-options.js';
+import { finalizeStringifyResult, prepareStringifyOptions } from './source-map-output.js';
 
 export interface BrowserWorkerLike {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -29,6 +33,7 @@ export interface BrowserPostcssGoServiceOptions {
 }
 
 export class BrowserPostcssGoService implements PostcssGoService {
+  readonly capabilities = WASM_WORKER_BACKEND_CAPABILITIES;
   readonly workerUrl?: string;
   readonly wasmUrl?: string;
   readonly wasmExecUrl?: string;
@@ -63,10 +68,12 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
+    assertSupportedSyntax(options);
     return this.call<ParseResult>('parse', { css, options });
   }
 
   process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    assertSupportedSyntax(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
       return effectiveOptions.then((resolved) =>
@@ -89,6 +96,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    assertSupportedSyntax(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
       return effectiveOptions.then((resolved) =>
@@ -115,17 +123,21 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    assertSupportedSyntax(options);
+    assertSupportedAst(ast);
+    const preparedOptions = prepareStringifyOptions(ast, options);
+    const effectiveOptions = await this.resolveStringifyAnnotation(ast, preparedOptions);
     const result = await this.call<AstStringifyResult>('stringify', {
       ast,
       options: normalizeProcessOptions(
-        options as NormalizeProcessOptionsInput,
+        effectiveOptions as NormalizeProcessOptionsInput,
         joinMapAnnotationPath,
       ) as ProcessOptions,
     });
     if (typeof result?.css !== 'string') {
       throw new Error('postcss-go WASM stringify response is missing css');
     }
-    return result;
+    return finalizeStringifyResult(result, effectiveOptions, ast);
   }
 
   async close(): Promise<void> {
@@ -164,9 +176,38 @@ export class BrowserPostcssGoService implements PostcssGoService {
     ) {
       return options;
     }
-    return this.parse(css, { from: options.from }).then((parsed) =>
-      applyMapAnnotation(options, parsed.root),
-    );
+    const map = options.map;
+    const annotationCallback = map.annotation as (
+      file: string | undefined,
+      root: ReturnType<typeof asProcessRoot>,
+    ) => string | Promise<string>;
+    return this.parse(css, { from: options.from }).then(async (parsed) => {
+      const root = asProcessRoot(fromAst(parsed.root));
+      attachInputMetadata(root, css, { from: options.from });
+      return {
+        ...options,
+        map: {
+          ...map,
+          annotation: await annotationCallback(options.to, root),
+        },
+      };
+    });
+  }
+
+  private async resolveStringifyAnnotation(
+    root: AstNode,
+    options: ProcessOptions,
+  ): Promise<ProcessOptions> {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const live = asProcessRoot(fromAst(root));
+    const annotation = await options.map.annotation(options.to, live as never);
+    return { ...options, map: { ...options.map, annotation } };
   }
 
   private handleMessage(message: unknown): void {

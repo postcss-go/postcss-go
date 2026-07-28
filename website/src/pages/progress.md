@@ -44,19 +44,19 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 
 ### Public JavaScript API
 
-- [ ] Implement the PostCSS-compatible entry point and processor lifecycle within the documented compatibility scope.
-- [ ] Implement postcss-go-owned `Processor`, result, input, previous-map, warning, and syntax-error behavior.
-- [ ] Export postcss-go-owned plugin, result, input, warning, syntax, parser, stringifier, source-map, and process-option types.
-- [ ] Provide explicit asynchronous `parse`, `process`, and `stringify` APIs.
-- [ ] Provide explicit synchronous `parseSync`, `processSync`, `stringifySync`, and `noWorkSync` APIs.
-- [ ] Document compatibility differences instead of reproducing implicit `LazyResult` behavior where it conflicts with explicit sync/async APIs.
+- [x] Implement the PostCSS-compatible entry point and processor lifecycle within the documented compatibility scope.
+- [ ] Complete postcss-go-owned `Processor`, result, input, previous-map, warning, and syntax-error parity.
+- [x] Export postcss-go-owned plugin, result, input, warning, syntax, parser, stringifier, source-map, and process-option types.
+- [x] Provide explicit asynchronous `parse`, `process`, and `stringify` APIs.
+- [x] Provide explicit synchronous `parseSync`, `processSync`, `stringifySync`, and `noWorkSync` APIs.
+- [x] Document compatibility differences instead of reproducing implicit `LazyResult` behavior where it conflicts with explicit sync/async APIs.
 - [x] Implement the baseline Node/Container method, mutation, traversal, JSON, and proxy surface.
 - [ ] Complete Node/Container behavior and type parity through a dedicated upstream contract suite.
 - [x] Support `fromJSON` and custom AST nodes in the JavaScript/DTO AST layer.
-- [ ] Preserve or explicitly diagnose custom AST nodes across native binary and WASM boundaries.
+- [x] Preserve or explicitly diagnose custom AST nodes across native binary and WASM boundaries.
 - [ ] Complete error and warning object parity, including source, input, plugin, node, line, and column metadata.
-- [ ] Define a postcss-go-owned custom parser, syntax, and stringifier contract.
-- [ ] Reject unsupported custom syntax with a stable error instead of falling back to PostCSS.
+- [x] Define a postcss-go-owned custom parser, syntax, and stringifier contract.
+- [x] Reject unsupported custom syntax with a stable error instead of falling back to PostCSS.
 
 ### Plugin execution
 
@@ -66,8 +66,8 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Implement `helpers.postcss` entirely with postcss-go-owned classes and services.
 - [ ] Preserve complete plugin context: `result`, `root`, `opts`, `from`, `to`, source/input data, custom messages, and `lastPlugin`.
 - [ ] Complete warning, dependency message, directory-dependency message, and plugin error behavior.
-- [ ] Detect thenables returned by plugin creators, `prepare`, visitors, custom parsers, custom stringifiers, and annotation callbacks during `processSync()`.
-- [ ] Throw a stable asynchronous-plugin error from `processSync()` instead of waiting or switching execution modes.
+- [x] Detect thenables returned by supported synchronous extension points: plugin creators, `prepare`, visitors, `Once`, `OnceExit`, and annotation callbacks.
+- [x] Throw a stable asynchronous-plugin error from `processSync()` instead of waiting or switching execution modes.
 - [ ] Provide stable diagnostics for unsupported plugin features without loading PostCSS.
 - [ ] Validate representative real plugins, including mutation-heavy and asynchronous plugins.
 - [ ] Run the same plugin contract suite against native, stdio, WASM Worker, and upstream PostCSS reference behavior.
@@ -78,13 +78,13 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Replace JSON/stdio AST transport on the native path with the compact binary AST codec.
 - [x] Hydrate and serialize live JavaScript AST nodes on the native plugin path.
 - [x] Add synchronous native parse and stringify service methods.
-- [ ] Add synchronous process, no-work, and source-map generation service methods.
-- [ ] Add a fully synchronous plugin runner that does not enter a Promise or microtask path.
-- [ ] Export `parseSync`, `processSync`, `stringifySync`, and `noWorkSync` from the public package.
-- [ ] Expose backend capabilities so callers can determine whether synchronous execution is available.
-- [ ] Throw a stable `SyncBackendUnavailableError` when a synchronous API is used without the N-API backend.
-- [ ] Keep `process()` asynchronous and able to run both synchronous and asynchronous plugins on every supported async backend.
-- [ ] Document that synchronous processing blocks the Node.js event loop and recommend async or Worker Thread execution for server workloads.
+- [x] Add synchronous process, no-work, and source-map generation service methods.
+- [x] Add a fully synchronous plugin runner that does not enter a Promise or microtask path.
+- [x] Export `parseSync`, `processSync`, `stringifySync`, and `noWorkSync` from the public package.
+- [x] Expose service and default backend capabilities so callers can determine whether synchronous execution is available.
+- [x] Throw a stable `SyncBackendUnavailableError` when a synchronous API is used without the N-API backend.
+- [x] Keep `process()` asynchronous and able to run both synchronous and asynchronous plugins on every supported async backend.
+- [x] Document that synchronous processing blocks the Node.js event loop and recommend async or Worker Thread execution for server workloads.
 - [ ] Define Worker Thread ownership, native cleanup, panic/error translation, and process shutdown behavior.
 - [ ] Build native binaries for supported macOS, Linux glibc, Linux musl, and Windows targets.
 - [ ] Make missing native artifacts fatal in release builds while preserving an explicit async stdio fallback at runtime.
@@ -159,10 +159,10 @@ N-API synchronous API.
 - [x] Establish the Go CSS data-path baseline.
 - [x] Implement the current JavaScript AST facade and baseline plugin runtime.
 - [x] Implement the compact binary N-API transport.
-- [ ] Introduce postcss-go-owned public contracts and remove production PostCSS types.
-- [ ] Replace `helpers.postcss`, class coupling, custom-syntax fallback, configuration loading, and reporting.
-- [ ] Remove all production and published-package dependencies on PostCSS.
-- [ ] Implement the explicit synchronous service and plugin execution path.
+- [x] Introduce postcss-go-owned public contracts and remove production PostCSS types.
+- [x] Replace `helpers.postcss`, class coupling, custom-syntax fallback, configuration loading, and reporting.
+- [x] Remove all production and published-package dependencies on PostCSS.
+- [x] Implement the explicit synchronous service and plugin execution path.
 - [ ] Export and test the complete sync and async public APIs.
 - [ ] Complete result, input, warning, error, plugin-context, and custom-syntax compatibility.
 - [ ] Run real-plugin and cross-backend contract suites.

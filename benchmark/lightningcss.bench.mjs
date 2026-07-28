@@ -6,7 +6,7 @@
  * transform(), rather than exposing its AST parser separately. For that
  * reason this benchmark only emits ParseStringify results.
  *
- * Output is JSON lines for scripts/compare-benchmarks.mjs.
+ * Output is JSON lines for benchmark/run.mjs.
  */
 import { transform } from 'lightningcss';
 import { performance } from 'node:perf_hooks';

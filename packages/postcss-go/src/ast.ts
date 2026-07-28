@@ -24,7 +24,7 @@ import { defaultRaw } from './ast-stringifier.js';
 import { stringify as stringifyOwned } from './ast-stringifier.js';
 import { CssSyntaxError } from './errors.js';
 import { hydrateInput } from './input.js';
-import { parseSync } from './parser.js';
+import { parseOwnedSync } from './parser.js';
 import { Warning } from './warning.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
@@ -365,6 +365,7 @@ export class Node {
       endColumn: range.end.column,
       file: this.source?.file,
       source: typeof this.source?.input?.css === 'string' ? this.source.input.css : undefined,
+      input: this.source?.input,
     });
     error.postcssNode = this;
     return error;
@@ -651,7 +652,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
         continue;
       }
       if (typeof child === 'string') {
-        const parsed = parseSync(child);
+        const parsed = parseOwnedSync(child);
         nodes.push(
           ...parsed.nodes.map((node) => {
             const json = node.toJSON() as unknown as AstDTO;
@@ -1085,6 +1086,16 @@ export type NodeFromJSON<T> = T extends DocumentDTO
 
 export function fromAst<T extends AstDTO>(node: T): NodeFromJSON<T> {
   return asNode(node) as NodeFromJSON<T>;
+}
+
+/** Top-level trees returned by public parse/process APIs. */
+export type ProcessRoot = Root | Document;
+
+/** Coerce a DTO or live node into a Root/Document, rejecting other types. */
+export function asProcessRoot(value: Node | AstDTO): ProcessRoot {
+  const node = value instanceof Node ? value : fromAst(value);
+  if (node instanceof Root || node instanceof Document) return node;
+  throw new Error('postcss-go expected a Root or Document node');
 }
 
 /** Rehydrate a serialized PostCSS-shaped AST, including arrays of nodes. */

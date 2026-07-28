@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src/shims.d.ts", "test/public-types.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  }
+}

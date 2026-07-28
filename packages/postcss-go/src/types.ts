@@ -1,3 +1,5 @@
+import type { PreviousMap } from './previous-map.js';
+
 export interface SourcePosition {
   line: number;
   column: number;
@@ -9,7 +11,7 @@ export interface SourceInput {
   file?: string;
   from?: string;
   id?: string;
-  map?: Record<string, unknown>;
+  map?: PreviousMap | Record<string, unknown>;
   toJSON?: () => Record<string, unknown>;
   [property: string]: unknown;
 }
@@ -122,7 +124,10 @@ export type PreviousSourceMap =
 
 export interface SourceMapOptions {
   absolute?: boolean;
-  annotation?: boolean | string | ((file: string | undefined, root: RootNode) => string);
+  annotation?:
+    | boolean
+    | string
+    | ((file: string | undefined, root: RootNode) => string | Promise<string>);
   from?: string;
   inline?: boolean;
   prev?: PreviousSourceMap;
@@ -132,6 +137,9 @@ export interface SourceMapOptions {
 export interface ProcessOptions {
   from?: string;
   to?: string;
+  parser?: CustomParser;
+  syntax?: Syntax;
+  stringifier?: CustomStringifier;
   map?: boolean | SourceMapOptions;
   mapAuto?: boolean;
   mapFile?: string;
@@ -149,13 +157,45 @@ export interface ProcessOptions {
   mapAnnotation?: string;
   mapAnnotationDefault?: boolean;
   mapAnnotationDisabled?: boolean;
+  [option: string]: unknown;
 }
 
 export interface ProcessResult {
   css: string;
   map?: string;
-  root: RootNode;
+  /**
+   * Bridge services return a DTO tree; public `process()` hydrates this to a
+   * live `Root` or `Document` before returning to callers.
+   */
+  root: RootNode | DocumentNode | import('./ast.js').ProcessRoot;
   messages: Warning[];
+}
+
+/** A source map value returned by postcss-go. */
+export interface SourceMap {
+  toString(): string;
+  toJSON?(): Record<string, unknown>;
+}
+
+/** Parser contract accepted by JavaScript-only integration points. */
+export type CustomParserResult = AstNode | import('./ast.js').Node;
+export type CustomParser = (
+  css: string | { toString(): string },
+  options?: ProcessOptions,
+) => CustomParserResult | Promise<CustomParserResult>;
+
+/** Builder callback used by a custom stringifier. */
+export type StringifierBuilder = (chunk: string, node?: unknown, type?: string) => void;
+
+/** Stringifier contract accepted by JavaScript-only integration points. */
+export type CustomStringifier = (
+  node: unknown,
+  builder: StringifierBuilder,
+) => void | Promise<void>;
+
+export interface Syntax {
+  parse?: CustomParser;
+  stringify?: CustomStringifier;
 }
 
 export interface NoWorkResult {

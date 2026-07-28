@@ -1,11 +1,14 @@
-import { CssSyntaxError } from './errors.js';
+import { CssSyntaxError, positionAt } from './errors.js';
+import type { Node } from './ast.js';
+import { PreviousMap } from './previous-map.js';
+import type { ProcessOptions } from './types.js';
 
 export interface InputJSON {
   css?: string;
   file?: string;
   hasBOM?: boolean;
   id?: string;
-  map?: Record<string, unknown>;
+  map?: PreviousMap | Record<string, unknown>;
   [property: string]: unknown;
 }
 
@@ -18,7 +21,7 @@ export class Input {
   hasBOM = false;
   file?: string;
   id?: string;
-  map?: Record<string, unknown>;
+  map?: PreviousMap | Record<string, unknown>;
   [property: string]: unknown;
 
   private lineToIndex?: number[];
@@ -73,6 +76,7 @@ function createInputError(
 ): CssSyntaxError {
   return new CssSyntaxError(message, {
     file: input.file,
+    input,
     source: input.css,
     line,
     column,
@@ -100,4 +104,56 @@ export function hydrateInput(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   if (value instanceof Input) return value;
   return Object.setPrototypeOf({ ...(value as Record<string, unknown>) }, Input.prototype) as Input;
+}
+
+/** Attach one shared owned Input instance to every source-bearing live node. */
+export function attachInput(root: Node, css: string, file?: string): Input {
+  const input = new Input();
+  input.css = css;
+  input.file = file;
+  if (!root.source) {
+    root.source = {
+      start: { line: 1, column: 1, offset: 0 },
+      end: positionAt(css, css.length),
+      ...(file ? { file } : {}),
+    };
+  }
+  const visit = (node: Node): void => {
+    if (node.source) {
+      node.source.input = input;
+      if (file && !node.source.file) node.source.file = file;
+    }
+    const children = (node as Node & { nodes?: Node[] }).nodes;
+    for (const child of children ?? []) visit(child);
+  };
+  visit(root);
+  return input;
+}
+
+export function hasPreviousMap(css: string, options: ProcessOptions = {}): boolean {
+  const map = options.map;
+  if (map === false) return false;
+  if (map && typeof map === 'object' && map.prev !== undefined) {
+    return map.prev !== false;
+  }
+  return /\/\*\s*# sourceMappingURL=/.test(css);
+}
+
+/** Attach PostCSS-compatible previous-map metadata to an owned Input. */
+export function attachPreviousMap(
+  input: Input,
+  css: string,
+  options: ProcessOptions = {},
+): Input {
+  if (hasPreviousMap(css, options)) input.map = new PreviousMap(css, options);
+  return input;
+}
+
+/** Attach one Input, including previous-map metadata, to a live AST. */
+export function attachInputMetadata(
+  root: Node,
+  css: string,
+  options: ProcessOptions = {},
+): Input {
+  return attachPreviousMap(attachInput(root, css, options.from), css, options);
 }

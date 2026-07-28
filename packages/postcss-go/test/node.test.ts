@@ -218,7 +218,8 @@ test('NodePostcssGoService parses, processes, and stringifies through the bridge
     { type: 'root', nodes: [] },
     { from: 'input.css', map: { inline: false } },
   );
-  expect(stringified.css).toBe('.from-ast { color: blue; }');
+  expect(stringified.css).toContain('.from-ast { color: blue; }');
+  expect(stringified.css).toContain('sourceMappingURL=input.css.map');
   expect(stringified.map).toContain('"version":3');
 
   await service.close();

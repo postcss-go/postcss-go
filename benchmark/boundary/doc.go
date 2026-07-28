@@ -5,7 +5,9 @@
 // which also build a NAPI addon and a wasip1 reactor module to price a single
 // synchronous crossing. Run everything with:
 //
-//	node benchmark/boundary/run-all.mjs
+//	node benchmark/run-boundary.mjs
+//
+// Pass --js-only or --go-only to run just one half of the suite.
 //
 // The Go benchmarks are opt-in so they stay out of `go test ./...`:
 //

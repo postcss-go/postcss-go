@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import {
-  applyMapAnnotation,
+  applyMapAnnotationAsync,
   isExternalSourceMap,
   isSourceMapEnabled,
   mapDefersInlineMode,
@@ -15,6 +15,8 @@ import { runPluginsWithBridge, type PluginResult } from './plugin-runtime.js';
 import type { AcceptedPlugin } from './plugin-types.js';
 import { resolveGoBridgeServiceOptions } from './resolve-go-bridge.js';
 import type { ProcessOptions, SourceMapOptions } from './types.js';
+import { UnsupportedSyntaxError } from './errors.js';
+import { assertSupportedSyntax, hasUnsupportedSyntax } from './syntax-options.js';
 
 export interface CliConfig {
   options?: ProcessFileOptions;
@@ -66,7 +68,7 @@ export function assertGoCompatibility(
   argv: { parser?: string; syntax?: string; stringifier?: string },
   config?: CliConfig,
 ): boolean {
-  return !hasCustomSyntax({
+  return !hasUnsupportedSyntax({
     parser: argv.parser,
     syntax: argv.syntax,
     stringifier: argv.stringifier,
@@ -99,9 +101,7 @@ export async function processWithGoEngine(
 ): Promise<CliProcessResult> {
   const run = async (): Promise<CliProcessResult> => {
     const inputCss = typeof css === 'string' ? css : css.toString('utf8');
-    if (hasCustomSyntax(options)) {
-      throw new UnsupportedSyntaxError();
-    }
+    assertSupportedSyntax(options);
     const mapEnabled = isSourceMapEnabled(options.map);
     // With no plugins, sending the input straight to Go avoids PostCSS's
     // NoWorkResult/MapGenerator path. Go owns the complete no-work map flow.
@@ -132,7 +132,7 @@ export async function processWithGoEngine(
       const parsed = await engine.service.parse(inputCss, { from: options.from });
       annotationRoot = parsed.root;
     }
-    const optionsForService = applyMapAnnotation(options, annotationRoot);
+    const optionsForService = await applyMapAnnotationAsync(options, annotationRoot);
     const mapForServiceBase = optionsForService.map as ProcessOptions['map'];
     const resolvedAnnotation =
       mapForServiceBase && typeof mapForServiceBase === 'object'
@@ -271,36 +271,7 @@ function hasPlugins(plugins: CliConfig['plugins']): boolean {
   return Object.keys(plugins).length > 0;
 }
 
-function hasCustomSyntax(options?: ProcessFileOptions): boolean {
-  if (!options) return false;
-
-  if (options.parser && !looksLikeDefaultFunction(options.parser, 'parse')) return true;
-  if (options.stringifier && !looksLikeDefaultFunction(options.stringifier, 'stringify')) return true;
-  if (options.syntax && !isDefaultSyntax(options.syntax)) return true;
-  return false;
-}
-
-function isDefaultSyntax(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  const syntax = value as { parse?: unknown; stringify?: unknown };
-  return (
-    looksLikeDefaultFunction(syntax.parse, 'parse') &&
-    looksLikeDefaultFunction(syntax.stringify, 'stringify')
-  );
-}
-
-function looksLikeDefaultFunction(value: unknown, name: 'parse' | 'stringify'): boolean {
-  return typeof value === 'function' && value.name === name && value.length > 0;
-}
-
-export class UnsupportedSyntaxError extends Error {
-  constructor() {
-    super(
-      'Custom parser, syntax, and stringifier options are not supported by the postcss-go bridge',
-    );
-    this.name = 'UnsupportedSyntaxError';
-  }
-}
+export { UnsupportedSyntaxError };
 
 function getSourceMapFile(
   options: ProcessFileOptions,

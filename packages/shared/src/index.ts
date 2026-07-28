@@ -1,5 +1,6 @@
 export {
   applyMapAnnotation,
+  applyMapAnnotationAsync,
   isExternalSourceMap,
   isSourceMapEnabled,
   mapDefersInlineMode,

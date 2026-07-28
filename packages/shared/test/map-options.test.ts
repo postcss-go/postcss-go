@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   applyMapAnnotation,
+  applyMapAnnotationAsync,
   isExternalSourceMap,
   isSourceMapEnabled,
   mapDefersInlineMode,
@@ -95,6 +96,24 @@ test('applyMapAnnotation evaluates annotation callbacks', () => {
     root,
   );
   expect(applied.map).toEqual({ annotation: 'maps/out.css.map' });
+});
+
+test('applyMapAnnotationAsync awaits annotation callbacks', async () => {
+  const root = { type: 'root' };
+  const applied = await applyMapAnnotationAsync(
+    {
+      to: 'out.css',
+      map: {
+        annotation: async (file, received) => {
+          expect(file).toBe('out.css');
+          expect(received).toBe(root);
+          return 'maps/async.css.map';
+        },
+      },
+    },
+    root,
+  );
+  expect(applied.map).toEqual({ annotation: 'maps/async.css.map' });
 });
 
 test('map mode helpers match PostCSS inline/external predicates', () => {

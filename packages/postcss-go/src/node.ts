@@ -3,12 +3,17 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  applyMapAnnotation,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
-import type { PostcssGoService } from './service.js';
+import { STDIO_BACKEND_CAPABILITIES, type PostcssGoService } from './service.js';
+import { asProcessRoot, fromAst } from './ast.js';
+import { assertSupportedAst } from './codec.js';
+import { CssSyntaxError } from './errors.js';
+import { attachInputMetadata, Input } from './input.js';
+import { assertSupportedSyntax } from './syntax-options.js';
+import { finalizeStringifyResult, prepareStringifyOptions } from './source-map-output.js';
 import type {
   AstNode,
   AstStringifyResult,
@@ -83,6 +88,7 @@ export function createNodeService(options: NodePostcssGoServiceOptions = {}): No
 }
 
 export class NodePostcssGoService implements PostcssGoService {
+  readonly capabilities = STDIO_BACKEND_CAPABILITIES;
   readonly binPath?: string;
   readonly binArgs?: string[];
   readonly workingDirectory?: string;
@@ -98,6 +104,7 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
+    assertSupportedSyntax(options);
     const response = await this.request('parse', { css, options });
     const root = response.result?.root;
     if (!root) throw new Error('postcss-go bridge parse response is missing root');
@@ -105,6 +112,7 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    assertSupportedSyntax(options);
     const effectiveOptions = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effectiveOptions as NormalizeProcessOptionsInput,
@@ -118,6 +126,7 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   async noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    assertSupportedSyntax(options);
     const effectiveOptions = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effectiveOptions as NormalizeProcessOptionsInput,
@@ -135,15 +144,23 @@ export class NodePostcssGoService implements PostcssGoService {
   }
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    assertSupportedSyntax(options);
+    assertSupportedAst(ast);
+    const preparedOptions = prepareStringifyOptions(ast, options);
+    const effectiveOptions = await this.resolveStringifyAnnotation(ast, preparedOptions);
     const normalized = normalizeProcessOptions(
-      options as NormalizeProcessOptionsInput,
+      effectiveOptions as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
     const response = await this.request('stringify', { ast, options: normalized });
     if (typeof response.result?.css !== 'string') {
       throw new Error('postcss-go bridge stringify response is missing css');
     }
-    return { css: response.result.css, map: response.result.map };
+    return finalizeStringifyResult(
+      { css: response.result.css, map: response.result.map },
+      effectiveOptions,
+      ast,
+    );
   }
 
   async close(): Promise<void> {
@@ -161,7 +178,26 @@ export class NodePostcssGoService implements PostcssGoService {
       return options;
     }
     const parsed = await this.parse(css, { from: options.from });
-    return applyMapAnnotation(options, parsed.root);
+    const root = asProcessRoot(fromAst(parsed.root));
+    attachInputMetadata(root, css, { from: options.from });
+    const annotation = await options.map.annotation(options.to, root as never);
+    return { ...options, map: { ...options.map, annotation } };
+  }
+
+  private async resolveStringifyAnnotation(
+    root: AstNode,
+    options: ProcessOptions,
+  ): Promise<ProcessOptions> {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const live = asProcessRoot(fromAst(root));
+    const annotation = await options.map.annotation(options.to, live as never);
+    return { ...options, map: { ...options.map, annotation } };
   }
 
   private async request(
@@ -360,9 +396,17 @@ function bridgeError(operation: string, error: unknown): Error {
 }
 
 function createBridgeError(payload: JsonRpcError): Error {
-  const error = new Error(
-    payload.message || 'postcss-go bridge returned an unknown JSON-RPC error',
-  );
+  const message = payload.message || 'postcss-go bridge returned an unknown JSON-RPC error';
+  const input = new Input();
+  input.css = payload.source ?? '';
+  input.file = payload.file;
+  const error =
+    payload.name === 'CssSyntaxError'
+      ? new CssSyntaxError(payload.reason ?? message, {
+          ...payload,
+          input,
+        })
+      : new Error(message);
   if (payload.name) error.name = payload.name;
   for (const key of [
     'reason',

@@ -3,15 +3,20 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  applyMapAnnotation,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
-import { Node, Root } from './ast.js';
+import { Node, Root, asProcessRoot, fromAst } from './ast.js';
 import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
-import type { PostcssGoService } from './service.js';
+import { AsyncPluginError, isThenable, observeThenable } from './errors.js';
+import { attachInputMetadata } from './input.js';
+import { parseOwnedSync } from './parser.js';
+import {
+  NATIVE_BACKEND_CAPABILITIES,
+  type SyncPostcssGoService,
+} from './service.js';
 import type {
   AstNode,
   AstStringifyResult,
@@ -21,6 +26,8 @@ import type {
   ProcessResult,
   Warning,
 } from './types.js';
+import { assertSupportedSyntax } from './syntax-options.js';
+import { finalizeStringifyResult, prepareStringifyOptions } from './source-map-output.js';
 
 type NativeAddon = {
   parse(css: string, from?: string): Buffer;
@@ -42,6 +49,7 @@ function hostTuples(): string[] {
 }
 
 function loadAddon(): NativeAddon | null {
+  if (process.env.POSTCSS_GO_DISABLE_NATIVE === '1') return null;
   if (cachedAddon !== undefined) return cachedAddon;
   try {
     const require = createRequire(import.meta.url);
@@ -103,26 +111,55 @@ export function createNativeService(): NativePostcssGoService {
  * serialize live TypeScript AST nodes so the plugin runtime never builds an
  * intermediate plain DTO.
  */
-export class NativePostcssGoService implements PostcssGoService {
+export class NativePostcssGoService implements SyncPostcssGoService {
+  readonly capabilities = NATIVE_BACKEND_CAPABILITIES;
+
   constructor(private readonly addon: NativeAddon) {}
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
-    const buffer = this.addon.parse(css, options.from);
-    return { root: decodeAst(buffer) as ParseResult['root'] };
+    assertSupportedSyntax(options);
+    try {
+      const buffer = this.addon.parse(css, options.from);
+      return { root: decodeAst(buffer) as ParseResult['root'] };
+    } catch (nativeError) {
+      throwStructuredSyntaxError(css, options, nativeError);
+    }
   }
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    assertSupportedSyntax(options);
     const effective = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    const payload = JSON.parse(this.addon.process(css, JSON.stringify(normalized))) as {
-      css: string;
-      map?: string;
-      messages?: Warning[];
-      rootBin: string;
+    let payload: { css: string; map?: string; messages?: Warning[]; rootBin: string };
+    try {
+      payload = JSON.parse(this.addon.process(css, JSON.stringify(normalized))) as typeof payload;
+    } catch (nativeError) {
+      throwStructuredSyntaxError(css, options, nativeError);
+    }
+    return {
+      css: payload.css,
+      map: payload.map,
+      root: decodeAst(Buffer.from(payload.rootBin, 'base64')) as ProcessResult['root'],
+      messages: payload.messages ?? [],
     };
+  }
+
+  processSync(css: string, options: ProcessOptions = {}): ProcessResult {
+    assertSupportedSyntax(options);
+    const effective = this.resolveAnnotationSync(css, options);
+    const normalized = normalizeProcessOptions(
+      effective as NormalizeProcessOptionsInput,
+      joinMapAnnotationPath,
+    ) as ProcessOptions;
+    let payload: { css: string; map?: string; messages?: Warning[]; rootBin: string };
+    try {
+      payload = JSON.parse(this.addon.process(css, JSON.stringify(normalized))) as typeof payload;
+    } catch (nativeError) {
+      throwStructuredSyntaxError(css, options, nativeError);
+    }
     return {
       css: payload.css,
       map: payload.map,
@@ -132,7 +169,18 @@ export class NativePostcssGoService implements PostcssGoService {
   }
 
   async noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    assertSupportedSyntax(options);
     const effective = await this.resolveAnnotation(css, options);
+    const normalized = normalizeProcessOptions(
+      effective as NormalizeProcessOptionsInput,
+      joinMapAnnotationPath,
+    ) as ProcessOptions;
+    return JSON.parse(this.addon.noWork(css, JSON.stringify(normalized))) as NoWorkResult;
+  }
+
+  noWorkSync(css: string, options: ProcessOptions = {}): NoWorkResult {
+    assertSupportedSyntax(options);
+    const effective = this.resolveAnnotationSync(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
@@ -145,13 +193,17 @@ export class NativePostcssGoService implements PostcssGoService {
   }
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    assertSupportedSyntax(options);
+    const prepared = prepareStringifyOptions(ast, options);
+    const effective = await this.resolveStringifyAnnotation(ast, prepared);
     const normalized = normalizeProcessOptions(
-      options as NormalizeProcessOptionsInput,
+      effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    return JSON.parse(
+    const result = JSON.parse(
       this.addon.stringify(encodeAst(ast), JSON.stringify(normalized)),
     ) as AstStringifyResult;
+    return finalizeStringifyResult(result, effective, ast);
   }
 
   async close(): Promise<void> {
@@ -163,7 +215,12 @@ export class NativePostcssGoService implements PostcssGoService {
    * the plugin hot path.
    */
   parseSync(css: string, options: ProcessOptions = {}): LiveParseResult {
-    return { root: hydrateAst(this.addon.parse(css, options.from)) };
+    assertSupportedSyntax(options);
+    try {
+      return { root: hydrateAst(this.addon.parse(css, options.from)) };
+    } catch (nativeError) {
+      throwStructuredSyntaxError(css, options, nativeError);
+    }
   }
 
   /**
@@ -171,13 +228,78 @@ export class NativePostcssGoService implements PostcssGoService {
    * node so `toAst` can be skipped.
    */
   stringifyResultSync(ast: AstNode | Node, options: ProcessOptions = {}): AstStringifyResult {
+    assertSupportedSyntax(options);
+    const prepared = prepareStringifyOptions(ast, options);
+    const effective = this.resolveStringifyAnnotationSync(ast, prepared);
     const normalized = normalizeProcessOptions(
-      options as NormalizeProcessOptionsInput,
+      effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    return JSON.parse(
+    const result = JSON.parse(
       this.addon.stringify(encodeBoundaryAst(ast), JSON.stringify(normalized)),
     ) as AstStringifyResult;
+    return finalizeStringifyResult(result, effective, ast);
+  }
+
+  stringifySync(ast: AstNode | Node, options: ProcessOptions = {}): string {
+    return this.stringifyResultSync(ast, options).css;
+  }
+
+  private resolveAnnotationSync(css: string, options: ProcessOptions): ProcessOptions {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const root = this.parseSync(css, { from: options.from }).root;
+    attachInputMetadata(root, css, { from: options.from });
+    const annotation = options.map.annotation(options.to, root as never);
+    if (isThenable(annotation)) {
+      observeThenable(annotation);
+      throw new AsyncPluginError('map.annotation');
+    }
+    return {
+      ...options,
+      map: { ...options.map, annotation },
+    };
+  }
+
+  private resolveStringifyAnnotationSync(
+    root: AstNode | Node,
+    options: ProcessOptions,
+  ): ProcessOptions {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const live = asProcessRoot(root instanceof Node ? root : fromAst(root));
+    const annotation = options.map.annotation(options.to, live as never);
+    if (isThenable(annotation)) {
+      observeThenable(annotation);
+      throw new AsyncPluginError('map.annotation');
+    }
+    return { ...options, map: { ...options.map, annotation } };
+  }
+
+  private async resolveStringifyAnnotation(
+    root: AstNode,
+    options: ProcessOptions,
+  ): Promise<ProcessOptions> {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const live = asProcessRoot(fromAst(root));
+    const annotation = await options.map.annotation(options.to, live as never);
+    return { ...options, map: { ...options.map, annotation } };
   }
 
   private async resolveAnnotation(css: string, options: ProcessOptions): Promise<ProcessOptions> {
@@ -189,6 +311,30 @@ export class NativePostcssGoService implements PostcssGoService {
       return options;
     }
     const parsed = await this.parse(css, { from: options.from });
-    return applyMapAnnotation(options, parsed.root);
+    const root = asProcessRoot(fromAst(parsed.root));
+    attachInputMetadata(root, css, { from: options.from });
+    const annotation = await options.map.annotation(options.to, root as never);
+    return { ...options, map: { ...options.map, annotation } };
+  }
+}
+
+function throwStructuredSyntaxError(
+  css: string,
+  options: ProcessOptions,
+  nativeError: unknown,
+): never {
+  // Re-run only the owned parser's error path to recover structured source
+  // metadata that Node-API's string-only error slot cannot transport.
+  const structuredError = captureParserError(css, options);
+  if (structuredError) throw structuredError;
+  throw nativeError;
+}
+
+function captureParserError(css: string, options: ProcessOptions): unknown {
+  try {
+    parseOwnedSync(css, options);
+    return undefined;
+  } catch (error) {
+    return error;
   }
 }

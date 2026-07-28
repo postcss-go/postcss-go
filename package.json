@@ -46,20 +46,12 @@
     "test:coverage:go": "mkdir -p coverage && GOFLAGS=-mod=mod go test -coverprofile=coverage/go.out ./... && GOFLAGS=-mod=mod go tool cover -func=coverage/go.out | tee coverage/go.txt",
     "test:go": "go test -mod=mod ./...",
     "sync:upstream": "node ./scripts/sync-upstream-postcss-tests.mjs",
-    "sync:benchmark-fixtures": "node ./scripts/sync-benchmark-fixtures.mjs",
+    "sync:benchmark-fixtures": "node ./benchmark/sync-fixtures.mjs",
     "prepare:upstream-compat": "node ./scripts/prepare-upstream-compat.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
-    "bench": "node scripts/compare-benchmarks.mjs",
-    "bench:go": "go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5",
-    "bench:postcss": "node benchmark/postcss.bench.mjs",
-    "bench:lightningcss": "node benchmark/lightningcss.bench.mjs",
-    "bench:csstree": "node benchmark/csstree.bench.mjs",
-    "bench:esbuild": "node benchmark/esbuild.bench.mjs",
-    "bench:lezer": "node benchmark/lezer.bench.mjs",
-    "bench:tree-sitter": "node benchmark/tree-sitter.bench.mjs",
-    "bench:boundary": "node benchmark/boundary/run-all.mjs",
-    "bench:boundary:go": "go test -mod=mod ./benchmark/boundary/ -bench=. -benchmem -benchtime=100ms"
+    "bench": "node benchmark/run.mjs",
+    "bench:boundary": "node benchmark/run-boundary.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",
