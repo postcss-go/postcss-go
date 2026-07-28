@@ -62,6 +62,23 @@ test('@postcss-go/core lists platform packages as optionalDependencies', () => {
   expect(pkg.files ?? []).not.toContain('native/prebuilds/**/*.node');
 });
 
+test('@postcss-go/core has no production PostCSS dependency', () => {
+  const pkg = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  };
+  for (const dependencies of [
+    pkg.dependencies ?? {},
+    pkg.optionalDependencies ?? {},
+    pkg.peerDependencies ?? {},
+  ]) {
+    expect(dependencies).not.toHaveProperty('postcss');
+    expect(dependencies).not.toHaveProperty('postcss-load-config');
+    expect(dependencies).not.toHaveProperty('postcss-reporter');
+  }
+});
+
 test('host platform package contains the native addon', () => {
   const tuple = hostTuple();
   const platformPkgRoot = resolve(repoRoot, 'npm/postcss-go', tuple);

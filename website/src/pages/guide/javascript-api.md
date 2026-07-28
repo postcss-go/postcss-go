@@ -60,7 +60,8 @@ bridge process. The browser-compatible service is exposed through the package's
 
 ## Compatibility boundary
 
-JavaScript plugins, configuration loading, warnings, and PostCSS result
-semantics still use the compatibility layer. See the
-[compatibility progress](../../progress/) page for the remaining work toward a
-complete PostCSS JavaScript replacement.
+JavaScript plugins, configuration loading, AST helpers, warnings, and result
+objects are implemented by `@postcss-go/core` and do not load the `postcss`
+package. Custom parser, syntax, and stringifier options currently produce an
+`UnsupportedSyntaxError` instead of falling back to PostCSS. See the
+[compatibility progress](../../progress/) page for the remaining API work.

@@ -5,9 +5,6 @@ import { text } from 'node:stream/consumers';
 
 import chokidar from 'chokidar';
 import pc from 'picocolors';
-import postcss from 'postcss';
-import postcssrc from 'postcss-load-config';
-import postcssReporter from 'postcss-reporter/lib/formatter.js';
 import prettyHrtime from 'pretty-hrtime';
 import read from 'read-cache';
 import slash from 'slash';
@@ -27,11 +24,12 @@ import {
 } from './engine.js';
 import { getMapfile } from '@postcss-go/shared/map-path';
 import { getPollInterval, usePolling } from './poll.js';
+import { loadConfig } from './config.js';
+import { formatWarnings } from './reporter.js';
 
 export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promise<void> {
   const argv = parseCliArgs(argvInput);
   if (argv.help) return;
-  const reporter = postcssReporter();
   const depGraph = createDependencyGraph();
   const engine = createGoEngine();
   const explicitConfigPath = argv.config ? path.resolve(argv.config) : null;
@@ -99,30 +97,22 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
     process.stdin.resume();
   }
 
-  /* istanbul ignore next */
-  if (parseInt(postcss().version, 10) < 8) {
-    error('Please install PostCSS 8 or above');
-  }
-
   function rc(
     ctx: { options?: CliConfig['options']; file?: Record<string, string> },
     configPath: string,
   ): Promise<CliConfig | undefined> {
     if (argv.use) return Promise.resolve(cliConfig);
 
-    return postcssrc(ctx, configPath)
+    return loadConfig(ctx, configPath)
       .then((loaded) => {
+        if (!loaded) return undefined;
         if (loaded.options.from || loaded.options.to) {
           throw new Error(
             'Config Error: Can not set from or to options in config file, use CLI arguments instead',
           );
         }
         if (loaded.file) configFiles.add(loaded.file);
-        return loaded as unknown as CliConfig;
-      })
-      .catch((err: Error) => {
-        if (!err.message.includes('No PostCSS Config found')) throw err;
-        return undefined;
+        return loaded;
       });
   }
 
@@ -222,7 +212,7 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
             const messages = result.warnings();
             if (messages.length) {
               console.warn(
-                reporter({
+                formatWarnings({
                   ...result,
                   messages: messages as Array<{
                     type?: string;

@@ -32,6 +32,26 @@ export {
   type WalkCallback,
 } from './ast.js';
 export { Input, hydrateInput, type InputJSON } from './input.js';
+export { CssSyntaxError, type CssSyntaxErrorOptions } from './errors.js';
+export { Warning, type WarningOptions } from './warning.js';
+export { Result, type ResultProcessor } from './result.js';
+export { parseSync, type Parser } from './parser.js';
+export { stringify as stringifySync } from './ast-stringifier.js';
+export {
+  list,
+  postcssApi,
+  type PluginHelpers,
+  type PluginResult,
+  type RuntimePlugin,
+} from './plugin-runtime.js';
+export type {
+  AcceptedPlugin,
+  Plugin,
+  PluginCreator,
+  PluginListener,
+  PluginListenerGroup,
+  Transformer,
+} from './plugin-types.js';
 export { parseCliArgs, type CliArgv } from './args.js';
 export { runCLI } from './cli.js';
 export {
@@ -53,6 +73,7 @@ export {
   type CliMessage,
   type CliProcessResult,
   type GoEngine,
+  UnsupportedSyntaxError,
 } from './engine.js';
 export {
   applyMapAnnotation,
@@ -99,5 +120,4 @@ export type {
   SourceLocation,
   SourcePosition,
   SourceMapOptions,
-  Warning,
 } from './types.js';

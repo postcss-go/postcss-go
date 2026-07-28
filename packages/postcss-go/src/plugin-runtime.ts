@@ -1,5 +1,3 @@
-import type { AcceptedPlugin } from 'postcss';
-import postcss from 'postcss';
 import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
 
 import {
@@ -15,18 +13,24 @@ import {
   Rule,
   toAst,
 } from './ast.js';
+import { stringify as stringifyOwned } from './ast-stringifier.js';
+import { CssSyntaxError } from './errors.js';
+import { Input } from './input.js';
 import type { PostcssGoService } from './service.js';
 import type { AstNode as AstDTO, ProcessOptions } from './types.js';
+import type { AcceptedPlugin } from './plugin-types.js';
+import { parseSync } from './parser.js';
+import { Result } from './result.js';
+import { Warning } from './warning.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   parseSync?(css: string, options?: ProcessOptions): { root: AstDTO | Root };
   stringifyResultSync?(ast: AstDTO | Root, options?: ProcessOptions): { css: string; map?: string };
 };
 
-type Message = Record<string, unknown> & { type?: string; text?: string };
 type Listener = (node: Node, helpers: PluginHelpers) => unknown;
 type ListenerGroup = Listener | Record<string, Listener | undefined>;
-type RuntimePlugin = {
+export type RuntimePlugin = {
   postcssPlugin?: string;
   plugins?: AcceptedPlugin[];
   postcss?: unknown;
@@ -48,26 +52,14 @@ type RuntimePlugin = {
   [key: string]: unknown;
 };
 
-export interface PluginResult {
-  css: string;
-  map?: string;
-  root: Root;
-  messages: Message[];
-  opts: ProcessFileOptions;
-  processor: { plugins: RuntimePlugin[] };
-  lastPlugin?: RuntimePlugin;
-  readonly content: string;
-  warnings(): Message[];
-  warn(text: string, options?: Record<string, unknown>): Message;
-  toString(): string;
-}
+export type PluginResult = Result<RuntimePlugin>;
 
-type PluginHelpers = {
+export type PluginHelpers = {
   result: PluginResult;
   postcss: typeof postcssApi;
 };
 
-const list = {
+export const list = {
   comma(value: string): string[] {
     return list.split(value, [','], true);
   },
@@ -115,23 +107,27 @@ const list = {
   },
 };
 
-const postcssApi = {
+export const postcssApi = {
   AtRule,
   Comment,
   Container,
   Declaration,
   Document,
+  CssSyntaxError,
+  Input,
   Node,
+  Result,
   Root,
   Rule,
+  Warning,
   list,
   fromJSON,
-  parse(css: string, opts?: Parameters<typeof postcss.parse>[1]) {
-    return fromAst(postcss.parse(css, opts).toJSON() as AstDTO);
+  parse(css: string, opts?: ProcessOptions) {
+    return parseSync(css, opts);
   },
   stringify(node: Node, builder?: (chunk: string, node?: Node, type?: string) => void) {
     if (!builder) return node.toString();
-    builder(node.toString(), node);
+    stringifyOwned(node, builder as never);
   },
   atRule: (defaults: ConstructorParameters<typeof AtRule>[0] = {}) => new AtRule(defaults),
   comment: (defaults: ConstructorParameters<typeof Comment>[0] = {}) => new Comment(defaults),
@@ -140,43 +136,6 @@ const postcssApi = {
   root: (defaults: ConstructorParameters<typeof Root>[0] = {}) => new Root(defaults),
   rule: (defaults: ConstructorParameters<typeof Rule>[0] = {}) => new Rule(defaults),
 };
-
-let hasInstancePatched = false;
-
-function ordinaryHasInstance(ctor: { prototype: object }, value: unknown): boolean {
-  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return false;
-  let proto = Object.getPrototypeOf(value);
-  const target = ctor.prototype;
-  while (proto) {
-    if (proto === target) return true;
-    proto = Object.getPrototypeOf(proto);
-  }
-  return false;
-}
-
-function patchHasInstance(ctor: { prototype: object }, match: (value: unknown) => boolean): void {
-  Object.defineProperty(ctor, Symbol.hasInstance, {
-    configurable: true,
-    value(value: unknown) {
-      if (match(value)) return true;
-      return ordinaryHasInstance(ctor, value);
-    },
-  });
-}
-
-/** Make `instanceof postcss.Rule` (etc.) succeed for postcss-go AST nodes. */
-function ensurePostcssInstanceofCompat(): void {
-  if (hasInstancePatched) return;
-  hasInstancePatched = true;
-  patchHasInstance(postcss.Node, (value) => value instanceof Node);
-  patchHasInstance(postcss.Container, (value) => value instanceof Container);
-  patchHasInstance(postcss.Root, (value) => value instanceof Root);
-  patchHasInstance(postcss.Document, (value) => value instanceof Document);
-  patchHasInstance(postcss.Rule, (value) => value instanceof Rule);
-  patchHasInstance(postcss.AtRule, (value) => value instanceof AtRule);
-  patchHasInstance(postcss.Declaration, (value) => value instanceof Declaration);
-  patchHasInstance(postcss.Comment, (value) => value instanceof Comment);
-}
 
 /**
  * Runs JavaScript plugin callbacks around the Go AST bridge. Go owns parsing
@@ -189,7 +148,6 @@ export async function runPluginsWithBridge(
   css: string,
   options: ProcessFileOptions,
 ): Promise<PluginResult> {
-  ensurePostcssInstanceofCompat();
   const normalized = normalizePlugins(plugins);
   const parsed =
     typeof service.parseSync === 'function'
@@ -238,33 +196,7 @@ function createResult(
   opts: ProcessFileOptions,
   plugins: RuntimePlugin[],
 ): PluginResult {
-  const result: PluginResult = {
-    css: '',
-    root,
-    messages: [],
-    opts,
-    processor: { plugins },
-    get content() {
-      return this.css;
-    },
-    warnings() {
-      return this.messages.filter((message) => message.type === 'warning');
-    },
-    warn(text, options = {}) {
-      const warning: Message = {
-        type: 'warning',
-        text,
-        plugin: pluginName(this.lastPlugin),
-        ...options,
-      };
-      this.messages.push(warning);
-      return warning;
-    },
-    toString() {
-      return this.css;
-    },
-  };
-  return result;
+  return new Result({ plugins }, root, opts);
 }
 
 function normalizePlugins(plugins: AcceptedPlugin[]): RuntimePlugin[] {

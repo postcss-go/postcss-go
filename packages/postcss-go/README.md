@@ -12,7 +12,7 @@ This package is the primary JS/TS integration point for:
 ## Install
 
 ```bash
-npm i -D @postcss-go/core postcss
+npm i -D @postcss-go/core
 ```
 
 ## CLI
@@ -26,17 +26,18 @@ postcss-go input.css -o output.css --no-map
 
 The CLI mirrors [postcss-cli](https://github.com/postcss/postcss-cli) options: glob inputs, `--dir` / `--replace` / `-o`, watch mode, `postcss.config.js`, and `--use` plugin chains.
 
-The CLI always uses the Go engine. JS plugin chains run through the PostCSS runtime before Go parse/stringify and source-map generation.
+The CLI always uses the Go engine. JS plugin chains run through the
+postcss-go-owned plugin runtime before Go parse/stringify and source-map
+generation.
 
 ## Config
 
-Supports `postcss.config.js` / `.cjs` / `.mjs` via [postcss-load-config](https://github.com/postcss/postcss-load-config), including function configs with `ctx.file` and `ctx.env`.
+Supports `postcss.config.js` / `.cjs` / `.mjs` with the built-in configuration
+loader, including function configs with `ctx.file` and `ctx.env`.
 
-Source maps for standard CSS are generated from Go AST locations. A parser,
-syntax, or stringifier that merely delegates to PostCSS's defaults still uses
-the Go pipeline; implementations that change parsing or output semantics use
-the native PostCSS fallback because arbitrary JavaScript modules cannot run in
-the Go bridge.
+Source maps for standard CSS are generated from Go AST locations. Custom
+parser, syntax, or stringifier implementations currently throw
+`UnsupportedSyntaxError`; the package never falls back to PostCSS.
 
 ## Development
 

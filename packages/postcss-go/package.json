@@ -32,7 +32,7 @@
     "bin"
   ],
   "scripts": {
-    "build": "pnpm --filter @postcss-go/shared build && tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs && node ./native/build.mjs",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && pnpm --filter @postcss-go/shared build && tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs && node ./native/build.mjs",
     "build:native": "node ./native/build.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm run build && vitest run",
@@ -43,8 +43,6 @@
     "chokidar": "^3.6.0",
     "dependency-graph": "^1.0.0",
     "picocolors": "^1.1.1",
-    "postcss-load-config": "^5.1.0",
-    "postcss-reporter": "^7.1.0",
     "pretty-hrtime": "^1.0.3",
     "read-cache": "^1.0.0",
     "slash": "^5.1.0",
@@ -59,9 +57,6 @@
     "@postcss-go/native-linux-x64-musl": "workspace:*",
     "@postcss-go/native-win32-arm64-msvc": "workspace:*",
     "@postcss-go/native-win32-x64-msvc": "workspace:*"
-  },
-  "peerDependencies": {
-    "postcss": "^8.0.0"
   },
   "devDependencies": {
     "node-api-headers": "^1.9.0",
