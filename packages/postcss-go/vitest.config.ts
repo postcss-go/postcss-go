@@ -21,10 +21,10 @@ export default defineConfig({
       excludeAfterRemap: true,
       reporter: ['text', 'html', 'lcov'],
       thresholds: {
-        statements: 85,
+        statements: 90,
         branches: 75,
         functions: 90,
-        lines: 85,
+        lines: 90,
       },
     },
   },
