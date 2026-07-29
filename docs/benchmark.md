@@ -64,6 +64,17 @@ Three scenarios are measured for each workload:
 2. **ParseStringify** — parse, then stringify back to CSS
 3. **Process** — parse, walk the AST, then stringify (empty plugin list on the Go side; equivalent manual pipeline on the postcss side — upstream `process([])` skips parsing and is not used here)
 
+In addition, `benchmark/stages_bench_test.go` isolates the individual Go
+pipeline stages, so a change can be attributed to a single stage instead of the
+whole scenario. These are Go-only and have no JavaScript counterpart:
+
+| Benchmark group    | Measures                                                   |
+| ------------------ | ---------------------------------------------------------- |
+| `Tokenize`         | Tokenizer only, draining the token stream                  |
+| `Walk`             | AST traversal over an already parsed tree                  |
+| `PluginPipeline`   | `Process` with one declaration visitor plugin              |
+| `ProcessSourceMap` | `Process` with source map generation (external map output) |
+
 Lightning CSS's Node API exposes parsing and printing together through
 `transform()`, without exposing its AST parser or an equivalent PostCSS-style
 empty walk. It is therefore included only in **ParseStringify**. The benchmark
@@ -117,6 +128,30 @@ node benchmark/esbuild.bench.mjs
 node benchmark/lezer.bench.mjs
 node benchmark/tree-sitter.bench.mjs
 node benchmark/run.mjs
+```
+
+### Continuous tracking in CI
+
+The Go engine benchmarks (`benchmark/bench_test.go` and
+`benchmark/stages_bench_test.go`) also run on every push to `main` and on every
+pull request through [CodSpeed](https://codspeed.io), in
+`.github/workflows/codspeed.yml`:
+
+```bash
+go test -bench=. ./benchmark/
+```
+
+CodSpeed measures them with the
+[walltime instrument](https://codspeed.io/docs/instruments/walltime) — the only
+instrument supported for Go — and reports per-benchmark differences against the
+pull request base. Only the engine suite is tracked; the boundary suite stays
+opt-in and is not part of CI.
+
+To reproduce a CodSpeed run locally:
+
+```bash
+curl -fsSL https://codspeed.io/install.sh | sh
+codspeed run --mode walltime --skip-upload -- go test -bench=. ./benchmark/
 ```
 
 ## Boundary cost
@@ -207,5 +242,5 @@ The boundary suite uses `ModernNormalize`, `TailwindPreflight`, `AnimateMin`, an
 - Lightning CSS results cover only its public Node `transform()` call with optimization features disabled; they are not pure parser timings.
 - esbuild results cover `transformSync()` with the CSS loader and optimization features disabled; they are not pure parser timings.
 - Real-world fixtures require postcss-go to parse real CSS correctly; `go test ./benchmark/ -run TestRealWorldFixturesParse` verifies this first.
-- The engine comparison covers core parse/stringify/process paths only — not JS plugin execution or source maps.
+- The cross-engine comparison covers core parse/stringify/process paths only — not JS plugin execution or source maps. The Go stage benchmarks additionally cover tokenizing, AST walks, a single Go plugin visitor, and source map generation.
 - postcss-go is still incomplete relative to upstream; benchmark gaps may shrink or grow as the port matures.
