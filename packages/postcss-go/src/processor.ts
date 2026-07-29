@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+
 import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
 import { Node, Root } from './ast.js';
@@ -21,12 +23,16 @@ import { Result } from './result.js';
 import { NATIVE_BACKEND_CAPABILITIES, type PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
 import {
-  orchestrateNoWorkSync,
-  orchestrateParseSync,
-  orchestrateProcess,
-  orchestrateProcessSync,
-  orchestrateStringifySync,
-} from './orchestrate.js';
+  dispatchNoWorkSync,
+  dispatchParseSync,
+  dispatchProcess,
+  dispatchProcessSync,
+  dispatchStringifySync,
+} from './dispatch.js';
+
+const { version: packageVersion } = createRequire(import.meta.url)('../package.json') as {
+  version: string;
+};
 
 export type CssInput = string | { toString(): string };
 export type PublicResult = Result<RuntimePlugin>;
@@ -50,12 +56,8 @@ export function getBackendCapabilities(): PostcssGoCapabilities {
   };
 }
 
-/**
- * PostCSS-shaped processor with explicit Promise-returning and synchronous
- * methods. Unlike PostCSS, no implicit LazyResult execution is performed.
- */
 export class Processor {
-  version = '0.0.1';
+  version = packageVersion;
   plugins: AcceptedPlugin[];
 
   constructor(plugins: AcceptedPlugin[] = []) {
@@ -98,14 +100,14 @@ export class Processor {
     const ownedService = processorOptions.service ? undefined : createAsyncService();
     const service = processorOptions.service ?? ownedService!;
     try {
-      return await orchestrateProcess(service, css, options, this.plugins, this);
+      return await dispatchProcess(service, css, options, this.plugins, this);
     } finally {
       if (ownedService) await ownedService.close();
     }
   }
 
   processSync(cssInput: CssInput, options: ProcessFileOptions = {}): PublicResult {
-    return orchestrateProcessSync(
+    return dispatchProcessSync(
       requireSyncService(),
       String(cssInput),
       options,
@@ -142,7 +144,7 @@ Object.defineProperty(postcss, 'default', {
 setProcessorFactory((plugins) => new Processor(plugins));
 
 export function parseSync(css: CssInput, options: ProcessOptions = {}): Root {
-  return orchestrateParseSync(requireSyncService(), String(css), options);
+  return dispatchParseSync(requireSyncService(), String(css), options);
 }
 
 export function processSync(
@@ -154,7 +156,7 @@ export function processSync(
 }
 
 export function noWorkSync(css: CssInput, options: ProcessOptions = {}) {
-  return orchestrateNoWorkSync(requireSyncService(), String(css), options);
+  return dispatchNoWorkSync(requireSyncService(), String(css), options);
 }
 
 export function stringifySync(
@@ -165,7 +167,7 @@ export function stringifySync(
     stringifyOwned(node, builderOrOptions as never);
     return;
   }
-  return orchestrateStringifySync(requireSyncService(), node, builderOrOptions ?? {});
+  return dispatchStringifySync(requireSyncService(), node, builderOrOptions ?? {});
 }
 
 function createAsyncService(): PostcssGoService {

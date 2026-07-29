@@ -115,19 +115,19 @@ export {
   type GoEngine,
 } from './engine.js';
 export {
-  orchestrateNoWork,
-  orchestrateNoWorkSync,
-  orchestrateParse,
-  orchestrateParseAst,
-  orchestrateParseSync,
-  orchestrateProcess,
-  orchestrateProcessDto,
-  orchestrateProcessSync,
-  orchestrateStringify,
-  orchestrateStringifyResult,
-  orchestrateStringifySync,
-  prepareOrchestrateOptions,
-} from './orchestrate.js';
+  dispatchNoWork,
+  dispatchNoWorkSync,
+  dispatchParse,
+  dispatchParseAst,
+  dispatchParseSync,
+  dispatchProcess,
+  dispatchProcessDto,
+  dispatchProcessSync,
+  dispatchStringify,
+  dispatchStringifyResult,
+  dispatchStringifySync,
+  prepareDispatchOptions,
+} from './dispatch.js';
 export {
   applyMapAnnotation,
   applyMapAnnotationAsync,

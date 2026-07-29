@@ -8,7 +8,7 @@ import { asProcessRoot, fromAst, type Node } from './ast.js';
 import { attachInputMetadata } from './input.js';
 import type { PluginResult } from './plugin-runtime.js';
 import type { AcceptedPlugin } from './plugin-types.js';
-import { orchestrateProcess, prepareOrchestrateOptions } from './orchestrate.js';
+import { dispatchProcess, prepareDispatchOptions } from './dispatch.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
 import { hasUnsupportedSyntax } from './syntax-options.js';
@@ -93,7 +93,7 @@ export async function processWithGoEngine(
 
     // Match Processor.process: plugins finalize CSS and maps via stringifyResult.
     if (hasPlugins(config?.plugins)) {
-      const pluginResult = await orchestrateProcess(
+      const pluginResult = await dispatchProcess(
         engine.service,
         inputCss,
         options,
@@ -104,7 +104,7 @@ export async function processWithGoEngine(
       ]);
     }
 
-    options = prepareOrchestrateOptions(options);
+    options = prepareDispatchOptions(options);
 
     // No plugins: Go owns the complete no-work map flow.
     const mapOption = options.map && typeof options.map === 'object' ? options.map : {};
@@ -163,7 +163,7 @@ async function runWithPluginService(
 ): Promise<PluginResult> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await orchestrateProcess(activeService, css, options, plugins);
+    return await dispatchProcess(activeService, css, options, plugins);
   } finally {
     if (!service) await activeService.close();
   }

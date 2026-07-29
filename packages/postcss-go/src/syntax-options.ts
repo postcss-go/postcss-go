@@ -13,10 +13,9 @@ export function hasUnsupportedSyntax(options: SyntaxBearingOptions = {}): boolea
 /**
  * Reject extension points that cannot cross a Go backend boundary.
  *
- * Canonical gate: `prepareOrchestrateOptions` / orchestrate helpers in
- * `orchestrate.ts`. Call that before any path that narrows options or crosses
- * the service bridge so custom parser/syntax/stringifier are never silently
- * dropped.
+ * Canonical gate: `prepareDispatchOptions` / dispatch helpers in `dispatch.ts`.
+ * Call that before any path that narrows options or crosses the service bridge
+ * so custom parser/syntax/stringifier are never silently dropped.
  */
 export function assertSupportedSyntax(options: SyntaxBearingOptions): void {
   if (options.parser) throw new UnsupportedSyntaxError('Custom parser options');

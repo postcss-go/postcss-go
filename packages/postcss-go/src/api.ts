@@ -4,13 +4,13 @@ import type { PostcssGoService } from './service.js';
 import type { ProcessOptions, ProcessResult, ResultMessage, RootNode } from './types.js';
 import { hydrateResultMap, type ResultMap } from './result.js';
 import {
-  orchestrateNoWork,
-  orchestrateParse,
-  orchestrateParseAst,
-  orchestrateProcessDto,
-  orchestrateStringify,
-  orchestrateStringifyResult,
-} from './orchestrate.js';
+  dispatchNoWork,
+  dispatchParse,
+  dispatchParseAst,
+  dispatchProcessDto,
+  dispatchStringify,
+  dispatchStringifyResult,
+} from './dispatch.js';
 
 export interface DocumentResult {
   css: string;
@@ -27,7 +27,7 @@ export async function parse(
 ): Promise<Root> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await orchestrateParse(activeService, css, options);
+    return await dispatchParse(activeService, css, options);
   } finally {
     if (!service) {
       await activeService.close();
@@ -42,7 +42,7 @@ export async function process(
 ): Promise<ProcessResult> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await orchestrateProcessDto(activeService, css, options);
+    return await dispatchProcessDto(activeService, css, options);
   } finally {
     if (!service) {
       await activeService.close();
@@ -58,7 +58,7 @@ export async function parseAst(
 ): Promise<RootNode> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await orchestrateParseAst(activeService, css, options);
+    return await dispatchParseAst(activeService, css, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -72,7 +72,7 @@ export async function stringify(
 ): Promise<string> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await orchestrateStringify(activeService, node, options);
+    return await dispatchStringify(activeService, node, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -86,7 +86,7 @@ export async function noWork(
 ) {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await orchestrateNoWork(activeService, css, options);
+    return await dispatchNoWork(activeService, css, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -117,7 +117,7 @@ export async function toResult(
   const activeService = service ?? createDefaultAsyncService();
   try {
     const root = asProcessRoot(document);
-    const stringified = await orchestrateStringifyResult(activeService, root, options);
+    const stringified = await dispatchStringifyResult(activeService, root, options);
     return {
       css: stringified.css,
       map: hydrateResultMap(stringified.map),

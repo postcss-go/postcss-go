@@ -16,7 +16,7 @@ import postcss, {
   getBackendCapabilities,
   noWork,
   noWorkSync,
-  orchestrateProcess,
+  dispatchProcess,
   parse,
   parseAst,
   parseSync,
@@ -123,7 +123,7 @@ test('public backend APIs reject unsupported syntax instead of silently ignoring
   expect(() => postcss([plugin]).processSync('.a{}', { parser })).toThrow(UnsupportedSyntaxError);
 });
 
-test('Processor and orchestrateProcess share the same unsupported-syntax gate', async () => {
+test('Processor and dispatchProcess share the same unsupported-syntax gate', async () => {
   const parser = () => postcss.root();
   const service = {
     process: async () => {
@@ -146,7 +146,7 @@ test('Processor and orchestrateProcess share the same unsupported-syntax gate', 
     },
   };
 
-  await expect(orchestrateProcess(service, '.a{}', { parser }, [])).rejects.toBeInstanceOf(
+  await expect(dispatchProcess(service, '.a{}', { parser }, [])).rejects.toBeInstanceOf(
     UnsupportedSyntaxError,
   );
   await expect(postcss().process('.a{}', { parser })).rejects.toBeInstanceOf(

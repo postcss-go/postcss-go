@@ -24,7 +24,7 @@ import type {
   RootNode,
 } from './types.js';
 
-export type OrchestrateAsyncService = Pick<
+export type DispatchAsyncService = Pick<
   PostcssGoService,
   'parse' | 'process' | 'stringify' | 'stringifyResult' | 'close'
 > & {
@@ -37,7 +37,7 @@ export type OrchestrateAsyncService = Pick<
   ): Promise<AstStringifyResult>;
 };
 
-export type OrchestrateSyncService = Pick<
+export type DispatchSyncService = Pick<
   SyncPostcssGoService,
   'parseSync' | 'processSync' | 'stringifySync' | 'stringifyResultSync'
 > & {
@@ -48,7 +48,7 @@ export type OrchestrateSyncService = Pick<
  * Shared policy gate: materialize map.prev and reject custom syntax extension
  * points before any service or plugin-runtime call that may narrow options.
  */
-export function prepareOrchestrateOptions<
+export function prepareDispatchOptions<
   T extends SyntaxBearingOptions & { from?: string; map?: unknown },
 >(options: T): T {
   const prepared = materializePreviousMap(options);
@@ -57,14 +57,14 @@ export function prepareOrchestrateOptions<
 }
 
 /** PostCSS-shaped process: plugins → JS visitors; else → Go `process`. */
-export async function orchestrateProcess(
-  service: OrchestrateAsyncService,
+export async function dispatchProcess(
+  service: DispatchAsyncService,
   css: string,
   options: ProcessFileOptions = {},
   plugins: AcceptedPlugin[] = [],
   processor?: ResultProcessorFacade,
 ): Promise<PluginResult> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   if (plugins.length > 0) {
     return runPluginsWithBridge(service, plugins, css, options, processor);
   }
@@ -76,15 +76,15 @@ export async function orchestrateProcess(
   );
 }
 
-/** Synchronous twin of `orchestrateProcess`. */
-export function orchestrateProcessSync(
-  service: OrchestrateSyncService,
+/** Synchronous twin of `dispatchProcess`. */
+export function dispatchProcessSync(
+  service: DispatchSyncService,
   css: string,
   options: ProcessFileOptions = {},
   plugins: AcceptedPlugin[] = [],
   processor?: ResultProcessorFacade,
 ): PluginResult {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   if (plugins.length > 0) {
     return runPluginsWithBridgeSync(service, plugins, css, options, processor);
   }
@@ -96,12 +96,12 @@ export function orchestrateProcessSync(
   );
 }
 
-export async function orchestrateParse(
+export async function dispatchParse(
   service: Pick<PostcssGoService, 'parse'>,
   css: string,
   options: ProcessOptions = {},
 ): Promise<Root> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   const parsed = await service.parse(css, options);
   const root = asProcessRoot(fromAst(parsed.root));
   if (!(root instanceof Root)) throw new Error('postcss-go parse response is not a root');
@@ -109,82 +109,82 @@ export async function orchestrateParse(
   return root;
 }
 
-export function orchestrateParseSync(
+export function dispatchParseSync(
   service: Pick<SyncPostcssGoService, 'parseSync'>,
   css: string,
   options: ProcessOptions = {},
 ): Root {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   const root = asProcessRoot(service.parseSync(css, options).root);
   if (!(root instanceof Root)) throw new Error('postcss-go parseSync response is not a root');
   attachInputMetadata(root, css, options);
   return root;
 }
 
-export async function orchestrateParseAst(
+export async function dispatchParseAst(
   service: Pick<PostcssGoService, 'parse'>,
   css: string,
   options: ProcessOptions = {},
 ): Promise<RootNode> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   return (await service.parse(css, options)).root;
 }
 
-export async function orchestrateStringify(
+export async function dispatchStringify(
   service: Pick<PostcssGoService, 'stringifyResult'>,
   node: Node,
   options: ProcessOptions = {},
 ): Promise<string> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   const effectiveOptions = prepareStringifyOptions(node, options);
   return (await service.stringifyResult(toAst(node), effectiveOptions)).css;
 }
 
-export function orchestrateStringifySync(
+export function dispatchStringifySync(
   service: Pick<SyncPostcssGoService, 'stringifySync'>,
   node: Node,
   options: ProcessOptions = {},
 ): string {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   const effectiveOptions = prepareStringifyOptions(node, options);
   return service.stringifySync(toAst(node), effectiveOptions);
 }
 
-export async function orchestrateStringifyResult(
+export async function dispatchStringifyResult(
   service: Pick<PostcssGoService, 'stringifyResult'>,
   node: Node,
   options: ProcessOptions = {},
 ): Promise<AstStringifyResult> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   const effectiveOptions = prepareStringifyOptions(node, options);
   return service.stringifyResult(toAst(node), effectiveOptions);
 }
 
-export async function orchestrateNoWork(
+export async function dispatchNoWork(
   service: Pick<PostcssGoService, 'noWork'>,
   css: string,
   options: ProcessOptions = {},
 ): Promise<NoWorkResult> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   return service.noWork(css, options);
 }
 
-export function orchestrateNoWorkSync(
+export function dispatchNoWorkSync(
   service: Pick<SyncPostcssGoService, 'noWorkSync'>,
   css: string,
   options: ProcessOptions = {},
 ): NoWorkResult {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   return service.noWorkSync(css, options);
 }
 
 /** Async process that returns a bridge DTO with a hydrated live root. */
-export async function orchestrateProcessDto(
+export async function dispatchProcessDto(
   service: Pick<PostcssGoService, 'process'>,
   css: string,
   options: ProcessOptions = {},
 ): Promise<ProcessResult> {
-  options = prepareOrchestrateOptions(options);
+  options = prepareDispatchOptions(options);
   const processed = await service.process(css, options);
   const root = asProcessRoot(
     processed.root instanceof Node
