@@ -115,6 +115,20 @@ export {
   type GoEngine,
 } from './engine.js';
 export {
+  orchestrateNoWork,
+  orchestrateNoWorkSync,
+  orchestrateParse,
+  orchestrateParseAst,
+  orchestrateParseSync,
+  orchestrateProcess,
+  orchestrateProcessDto,
+  orchestrateProcessSync,
+  orchestrateStringify,
+  orchestrateStringifyResult,
+  orchestrateStringifySync,
+  prepareOrchestrateOptions,
+} from './orchestrate.js';
+export {
   applyMapAnnotation,
   applyMapAnnotationAsync,
   isExternalSourceMap,

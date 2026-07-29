@@ -16,6 +16,7 @@ import postcss, {
   getBackendCapabilities,
   noWork,
   noWorkSync,
+  orchestrateProcess,
   parse,
   parseAst,
   parseSync,
@@ -120,6 +121,37 @@ test('public backend APIs reject unsupported syntax instead of silently ignoring
     UnsupportedSyntaxError,
   );
   expect(() => postcss([plugin]).processSync('.a{}', { parser })).toThrow(UnsupportedSyntaxError);
+});
+
+test('Processor and orchestrateProcess share the same unsupported-syntax gate', async () => {
+  const parser = () => postcss.root();
+  const service = {
+    process: async () => {
+      throw new Error('should not reach service');
+    },
+    parse: async () => {
+      throw new Error('should not reach service');
+    },
+    noWork: async () => {
+      throw new Error('should not reach service');
+    },
+    stringify: async () => '',
+    stringifyResult: async () => ({ css: '' }),
+    close: async () => undefined,
+    capabilities: {
+      backend: 'native' as const,
+      asynchronous: true as const,
+      backendWorkOffMainThread: true as const,
+      synchronous: true as const,
+    },
+  };
+
+  await expect(orchestrateProcess(service, '.a{}', { parser }, [])).rejects.toBeInstanceOf(
+    UnsupportedSyntaxError,
+  );
+  await expect(postcss().process('.a{}', { parser })).rejects.toBeInstanceOf(
+    UnsupportedSyntaxError,
+  );
 });
 
 test('named custom syntax functions cannot masquerade as default delegates', async () => {

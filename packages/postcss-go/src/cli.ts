@@ -15,7 +15,6 @@ import createDependencyGraph, { type GraphMessage } from './create-dependency-gr
 import { isExternalSourceMap } from '@postcss-go/shared/map-options';
 import { getMapfile } from '@postcss-go/shared/map-path';
 import {
-  assertGoCompatibility,
   createGoEngine,
   getEffectiveMapOption,
   processWithGoEngine,
@@ -157,7 +156,6 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
     return rc(ctx, configSearchPath)
       .then((config) => {
         const activeConfig = config || cliConfig;
-        assertGoCompatibility(argv, activeConfig);
         const options = { ...activeConfig.options };
         if (options.map === undefined) {
           options.map = getEffectiveMapOption(activeConfig);

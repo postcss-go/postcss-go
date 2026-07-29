@@ -16,7 +16,6 @@ import type {
   ProcessOptions,
   ProcessResult,
 } from './types.js';
-import { assertSupportedSyntax } from './syntax-options.js';
 import { prepareStringifyOptions } from './source-map-output.js';
 
 export interface BrowserWorkerLike {
@@ -70,13 +69,11 @@ export class BrowserPostcssGoService implements PostcssGoService {
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     return this.call<ParseResult>('parse', { css, options });
   }
 
   process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
       return effectiveOptions.then((resolved) =>
@@ -100,7 +97,6 @@ export class BrowserPostcssGoService implements PostcssGoService {
 
   noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
       return effectiveOptions.then((resolved) =>
@@ -128,7 +124,6 @@ export class BrowserPostcssGoService implements PostcssGoService {
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     assertSupportedAst(ast);
     const preparedOptions = prepareStringifyOptions(ast, options);
     const effectiveOptions = await this.resolveStringifyAnnotation(ast, preparedOptions);
