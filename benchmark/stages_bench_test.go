@@ -9,9 +9,10 @@ import (
 	"postcss-go/internal/tokenizer"
 )
 
-// Stage-level benchmarks complement the end-to-end scenarios in bench_test.go by
-// isolating the individual pipeline stages: tokenizing, AST traversal, plugin
-// visiting, and source map generation.
+// Stage-level benchmarks complement the end-to-end scenarios in bench_test.go.
+// Tokenize and Walk isolate a single stage; PluginPipeline and ProcessSourceMap
+// are full Process runs that attribute cost to a declaration visitor and to
+// source map generation respectively.
 
 func benchmarkTokenizeCSS(b *testing.B, css string) {
 	b.SetBytes(int64(len(css)))
@@ -34,7 +35,8 @@ func benchmarkWalkCSS(b *testing.B, css string) {
 		b.Fatal(err)
 	}
 
-	b.SetBytes(int64(len(css)))
+	// No SetBytes: this loop walks a pre-parsed AST and does not re-process the
+	// CSS byte stream, so reporting MB/s from len(css) would be misleading.
 	b.ReportAllocs()
 	b.ResetTimer()
 
@@ -52,18 +54,19 @@ func benchmarkWalkCSS(b *testing.B, css string) {
 	}
 }
 
-// benchmarkPluginPipelineCSS measures a realistic single-plugin pipeline: every
-// declaration is inspected and a subset is rewritten, which is what most PostCSS
-// plugins do.
+// benchmarkPluginPipelineCSS measures Process with one declaration visitor that
+// rewrites display values, which exercises visitor dispatch plus a changed
+// stringify path — the common PostCSS plugin shape.
 func benchmarkPluginPipelineCSS(b *testing.B, css string) {
+	const rewritePrefix = "-bench-"
 	plugin := postcss.Plugin{
-		Name: "bench-prefixer",
+		Name: "bench-display-prefixer",
 		Visitor: postcss.Visitor{
-			Declaration: func(decl *postcss.Declaration, _ *postcss.Result) error {
-				if strings.HasPrefix(decl.Prop, "display") {
-					decl.Value = strings.TrimSpace(decl.Value)
-				}
-				return nil
+			DeclarationProp: map[string]func(*postcss.Declaration, *postcss.Result) error{
+				"display": func(decl *postcss.Declaration, _ *postcss.Result) error {
+					decl.Value = rewritePrefix + decl.Value
+					return nil
+				},
 			},
 		},
 	}
@@ -74,8 +77,12 @@ func benchmarkPluginPipelineCSS(b *testing.B, css string) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if _, err := processor.Process(css); err != nil {
+		res, err := processor.Process(css)
+		if err != nil {
 			b.Fatal(err)
+		}
+		if !strings.Contains(res.CSS, rewritePrefix) {
+			b.Fatal("expected plugin rewrite")
 		}
 	}
 }

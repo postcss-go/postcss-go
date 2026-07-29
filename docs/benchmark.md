@@ -70,10 +70,10 @@ whole scenario. These are Go-only and have no JavaScript counterpart:
 
 | Benchmark group    | Measures                                                   |
 | ------------------ | ---------------------------------------------------------- |
-| `Tokenize`         | Tokenizer only, draining the token stream                  |
-| `Walk`             | AST traversal over an already parsed tree                  |
-| `PluginPipeline`   | `Process` with one declaration visitor plugin              |
-| `ProcessSourceMap` | `Process` with source map generation (external map output) |
+| `Tokenize`         | Tokenizer only, draining the token stream                                     |
+| `Walk`             | AST traversal over an already parsed tree (ns/op only; no MB/s)               |
+| `PluginPipeline`   | `Process` with a `display` visitor that rewrites values (dispatch + stringify) |
+| `ProcessSourceMap` | `Process` with source map generation (external map output)                    |
 
 Lightning CSS's Node API exposes parsing and printing together through
 `transform()`, without exposing its AST parser or an equivalent PostCSS-style
