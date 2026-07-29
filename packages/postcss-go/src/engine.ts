@@ -1,17 +1,17 @@
 import {
   applyMapAnnotationAsync,
-  materializePreviousMap,
   type MapOptions,
   type ProcessFileOptions,
 } from '@postcss-go/shared/map-options';
 import { createDefaultAsyncService } from './native.js';
 import { asProcessRoot, fromAst, type Node } from './ast.js';
 import { attachInputMetadata } from './input.js';
-import { runPluginsWithBridge, type PluginResult } from './plugin-runtime.js';
+import type { PluginResult } from './plugin-runtime.js';
 import type { AcceptedPlugin } from './plugin-types.js';
+import { dispatchProcess, prepareDispatchOptions } from './dispatch.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
-import { assertSupportedSyntax, hasUnsupportedSyntax } from './syntax-options.js';
+import { hasUnsupportedSyntax } from './syntax-options.js';
 
 export interface CliConfig {
   options?: ProcessFileOptions;
@@ -57,6 +57,7 @@ export function getEffectiveMapOption(config?: CliConfig): boolean | MapOptions 
   return config?.map;
 }
 
+/** Thin predicate for callers that need a boolean without throwing. */
 export function assertGoCompatibility(
   argv: { parser?: string; syntax?: string; stringifier?: string },
   config?: CliConfig,
@@ -88,18 +89,22 @@ export async function processWithGoEngine(
   options: ProcessFileOptions,
 ): Promise<CliProcessResult> {
   const run = async (): Promise<CliProcessResult> => {
-    options = materializePreviousMap(options);
     const inputCss = typeof css === 'string' ? css : css.toString('utf8');
-    // Narrows to from/to/map before the service call; assert on the full options first.
-    assertSupportedSyntax(options);
 
     // Match Processor.process: plugins finalize CSS and maps via stringifyResult.
     if (hasPlugins(config?.plugins)) {
-      const pluginResult = await runPluginChain(config, inputCss, options, engine.service);
+      const pluginResult = await dispatchProcess(
+        engine.service,
+        inputCss,
+        options,
+        getPlugins(config),
+      );
       return toCliResult(pluginResult.css, pluginResult.map, pluginResult.mapFile, [
         ...(pluginResult.messages as CliMessage[]),
       ]);
     }
+
+    options = prepareDispatchOptions(options);
 
     // No plugins: Go owns the complete no-work map flow.
     const mapOption = options.map && typeof options.map === 'object' ? options.map : {};
@@ -158,7 +163,7 @@ async function runWithPluginService(
 ): Promise<PluginResult> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await runPluginsWithBridge(activeService, plugins, css, options);
+    return await dispatchProcess(activeService, css, options, plugins);
   } finally {
     if (!service) await activeService.close();
   }

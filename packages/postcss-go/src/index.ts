@@ -115,6 +115,20 @@ export {
   type GoEngine,
 } from './engine.js';
 export {
+  dispatchNoWork,
+  dispatchNoWorkSync,
+  dispatchParse,
+  dispatchParseAst,
+  dispatchParseSync,
+  dispatchProcess,
+  dispatchProcessDto,
+  dispatchProcessSync,
+  dispatchStringify,
+  dispatchStringifyResult,
+  dispatchStringifySync,
+  prepareDispatchOptions,
+} from './dispatch.js';
+export {
   applyMapAnnotation,
   applyMapAnnotationAsync,
   isExternalSourceMap,

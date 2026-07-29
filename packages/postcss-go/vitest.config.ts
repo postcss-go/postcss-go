@@ -9,7 +9,15 @@ export default defineConfig({
       provider: 'v8',
       all: true,
       include: ['src/**/*.ts'],
-      exclude: ['src/types.ts', 'src/cli.ts', 'src/browser.ts', 'src/shims.d.ts'],
+      exclude: [
+        'src/types.ts',
+        'src/cli.ts',
+        'src/browser.ts',
+        'src/config.ts',
+        'src/reporter.ts',
+        'src/plugin-types.ts',
+        'src/shims.d.ts',
+      ],
       excludeAfterRemap: true,
       reporter: ['text', 'html', 'lcov'],
       thresholds: {

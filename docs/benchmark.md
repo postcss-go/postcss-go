@@ -68,12 +68,12 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Conceptual label (oxc-style) | Go / CodSpeed id                         | Measures                                                               |
-| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| `tokenize[…]`                | `BenchmarkTokenize_*`                    | Tokenizer only — drain `Next` until EOF                                |
-| `walk[…]`                    | `BenchmarkWalk_*`                        | Walk an already-parsed tree (ns/op only; no MB/s)                      |
-| `plugin[…]`                  | `BenchmarkPlugin_*`                      | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
-| `sourcemap[…]`               | `BenchmarkSourcemap_*`                   | Full `Process` with source map generation (external map, not inlined)  |
+| Conceptual label (oxc-style) | Go / CodSpeed id       | Measures                                                               |
+| ---------------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `tokenize[…]`                | `BenchmarkTokenize_*`  | Tokenizer only — drain `Next` until EOF                                |
+| `walk[…]`                    | `BenchmarkWalk_*`      | Walk an already-parsed tree (ns/op only; no MB/s)                      |
+| `plugin[…]`                  | `BenchmarkPlugin_*`    | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
+| `sourcemap[…]`               | `BenchmarkSourcemap_*` | Full `Process` with source map generation (external map, not inlined)  |
 
 Each stage case is a discrete top-level `Benchmark*` function (for example
 `BenchmarkTokenize_bootstrap_css` ↔ `tokenize[bootstrap.css]`). CodSpeed has no
@@ -145,20 +145,26 @@ pull request through [CodSpeed](https://codspeed.io), in
 `.github/workflows/codspeed.yml`:
 
 ```bash
-go test -bench=. ./benchmark/
+GOFLAGS='-tags=codspeed' go test ./benchmark/ -bench=.
 ```
 
 CodSpeed measures them with the
 [walltime instrument](https://codspeed.io/docs/instruments/walltime) — the only
 instrument supported for Go — and reports per-benchmark differences against the
-pull request base. Only the engine suite is tracked; the boundary suite stays
-opt-in and is not part of CI.
+pull request base. CI builds with `-tags=codspeed`, which excludes
+`benchmark/small_bench_test.go` (`*_Small` / `*_small`). Those finish in tens of
+microseconds on shared runners and false-trip the default ~10% threshold with no
+Go engine change; the CodSpeed Go runner discovers `Benchmark*` from source, so
+a `-bench` regex alone is not enough to drop them. Local
+`go test -bench=. ./benchmark/` (no `codspeed` tag) still runs the full suite.
+Only the Go engine suite is tracked in CI. The cross-engine comparison table
+(`pnpm bench`) and the boundary suite stay local / opt-in.
 
 To reproduce a CodSpeed run locally:
 
 ```bash
 curl -fsSL https://codspeed.io/install.sh | sh
-codspeed run --mode walltime --skip-upload -- go test -bench=. ./benchmark/
+GOFLAGS='-tags=codspeed' codspeed run --mode walltime --skip-upload -- go test ./benchmark/ -bench=.
 ```
 
 ## Boundary cost

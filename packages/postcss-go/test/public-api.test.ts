@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { SourceMapConsumer, SourceMapGenerator } from 'source-map-js';
 
-import { expect, test } from 'vitest';
+import { afterEach, expect, test } from 'vitest';
 
 import postcss, {
   AsyncPluginError,
@@ -14,16 +15,31 @@ import postcss, {
   SyncBackendUnavailableError,
   UnsupportedSyntaxError,
   getBackendCapabilities,
+  list,
   noWork,
   noWorkSync,
+  dispatchProcess,
   parse,
   parseAst,
   parseSync,
   process,
   processSync,
+  setPreviousMapFileLoader,
   stringify,
+  stringifyAst,
   stringifySync,
+  toResult,
 } from '../src/index.ts';
+
+afterEach(() => {
+  setPreviousMapFileLoader((file) => {
+    try {
+      return readFileSync(file, 'utf8');
+    } catch {
+      return undefined;
+    }
+  });
+});
 
 test('default entry point creates a reusable Processor', () => {
   const processor = postcss();
@@ -34,6 +50,82 @@ test('default entry point creates a reusable Processor', () => {
   expect(postcss.default).toBe(postcss);
   expect(postcss.parse('.a{}')).toBeInstanceOf(Root);
   expect(postcss({ postcssPlugin: 'one' }, { postcssPlugin: 'two' }).plugins).toHaveLength(2);
+});
+
+test('postcss.plugin creates named plugin creators', async () => {
+  const createBlue = postcss.plugin('set-blue', () => ({
+    Declaration(decl) {
+      decl.value = 'blue';
+    },
+  }));
+  expect(createBlue.postcss).toBe(true);
+
+  const result = await postcss([createBlue()]).process('.a{color:red}', { from: 'input.css' });
+  expect(result.css).toContain('blue');
+});
+
+test('stringifyAst stringifies a live Root without an injected service', async () => {
+  const root = await parse('.a { color: red }', { from: 'input.css' });
+  await expect(stringifyAst(root)).resolves.toContain('color: red');
+});
+
+test('toResult stringifies without an injected service', async () => {
+  const root = postcss.parse('.a{color:red}', { from: 'input.css' });
+  const result = await toResult(root);
+  expect(result.css).toContain('color:red');
+  expect(result.root).toBe(root);
+});
+
+test('list helpers preserve escapes, quotes, and nested function commas', () => {
+  expect(list.comma('a\\,b, "c,d", fn(1,2)')).toEqual(['a\\,b', '"c,d"', 'fn(1,2)']);
+  expect(list.space("a\\ b 'c d'")).toEqual(['a\\ b', "'c d'"]);
+});
+
+test('standalone process accepts transformer functions and nested plugin packs', async () => {
+  const transformed = await postcss([
+    (root) => {
+      root.walkDecls((decl) => {
+        decl.value = 'blue';
+      });
+    },
+  ]).process('.a{color:red}', { from: 'input.css' });
+  expect(transformed.css).toContain('blue');
+
+  const packed = await postcss([
+    {
+      plugins: [
+        {
+          postcssPlugin: 'nested',
+          Declaration(decl) {
+            decl.value = 'green';
+          },
+        },
+      ],
+    },
+  ]).process('.a{color:red}', { from: 'input.css' });
+  expect(packed.css).toContain('green');
+});
+
+test('plugin prepare failures and unknown visitor events surface clear errors', async () => {
+  await expect(
+    postcss([
+      {
+        postcssPlugin: 'bad-prepare',
+        prepare() {
+          throw Object.assign(new Error('boom'), { plugin: undefined });
+        },
+      },
+    ]).process('.a{}', { from: 'input.css' }),
+  ).rejects.toThrow(/boom/);
+
+  await expect(
+    postcss([
+      {
+        postcssPlugin: 'unknown-event',
+        WeirdEvent() {},
+      } as never,
+    ]).process('.a{}', { from: 'input.css' }),
+  ).rejects.toThrow(/Unknown event WeirdEvent/);
 });
 
 test('Processor normalizes plugin packs and rejects invalid plugins eagerly', () => {
@@ -120,6 +212,37 @@ test('public backend APIs reject unsupported syntax instead of silently ignoring
     UnsupportedSyntaxError,
   );
   expect(() => postcss([plugin]).processSync('.a{}', { parser })).toThrow(UnsupportedSyntaxError);
+});
+
+test('Processor and dispatchProcess share the same unsupported-syntax gate', async () => {
+  const parser = () => postcss.root();
+  const service = {
+    process: async () => {
+      throw new Error('should not reach service');
+    },
+    parse: async () => {
+      throw new Error('should not reach service');
+    },
+    noWork: async () => {
+      throw new Error('should not reach service');
+    },
+    stringify: async () => '',
+    stringifyResult: async () => ({ css: '' }),
+    close: async () => undefined,
+    capabilities: {
+      backend: 'native' as const,
+      asynchronous: true as const,
+      backendWorkOffMainThread: true as const,
+      synchronous: true as const,
+    },
+  };
+
+  await expect(dispatchProcess(service, '.a{}', { parser }, [])).rejects.toBeInstanceOf(
+    UnsupportedSyntaxError,
+  );
+  await expect(postcss().process('.a{}', { parser })).rejects.toBeInstanceOf(
+    UnsupportedSyntaxError,
+  );
 });
 
 test('named custom syntax functions cannot masquerade as default delegates', async () => {
@@ -631,6 +754,79 @@ test('PreviousMap exposes annotation, inline text, and source content', () => {
   expect(map.inline).toBe(true);
   expect(map.withContent()).toBe(true);
   expect(map.toJSON()?.version).toBe(3);
+});
+
+test('PreviousMap accepts generator, function, and stringifiable map.prev values', () => {
+  const raw = {
+    version: 3,
+    sources: ['a.css'],
+    names: [],
+    mappings: 'AAAA',
+    sourcesContent: ['.a{}'],
+  };
+  const consumer = new SourceMapConsumer(raw);
+  const generator = SourceMapGenerator.fromSourceMap(consumer);
+
+  expect(new PreviousMap('.a{}', { from: 'a.css', map: { prev: generator } }).text).toContain(
+    '"version":3',
+  );
+  expect(new PreviousMap('.a{}', { from: 'a.css', map: { prev: () => raw } }).text).toContain(
+    '"version":3',
+  );
+  expect(
+    new PreviousMap('.a{}', {
+      from: 'a.css',
+      map: {
+        prev: {
+          toString() {
+            return JSON.stringify(raw);
+          },
+        },
+      },
+    }).text,
+  ).toContain('"version":3');
+});
+
+test('PreviousMap loads external annotations and rejects unsupported encodings', () => {
+  const raw = {
+    version: 3,
+    sources: ['a.css'],
+    names: [],
+    mappings: 'AAAA',
+    sourcesContent: ['.a{}'],
+  };
+
+  setPreviousMapFileLoader(() => `${JSON.stringify(raw)}\n`);
+  const fromFile = new PreviousMap('.a{}\n/*# sourceMappingURL=out.css.map */', {
+    from: '/tmp/a.css',
+  });
+  expect(fromFile.text).toContain('"version":3');
+  expect(fromFile.mapFile).toMatch(/out\.css\.map$/);
+
+  setPreviousMapFileLoader(() => 'not-json');
+  expect(
+    new PreviousMap('.a{}\n/*# sourceMappingURL=broken.css.map */', { from: '/tmp/a.css' }).text,
+  ).toBeUndefined();
+
+  const uriEncoded = encodeURIComponent(JSON.stringify(raw));
+  const uriMap = new PreviousMap(
+    `.a{}\n/*# sourceMappingURL=data:application/json,${uriEncoded} */`,
+  );
+  expect(uriMap.inline).toBe(true);
+  expect(uriMap.toJSON()?.version).toBe(3);
+
+  expect(
+    () => new PreviousMap('.a{}\n/*# sourceMappingURL=data:text/plain;base64,YQ== */'),
+  ).toThrow(/Unsupported source map encoding/);
+
+  const broken = new PreviousMap('.a{}', { map: { prev: '{not-json' } });
+  expect(broken.toJSON()).toBeUndefined();
+  expect(broken.withContent()).toBe(false);
+  expect(broken.toString()).toBe('{not-json');
+
+  const empty = new PreviousMap('.a{}', { map: false });
+  expect(empty.toString()).toBe('');
+  expect(() => empty.consumer()).toThrow(/not available/);
 });
 
 test('map.prev accepts SourceMapConsumer and SourceMapGenerator on public backend paths', async () => {

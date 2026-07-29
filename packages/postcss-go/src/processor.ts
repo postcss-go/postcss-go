@@ -1,6 +1,8 @@
-import { materializePreviousMap, type ProcessFileOptions } from '@postcss-go/shared/map-options';
+import { createRequire } from 'node:module';
 
-import { asProcessRoot, fromAst, Node, Root, toAst } from './ast.js';
+import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
+
+import { Node, Root } from './ast.js';
 import { stringify as stringifyOwned } from './ast-stringifier.js';
 import { SyncBackendUnavailableError } from './errors.js';
 import {
@@ -10,20 +12,27 @@ import {
   isNativeBridgeAvailable,
   NativePostcssGoService,
 } from './native.js';
-import { attachInputMetadata } from './input.js';
 import {
   postcssApi,
-  runPluginsWithBridge,
-  runPluginsWithBridgeSync,
   setProcessorFactory,
   type PostcssPublic,
   type RuntimePlugin,
 } from './plugin-runtime.js';
 import type { AcceptedPlugin, Plugin } from './plugin-types.js';
-import { hydrateResultMap, hydrateResultMessages, Result } from './result.js';
+import { Result } from './result.js';
 import { NATIVE_BACKEND_CAPABILITIES, type PostcssGoService } from './service.js';
-import type { ProcessOptions, RootNode, DocumentNode } from './types.js';
-import { prepareStringifyOptions } from './source-map-output.js';
+import type { ProcessOptions } from './types.js';
+import {
+  dispatchNoWorkSync,
+  dispatchParseSync,
+  dispatchProcess,
+  dispatchProcessSync,
+  dispatchStringifySync,
+} from './dispatch.js';
+
+const { version: packageVersion } = createRequire(import.meta.url)('../package.json') as {
+  version: string;
+};
 
 export type CssInput = string | { toString(): string };
 export type PublicResult = Result<RuntimePlugin>;
@@ -47,12 +56,8 @@ export function getBackendCapabilities(): PostcssGoCapabilities {
   };
 }
 
-/**
- * PostCSS-shaped processor with explicit Promise-returning and synchronous
- * methods. Unlike PostCSS, no implicit LazyResult execution is performed.
- */
 export class Processor {
-  version = '0.0.1';
+  version = packageVersion;
   plugins: AcceptedPlugin[];
 
   constructor(plugins: AcceptedPlugin[] = []) {
@@ -91,52 +96,18 @@ export class Processor {
     options: ProcessFileOptions = {},
     processorOptions: ProcessorOptions = {},
   ): Promise<PublicResult> {
-    options = materializePreviousMap(options);
     const css = String(cssInput);
     const ownedService = processorOptions.service ? undefined : createAsyncService();
     const service = processorOptions.service ?? ownedService!;
     try {
-      if (this.plugins.length > 0) {
-        return await runPluginsWithBridge(service, this.plugins, css, options, this);
-      }
-      const processed = await service.process(css, options as ProcessOptions);
-      const root = asProcessRoot(
-        processed.root instanceof Node
-          ? processed.root
-          : fromAst(processed.root as RootNode | DocumentNode),
-      );
-      attachInputMetadata(root, css, options as ProcessOptions);
-      const result = new Result<RuntimePlugin>(this, root, options);
-      result.css = processed.css;
-      result.map = hydrateResultMap(processed.map);
-      result.mapFile = processed.mapFile;
-      result.messages.push(...hydrateResultMessages(processed.messages));
-      return result;
+      return await dispatchProcess(service, css, options, this.plugins, this);
     } finally {
       if (ownedService) await ownedService.close();
     }
   }
 
   processSync(cssInput: CssInput, options: ProcessFileOptions = {}): PublicResult {
-    options = materializePreviousMap(options);
-    const service = requireSyncService();
-    const css = String(cssInput);
-    if (this.plugins.length > 0) {
-      return runPluginsWithBridgeSync(service, this.plugins, css, options, this);
-    }
-    const processed = service.processSync(css, options as ProcessOptions);
-    const root = asProcessRoot(
-      processed.root instanceof Node
-        ? processed.root
-        : fromAst(processed.root as RootNode | DocumentNode),
-    );
-    attachInputMetadata(root, css, options as ProcessOptions);
-    const result = new Result<RuntimePlugin>(this, root, options);
-    result.css = processed.css;
-    result.map = hydrateResultMap(processed.map);
-    result.mapFile = processed.mapFile;
-    result.messages.push(...hydrateResultMessages(processed.messages));
-    return result;
+    return dispatchProcessSync(requireSyncService(), String(cssInput), options, this.plugins, this);
   }
 }
 
@@ -167,12 +138,7 @@ Object.defineProperty(postcss, 'default', {
 setProcessorFactory((plugins) => new Processor(plugins));
 
 export function parseSync(css: CssInput, options: ProcessOptions = {}): Root {
-  options = materializePreviousMap(options);
-  const text = String(css);
-  const root = asProcessRoot(requireSyncService().parseSync(text, options).root);
-  if (!(root instanceof Root)) throw new Error('postcss-go parseSync response is not a root');
-  attachInputMetadata(root, text, options);
-  return root;
+  return dispatchParseSync(requireSyncService(), String(css), options);
 }
 
 export function processSync(
@@ -184,8 +150,7 @@ export function processSync(
 }
 
 export function noWorkSync(css: CssInput, options: ProcessOptions = {}) {
-  options = materializePreviousMap(options);
-  return requireSyncService().noWorkSync(String(css), options);
+  return dispatchNoWorkSync(requireSyncService(), String(css), options);
 }
 
 export function stringifySync(
@@ -196,9 +161,7 @@ export function stringifySync(
     stringifyOwned(node, builderOrOptions as never);
     return;
   }
-  const options = materializePreviousMap(builderOrOptions ?? {});
-  const effectiveOptions = prepareStringifyOptions(node, options);
-  return requireSyncService().stringifySync(toAst(node), effectiveOptions);
+  return dispatchStringifySync(requireSyncService(), node, builderOrOptions ?? {});
 }
 
 function createAsyncService(): PostcssGoService {

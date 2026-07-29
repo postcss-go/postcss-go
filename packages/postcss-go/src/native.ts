@@ -33,7 +33,6 @@ import type {
   ProcessResult,
   ResultMessage,
 } from './types.js';
-import { assertSupportedSyntax } from './syntax-options.js';
 import { prepareStringifyOptions } from './source-map-output.js';
 
 type NativeAddon = {
@@ -150,7 +149,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     try {
       const buffer = await this.addon.parseAsync(css, options.from);
       return { root: decodeAst(buffer) as ParseResult['root'] };
@@ -162,7 +160,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
   /** Parse asynchronously into a live tree without an intermediate DTO. */
   async parseLive(css: string, options: ProcessOptions = {}): Promise<LiveParseResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     try {
       return { root: hydrateAst(await this.addon.parseAsync(css, options.from)) };
     } catch (nativeError) {
@@ -172,7 +169,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const effective = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
@@ -203,7 +199,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   processSync(css: string, options: ProcessOptions = {}): ProcessResult {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const effective = this.resolveAnnotationSync(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
@@ -232,7 +227,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   async noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const effective = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
@@ -245,7 +239,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   noWorkSync(css: string, options: ProcessOptions = {}): NoWorkResult {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const effective = this.resolveAnnotationSync(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
@@ -260,7 +253,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = await this.resolveStringifyAnnotation(ast, prepared);
     const normalized = normalizeProcessOptions(
@@ -278,7 +270,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     options: ProcessOptions = {},
   ): Promise<AstStringifyResult> {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = await this.resolveStringifyAnnotationLive(ast, prepared);
     const normalized = normalizeProcessOptions(
@@ -300,7 +291,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
    */
   parseSync(css: string, options: ProcessOptions = {}): LiveParseResult {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     try {
       return { root: hydrateAst(this.addon.parse(css, options.from)) };
     } catch (nativeError) {
@@ -314,7 +304,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
    */
   stringifyResultSync(ast: AstNode | Node, options: ProcessOptions = {}): AstStringifyResult {
     options = materializePreviousMap(options);
-    assertSupportedSyntax(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = this.resolveStringifyAnnotationSync(ast, prepared);
     const normalized = normalizeProcessOptions(

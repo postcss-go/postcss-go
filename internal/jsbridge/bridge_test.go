@@ -3,10 +3,14 @@ package jsbridge
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"postcss-go/internal/ast"
+	"postcss-go/internal/csserrors"
+	postcss "postcss-go/internal/postcss"
+	"postcss-go/internal/sourcemap"
 )
 
 func TestProcessOptionsJSONContract(t *testing.T) {
@@ -313,6 +317,198 @@ func TestRPCMethods(t *testing.T) {
 		t.Fatal("expected stringify rpc without ast to fail")
 	}
 }
+
+func TestExecuteNoWorkAndErrorPaths(t *testing.T) {
+	noWork := Execute(Request{Command: "noWork", CSS: "a { color: red; }"})
+	if !noWork.OK || noWork.CSS != "a { color: red; }" {
+		t.Fatalf("unexpected noWork response: %#v", noWork)
+	}
+	if bad := Execute(Request{Command: "parse", CSS: ".a {"}); bad.OK || bad.Error == nil {
+		t.Fatalf("expected parse error response, got %#v", bad)
+	}
+	if bad := Execute(Request{Command: "process", CSS: ".a {"}); bad.OK || bad.Error == nil {
+		t.Fatalf("expected process error response, got %#v", bad)
+	}
+}
+
+func TestStringifyBuilderAndComplexDTORoundTrip(t *testing.T) {
+	parseRes, err := ParseRPC(context.Background(), ParseParams{
+		CSS:     `@media screen { /* note */ .a { color: red !important; } }`,
+		Options: RequestOpts{From: "complex.css"},
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	built, err := StringifyRPC(context.Background(), StringifyParams{
+		AST:     parseRes.Root,
+		Builder: true,
+	})
+	if err != nil || len(built.Parts) == 0 {
+		t.Fatalf("builder stringify failed: %#v err=%v", built, err)
+	}
+
+	node, err := FromDTO(parseRes.Root)
+	if err != nil {
+		t.Fatalf("FromDTO: %v", err)
+	}
+	dto, err := ToDTO(node)
+	if err != nil || dto.Type != "root" {
+		t.Fatalf("ToDTO round-trip failed: %#v err=%v", dto, err)
+	}
+	if len(dto.Nodes) == 0 || dto.Nodes[0].Type != "atrule" {
+		t.Fatalf("expected at-rule child, got %#v", dto.Nodes)
+	}
+}
+
+func TestSourceBridgeDTOHelpersAndFindBlockEnd(t *testing.T) {
+	parseRes, err := ParseRPC(context.Background(), ParseParams{
+		CSS:     `.a { content: "\{"; background: url('x)'); /* }*/ color: red; }`,
+		Options: RequestOpts{From: "block.css"},
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	node, err := FromDTO(parseRes.Root)
+	if err != nil {
+		t.Fatalf("FromDTO: %v", err)
+	}
+	rule := node.(*ast.Root).Children()[0]
+	bridged := SourceToBridgeDTO(rule.Source(), true, true, false, true)
+	if bridged == nil || bridged.File == "" {
+		t.Fatalf("SourceToBridgeDTO failed: %#v", bridged)
+	}
+
+	input, loc, err := SourceFromBridgeDTO(bridged, nil)
+	if err != nil || input == nil || loc == nil {
+		t.Fatalf("SourceFromBridgeDTO failed: input=%v loc=%v err=%v", input, loc, err)
+	}
+
+	end, ok := findBlockEnd(`.a { content: "\}"; /* } */ background:url(x); }`, 0)
+	if !ok || end == 0 {
+		t.Fatalf("findBlockEnd failed: end=%d ok=%v", end, ok)
+	}
+	if _, ok := findBlockEnd(`a { /*`, 0); ok {
+		t.Fatal("unclosed comment should fail findBlockEnd")
+	}
+	if end, ok := findBlockEnd(`a[href="{"] { color: red; }`, 0); !ok || end == 0 {
+		t.Fatalf("brackets/quotes should not confuse findBlockEnd: end=%d ok=%v", end, ok)
+	}
+}
+
+func TestErrorDTOFromCssSyntaxErrorWithSourceMap(t *testing.T) {
+	err := &csserrors.SyntaxError{
+		Reason:    "boom",
+		Line:      2,
+		Column:    4,
+		EndLine:   2,
+		EndColumn: 6,
+		Source:    "x",
+		File:      "a.css",
+		Plugin:    "demo",
+		Input: &csserrors.InputInfo{
+			Source:           "x",
+			File:             "a.css",
+			Line:             2,
+			Column:           4,
+			Offset:           3,
+			SourceMapPresent: true,
+		},
+	}
+	detail := ErrorDTOFromError(err)
+	if detail.Name != "CssSyntaxError" || detail.Column != 3 || detail.EndColumn != 5 {
+		t.Fatalf("expected source-map column adjustment, got %#v", detail)
+	}
+	if detail.Input == nil || !detail.Input.SourceMapPresent {
+		t.Fatalf("expected input metadata, got %#v", detail.Input)
+	}
+}
+
+func TestFromDTONilAndWarningsDTO(t *testing.T) {
+	if _, err := FromDTO(nil); err == nil {
+		t.Fatal("expected nil dto error")
+	}
+	if got := warningsToDTO(nil); got == nil || len(got) != 0 {
+		t.Fatalf("expected empty warning slice, got %#v", got)
+	}
+	got := warningsToDTO([]postcss.Warning{{Type: "warning", Text: "heads up", Plugin: "demo"}})
+	if len(got) != 1 || got[0].Text != "heads up" || got[0].Plugin != "demo" {
+		t.Fatalf("unexpected warningsToDTO: %#v", got)
+	}
+}
+
+func TestNoWorkAndSourceFromDTOErrorPaths(t *testing.T) {
+	_, err := NoWorkRPC(context.Background(), NoWorkParams{
+		CSS:     "a{}",
+		Options: RequestOpts{Map: true, PreviousMapPath: filepath.Join(t.TempDir(), "missing.map")},
+	})
+	if err == nil {
+		t.Fatal("expected NoWorkRPC previous map error")
+	}
+	resp := Execute(Request{
+		Command: "noWork",
+		CSS:     "a{}",
+		Options: RequestOpts{Map: true, PreviousMapPath: filepath.Join(t.TempDir(), "missing-exec.map")},
+	})
+	if resp.OK || resp.Error == nil {
+		t.Fatalf("expected noWork execute error, got %#v", resp)
+	}
+
+	_, _, err = SourceFromBridgeDTO(&SourceLocationDTO{
+		Start: SourcePositionDTO{Line: 1, Column: 1},
+		End:   SourcePositionDTO{Line: 1, Column: 2},
+		Map:   "{",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected invalid source map decode error")
+	}
+}
+
+func TestToDTOOwnSemicolonAndUnsupportedType(t *testing.T) {
+	css := "a { color: red }"
+	root, err := ParseRPC(context.Background(), ParseParams{CSS: css, Options: RequestOpts{From: "semi.css"}})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	node, err := FromDTO(root.Root)
+	if err != nil {
+		t.Fatalf("FromDTO: %v", err)
+	}
+	rule := node.(*ast.Root).Children()[0].(*ast.Rule)
+	rule.RawFormatting()["ownSemicolon"] = ";"
+	dto, err := ToDTO(node)
+	if err != nil || dto.Nodes[0].Source == nil {
+		t.Fatalf("ToDTO with ownSemicolon failed: %#v err=%v", dto, err)
+	}
+
+	if _, err := toDTO(unsupportedNode{}, true); err == nil {
+		t.Fatal("expected unsupported node type error")
+	}
+}
+
+type unsupportedNode struct{}
+
+func (unsupportedNode) Type() ast.NodeType              { return "x" }
+func (unsupportedNode) Parent() ast.Container           { return nil }
+func (unsupportedNode) SetParent(ast.Container)         {}
+func (unsupportedNode) Range() ast.SourceRange          { return ast.SourceRange{} }
+func (unsupportedNode) SetRange(ast.SourceRange)        {}
+func (unsupportedNode) Source() *sourcemap.Location     { return nil }
+func (unsupportedNode) SetSource(*sourcemap.Location)   {}
+func (unsupportedNode) RawFormatting() ast.Raws         { return nil }
+func (unsupportedNode) RawFormattingReadOnly() ast.Raws { return nil }
+func (unsupportedNode) Root() ast.Node                  { return nil }
+func (unsupportedNode) Next() ast.Node                  { return nil }
+func (unsupportedNode) Prev() ast.Node                  { return nil }
+func (unsupportedNode) Remove() ast.Node                { return nil }
+func (unsupportedNode) ReplaceWith(...ast.Node) error   { return nil }
+func (unsupportedNode) Clone() ast.Node                 { return unsupportedNode{} }
+func (unsupportedNode) Before(...ast.Node) error        { return nil }
+func (unsupportedNode) After(...ast.Node) error         { return nil }
+func (unsupportedNode) Error(string, ...ast.ErrorOptions) *csserrors.SyntaxError {
+	return nil
+}
+func (unsupportedNode) CloneBefore(...ast.Node) (ast.Node, error) { return nil, nil }
+func (unsupportedNode) CloneAfter(...ast.Node) (ast.Node, error)  { return nil, nil }
 
 func boolPtr(v bool) *bool {
 	return &v

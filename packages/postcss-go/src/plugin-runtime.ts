@@ -28,7 +28,6 @@ import { hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
 import { prepareStringifyOptions } from './source-map-output.js';
-import { assertSupportedSyntax } from './syntax-options.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -111,8 +110,6 @@ export interface PostcssPublic {
   comment: (defaults?: ConstructorParameters<typeof Comment>[0]) => Comment;
 }
 
-export { list } from './list.js';
-
 export type PluginHelpers = PostcssPublic & {
   result: PluginResult;
   postcss: PostcssPublic;
@@ -191,8 +188,6 @@ export async function runPluginsWithBridge(
   processor?: ResultProcessorFacade,
 ): Promise<PluginResult> {
   options = materializePreviousMap(options);
-  // Narrows to `{ from }` before the service call; assert on the full options first.
-  assertSupportedSyntax(options);
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
   const parsed = liveService
@@ -263,8 +258,6 @@ export function runPluginsWithBridgeSync(
   processor?: ResultProcessorFacade,
 ): PluginResult {
   options = materializePreviousMap(options);
-  // Narrows to `{ from }` before the service call; assert on the full options first.
-  assertSupportedSyntax(options);
   const normalized = normalizePluginsSync(plugins);
   const parsed = service.parseSync(css, { from: options.from });
   const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));

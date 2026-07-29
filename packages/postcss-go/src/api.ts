@@ -1,17 +1,16 @@
-import { Document, asProcessRoot, fromAst, Node, Root, toAst, type ProcessRoot } from './ast.js';
-import { materializePreviousMap } from '@postcss-go/shared/map-options';
+import { Document, asProcessRoot, Node, Root, toAst, type ProcessRoot } from './ast.js';
 import { createDefaultAsyncService } from './native.js';
 import type { PostcssGoService } from './service.js';
-import type {
-  DocumentNode,
-  ProcessOptions,
-  ProcessResult,
-  RootNode,
-  ResultMessage,
-} from './types.js';
-import { attachInputMetadata } from './input.js';
-import { prepareStringifyOptions } from './source-map-output.js';
-import { hydrateResultMap, hydrateResultMessages, type ResultMap } from './result.js';
+import type { ProcessOptions, ProcessResult, ResultMessage, RootNode } from './types.js';
+import { hydrateResultMap, type ResultMap } from './result.js';
+import {
+  dispatchNoWork,
+  dispatchParse,
+  dispatchParseAst,
+  dispatchProcessDto,
+  dispatchStringify,
+  dispatchStringifyResult,
+} from './dispatch.js';
 
 export interface DocumentResult {
   css: string;
@@ -26,14 +25,9 @@ export async function parse(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<Root> {
-  options = materializePreviousMap(options);
   const activeService = service ?? createDefaultAsyncService();
   try {
-    const parsed = await activeService.parse(css, options);
-    const root = asProcessRoot(fromAst(parsed.root));
-    if (!(root instanceof Root)) throw new Error('postcss-go parse response is not a root');
-    attachInputMetadata(root, css, options);
-    return root;
+    return await dispatchParse(activeService, css, options);
   } finally {
     if (!service) {
       await activeService.close();
@@ -46,21 +40,9 @@ export async function process(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<ProcessResult> {
-  options = materializePreviousMap(options);
   const activeService = service ?? createDefaultAsyncService();
   try {
-    const processed = await activeService.process(css, options);
-    const root = asProcessRoot(
-      processed.root instanceof Node
-        ? processed.root
-        : fromAst(processed.root as RootNode | DocumentNode),
-    );
-    attachInputMetadata(root, css, options);
-    return {
-      ...processed,
-      root,
-      messages: hydrateResultMessages(processed.messages),
-    };
+    return await dispatchProcessDto(activeService, css, options);
   } finally {
     if (!service) {
       await activeService.close();
@@ -74,10 +56,9 @@ export async function parseAst(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<RootNode> {
-  options = materializePreviousMap(options);
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return (await activeService.parse(css, options)).root;
+    return await dispatchParseAst(activeService, css, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -89,11 +70,9 @@ export async function stringify(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<string> {
-  options = materializePreviousMap(options);
   const activeService = service ?? createDefaultAsyncService();
   try {
-    const effectiveOptions = prepareStringifyOptions(node, options);
-    return (await activeService.stringifyResult(toAst(node), effectiveOptions)).css;
+    return await dispatchStringify(activeService, node, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -105,10 +84,9 @@ export async function noWork(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ) {
-  options = materializePreviousMap(options);
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await activeService.noWork(css, options);
+    return await dispatchNoWork(activeService, css, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -136,12 +114,10 @@ export async function toResult(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<DocumentResult> {
-  options = materializePreviousMap(options);
   const activeService = service ?? createDefaultAsyncService();
   try {
     const root = asProcessRoot(document);
-    const effectiveOptions = prepareStringifyOptions(root, options);
-    const stringified = await activeService.stringifyResult(toAst(root), effectiveOptions);
+    const stringified = await dispatchStringifyResult(activeService, root, options);
     return {
       css: stringified.css,
       map: hydrateResultMap(stringified.map),

@@ -5,6 +5,9 @@ import (
 	"reflect"
 	"regexp"
 	"testing"
+
+	csserrors "postcss-go/internal/csserrors"
+	"postcss-go/internal/sourcemap"
 )
 
 func TestWalkHelpers(t *testing.T) {
@@ -181,4 +184,114 @@ func TestWalkRejectsInvalidFilterSignature(t *testing.T) {
 	if err := WalkAtRules(root, ".a", ".b"); err == nil {
 		t.Fatal("expected invalid at-rule callback signature to fail")
 	}
+	if err := WalkRules(root, 1, func(*Rule) error { return nil }); err == nil {
+		t.Fatal("expected invalid rule filter to fail")
+	}
+	if err := WalkAtRules(root, true, func(*AtRule) error { return nil }); err == nil {
+		t.Fatal("expected invalid atrule filter to fail")
+	}
+}
+
+func TestWalkStringFiltersAndEachFallback(t *testing.T) {
+	root := NewRoot()
+	rule := NewRule(".exact")
+	rule.Append(NewDeclaration("color", "red"), NewDeclaration("margin", "0"))
+	atRule := NewAtRule("media", "all")
+	atRule.Block = true
+	root.Append(rule, atRule)
+
+	var props []string
+	if err := WalkDecls(root, "color", func(decl *Declaration) error {
+		props = append(props, decl.Prop)
+		return nil
+	}); err != nil {
+		t.Fatalf("string decl filter: %v", err)
+	}
+	if !reflect.DeepEqual(props, []string{"color"}) {
+		t.Fatalf("unexpected props: %#v", props)
+	}
+
+	var rules []string
+	if err := WalkRules(root, regexp.MustCompile(`exact`), func(rule *Rule) error {
+		rules = append(rules, rule.Selector)
+		return nil
+	}); err != nil {
+		t.Fatalf("regexp rule filter: %v", err)
+	}
+	if !reflect.DeepEqual(rules, []string{".exact"}) {
+		t.Fatalf("unexpected rules: %#v", rules)
+	}
+
+	var names []string
+	if err := WalkAtRules(root, "media", func(rule *AtRule) error {
+		names = append(names, rule.Name)
+		return nil
+	}); err != nil {
+		t.Fatalf("string atrule filter: %v", err)
+	}
+	if !reflect.DeepEqual(names, []string{"media"}) {
+		t.Fatalf("unexpected atrules: %#v", names)
+	}
+
+	plain := &plainContainer{nodes: []Node{NewRule(".plain")}}
+	var seen []string
+	if err := Each(plain, func(node Node, index int) error {
+		seen = append(seen, node.(*Rule).Selector)
+		if index != 0 {
+			t.Fatalf("unexpected index %d", index)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("each fallback: %v", err)
+	}
+	if !reflect.DeepEqual(seen, []string{".plain"}) {
+		t.Fatalf("unexpected each fallback visit: %#v", seen)
+	}
+	sentinel := errors.New("stop-each")
+	if err := Each(plain, func(Node, int) error { return sentinel }); !errors.Is(err, sentinel) {
+		t.Fatalf("expected each fallback error, got %v", err)
+	}
+}
+
+// plainContainer implements Container without iterator tracking so Each uses
+// the non-mutating fallback path.
+type plainContainer struct {
+	nodes []Node
+}
+
+func (p *plainContainer) Type() NodeType                   { return NodeRoot }
+func (p *plainContainer) Parent() Container                { return nil }
+func (p *plainContainer) SetParent(Container)              {}
+func (p *plainContainer) Range() SourceRange               { return SourceRange{} }
+func (p *plainContainer) SetRange(SourceRange)             {}
+func (p *plainContainer) Source() *sourcemap.Location      { return nil }
+func (p *plainContainer) SetSource(*sourcemap.Location)    {}
+func (p *plainContainer) RawFormatting() Raws              { return Raws{} }
+func (p *plainContainer) RawFormattingReadOnly() Raws      { return nil }
+func (p *plainContainer) Children() []Node                 { return p.nodes }
+func (p *plainContainer) Append(...Node)                   {}
+func (p *plainContainer) Prepend(...Node)                  {}
+func (p *plainContainer) InsertBefore(Node, ...Node) error { return nil }
+func (p *plainContainer) InsertAfter(Node, ...Node) error  { return nil }
+func (p *plainContainer) RemoveChild(Node) error           { return nil }
+func (p *plainContainer) Index(Node) int                   { return -1 }
+func (p *plainContainer) First() Node                      { return nil }
+func (p *plainContainer) Last() Node                       { return nil }
+func (p *plainContainer) RemoveAll()                       {}
+func (p *plainContainer) Some(func(Node) bool) bool        { return false }
+func (p *plainContainer) Every(func(Node) bool) bool       { return true }
+func (p *plainContainer) Root() Node                       { return p }
+func (p *plainContainer) Next() Node                       { return nil }
+func (p *plainContainer) Prev() Node                       { return nil }
+func (p *plainContainer) Remove() Node                     { return p }
+func (p *plainContainer) ReplaceWith(...Node) error        { return nil }
+func (p *plainContainer) Clone() Node                      { return p }
+func (p *plainContainer) CloneBefore(...Node) (Node, error) {
+	return p, nil
+}
+func (p *plainContainer) CloneAfter(...Node) (Node, error) { return p, nil }
+func (p *plainContainer) Before(...Node) error             { return nil }
+func (p *plainContainer) After(...Node) error              { return nil }
+func (p *plainContainer) Error(string, ...ErrorOptions) *csserrors.SyntaxError {
+	return nil
 }

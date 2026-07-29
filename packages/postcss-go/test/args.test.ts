@@ -75,3 +75,17 @@ test('args prints help and exits successfully', async () => {
 
   write.mockRestore();
 });
+
+test('args rejects --poll without --watch and defaults bare --poll under --watch', async () => {
+  await expect(importArgs(['input.css', '--poll'])).rejects.toThrow(/poll requires watch/i);
+
+  const argv = await importArgs(['input.css', '--watch', '--poll']);
+  expect(argv.watch).toBe(true);
+  expect(argv.poll).toBe('100');
+});
+
+test('args rewrites unknown options into stable CLI errors', async () => {
+  await expect(importArgs(['input.css', '--not-a-real-flag'])).rejects.toThrow(
+    /Unknown argument: not-a-real-flag/,
+  );
+});

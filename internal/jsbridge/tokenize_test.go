@@ -171,4 +171,20 @@ func TestMakeUTF16TableFillsEveryByte(t *testing.T) {
 	if got := utf16Offset(table, len(input), len(input)+1); got != 4 {
 		t.Fatalf("past-EOF utf16 offset = %d, want 4", got)
 	}
+	if got := utf16Offset(table, len(input), -1); got != 0 {
+		t.Fatalf("negative utf16 offset = %d, want 0", got)
+	}
+}
+
+func TestTokenizeRPCUnknownSessionErrors(t *testing.T) {
+	ctx := context.Background()
+	if _, err := TokenizeNextRPC(ctx, TokenizeNextParams{ID: -1}); err == nil {
+		t.Fatal("expected unknown session on next")
+	}
+	if _, err := TokenizeBackRPC(ctx, TokenizeBackParams{ID: -1}); err == nil {
+		t.Fatal("expected unknown session on back")
+	}
+	if _, err := TokenizePositionRPC(ctx, TokenizeSessionParams{ID: -1}); err == nil {
+		t.Fatal("expected unknown session on position")
+	}
 }

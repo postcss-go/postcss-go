@@ -19,11 +19,19 @@ permissions:
   id-token: write # required for OIDC authentication with CodSpeed
 
 jobs:
-  benchmarks:
-    name: Run benchmarks
+  go-benchmarks:
+    name: Go Benchmarks
+    # Go CodSpeed currently supports walltime only. Personal GitHub accounts
+    # cannot use `codspeed-macro`; switch to that runner once the repo is under
+    # an organization with CodSpeed Macro Runners enabled. Until then, walltime
+    # on ubuntu-latest is noisy ("Different runtime environments detected") and
+    # ~10% swings without Go engine changes should be treated as CI noise.
     runs-on: ubuntu-latest
     env:
-      GOFLAGS: -mod=mod
+      # `codspeed` excludes benchmark/small_bench_test.go (*_Small / *_small).
+      # The CodSpeed Go runner discovers Benchmark* from source; -bench filters
+      # alone are not reliable for dropping flaky microbenches.
+      GOFLAGS: -mod=mod -tags=codspeed
 
     steps:
       - name: Checkout
@@ -39,4 +47,6 @@ jobs:
         uses: CodSpeedHQ/action@v4
         with:
           mode: walltime # go only supports walltime mode
-          run: go test -bench=. ./benchmark/
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          # CodSpeed Go runner only accepts the `-bench` flag.
+          run: go test ./benchmark/ -bench=.
