@@ -815,8 +815,8 @@ test('PreviousMap loads external annotations and rejects unsupported encodings',
   expect(uriMap.inline).toBe(true);
   expect(uriMap.toJSON()?.version).toBe(3);
 
-  expect(() =>
-    new PreviousMap('.a{}\n/*# sourceMappingURL=data:text/plain;base64,YQ== */'),
+  expect(
+    () => new PreviousMap('.a{}\n/*# sourceMappingURL=data:text/plain;base64,YQ== */'),
   ).toThrow(/Unsupported source map encoding/);
 
   const broken = new PreviousMap('.a{}', { map: { prev: '{not-json' } });

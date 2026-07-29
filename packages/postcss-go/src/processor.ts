@@ -107,13 +107,7 @@ export class Processor {
   }
 
   processSync(cssInput: CssInput, options: ProcessFileOptions = {}): PublicResult {
-    return dispatchProcessSync(
-      requireSyncService(),
-      String(cssInput),
-      options,
-      this.plugins,
-      this,
-    );
+    return dispatchProcessSync(requireSyncService(), String(cssInput), options, this.plugins, this);
   }
 }
 

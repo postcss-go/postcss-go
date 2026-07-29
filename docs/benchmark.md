@@ -68,12 +68,12 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Go / CodSpeed id                              | Stage      | Measures                                                                 |
-| --------------------------------------------- | ---------- | ------------------------------------------------------------------------ |
-| `BenchmarkTokenize_*` / `BenchmarkTokenizeReal_*` | tokenize | Tokenizer only — drain `Next` until EOF (no parse/walk/stringify)        |
-| `BenchmarkWalk_*` / `BenchmarkWalkReal_*`         | walk     | Walk an already-parsed tree (ns/op only; no MB/s)                        |
-| `BenchmarkPluginPipeline_*`                       | plugin   | Full `Process` with a `display` visitor rewrite (dispatch + stringify)   |
-| `BenchmarkProcessSourceMap_*`                     | sourcemap| Full `Process` with source map generation (external map, not inlined)    |
+| Go / CodSpeed id                                  | Stage     | Measures                                                               |
+| ------------------------------------------------- | --------- | ---------------------------------------------------------------------- |
+| `BenchmarkTokenize_*` / `BenchmarkTokenizeReal_*` | tokenize  | Tokenizer only — drain `Next` until EOF (no parse/walk/stringify)      |
+| `BenchmarkWalk_*` / `BenchmarkWalkReal_*`         | walk      | Walk an already-parsed tree (ns/op only; no MB/s)                      |
+| `BenchmarkPluginPipeline_*`                       | plugin    | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
+| `BenchmarkProcessSourceMap_*`                     | sourcemap | Full `Process` with source map generation (external map, not inlined)  |
 
 Stage names stay as discrete top-level `Benchmark*` functions so CodSpeed keeps
 stable ids and does not run every heavy stage before Parse/Process (which can

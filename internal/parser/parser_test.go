@@ -284,8 +284,8 @@ func TestParseSelectorsCommentsAndBOM(t *testing.T) {
 
 func TestParseDeclarationsEdgeCases(t *testing.T) {
 	cases := []struct {
-		name string
-		css  string
+		name  string
+		css   string
 		check func(*testing.T, *ast.Root)
 	}{
 		{

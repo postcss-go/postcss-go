@@ -4,7 +4,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { CssSyntaxError, Input, PreviousMap, Warning, hydrateInput, postcss } from '../src/index.ts';
+import {
+  CssSyntaxError,
+  Input,
+  PreviousMap,
+  Warning,
+  hydrateInput,
+  postcss,
+} from '../src/index.ts';
 
 type RootLike = ReturnType<typeof upstream.parse>;
 

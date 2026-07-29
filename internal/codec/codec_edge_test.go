@@ -106,19 +106,19 @@ func TestCodecRawValueTypesRoundTrip(t *testing.T) {
 				},
 			},
 			{
-				Type:  string(ast.NodeAtRule),
-				Name:  "media",
+				Type:   string(ast.NodeAtRule),
+				Name:   "media",
 				Params: "screen",
-				Block: true,
+				Block:  true,
 				Nodes: []*jsbridge.NodeDTO{
 					{Type: string(ast.NodeDecl), Prop: "color", Value: "red", Important: true},
 				},
 			},
 			{
-				Type:  string(ast.NodeAtRule),
-				Name:  "import",
+				Type:   string(ast.NodeAtRule),
+				Name:   "import",
 				Params: `"x.css"`,
-				Block: false,
+				Block:  false,
 			},
 			{
 				Type: string(ast.NodeComment),

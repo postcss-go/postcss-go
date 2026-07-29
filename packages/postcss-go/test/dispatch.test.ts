@@ -17,11 +17,13 @@ function rootDto(): ProcessResult['root'] {
 test('dispatchProcess keeps an explicit processor on the Result', async () => {
   const processor = { plugins: [] };
   const service = {
-    process: vi.fn(async (css: string): Promise<ProcessResult> => ({
-      css,
-      root: rootDto(),
-      messages: [],
-    })),
+    process: vi.fn(
+      async (css: string): Promise<ProcessResult> => ({
+        css,
+        root: rootDto(),
+        messages: [],
+      }),
+    ),
     parse: vi.fn(),
     stringify: vi.fn(),
     stringifyResult: vi.fn(),
@@ -36,11 +38,13 @@ test('dispatchProcess keeps an explicit processor on the Result', async () => {
 
 test('dispatchProcess synthesizes a processor facade when none is provided', async () => {
   const service = {
-    process: vi.fn(async (css: string): Promise<ProcessResult> => ({
-      css,
-      root: rootDto(),
-      messages: [],
-    })),
+    process: vi.fn(
+      async (css: string): Promise<ProcessResult> => ({
+        css,
+        root: rootDto(),
+        messages: [],
+      }),
+    ),
     parse: vi.fn(),
     stringify: vi.fn(),
     stringifyResult: vi.fn(),
@@ -56,11 +60,13 @@ test('dispatchProcessSync hydrates a live root returned by the sync service', ()
   const live = new Root();
   const processor = { plugins: [] };
   const service = {
-    processSync: vi.fn((css: string): ProcessResult => ({
-      css,
-      root: live,
-      messages: [{ type: 'warning', text: 'sync', plugin: 'fixture' }],
-    })),
+    processSync: vi.fn(
+      (css: string): ProcessResult => ({
+        css,
+        root: live,
+        messages: [{ type: 'warning', text: 'sync', plugin: 'fixture' }],
+      }),
+    ),
     parseSync: vi.fn(),
     stringifySync: vi.fn(),
     stringifyResultSync: vi.fn(),
@@ -77,11 +83,13 @@ test('dispatchProcessSync hydrates a live root returned by the sync service', ()
 
 test('dispatchProcessSync synthesizes a processor facade when none is provided', () => {
   const service = {
-    processSync: vi.fn((css: string): ProcessResult => ({
-      css,
-      root: rootDto(),
-      messages: [],
-    })),
+    processSync: vi.fn(
+      (css: string): ProcessResult => ({
+        css,
+        root: rootDto(),
+        messages: [],
+      }),
+    ),
     parseSync: vi.fn(),
     stringifySync: vi.fn(),
     stringifyResultSync: vi.fn(),
@@ -96,11 +104,13 @@ test('dispatchProcessSync synthesizes a processor facade when none is provided',
 test('dispatchProcessDto reuses a live Node root from the service', async () => {
   const live = new Root();
   const service = {
-    process: vi.fn(async (css: string): Promise<ProcessResult> => ({
-      css,
-      root: live,
-      messages: [],
-    })),
+    process: vi.fn(
+      async (css: string): Promise<ProcessResult> => ({
+        css,
+        root: live,
+        messages: [],
+      }),
+    ),
   };
 
   const result = await dispatchProcessDto(service, '.a{}', { from: 'a.css' });
