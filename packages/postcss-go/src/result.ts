@@ -25,7 +25,7 @@ export class ResultMap implements SourceMap {
       return JSON.parse(this.text) as Record<string, unknown>;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`postcss-go result map is not valid JSON: ${detail}`);
+      throw new Error(`postcss-go result map is not valid JSON: ${detail}`, { cause: error });
     }
   }
 
@@ -41,11 +41,7 @@ export class ResultMap implements SourceMap {
     this.getGenerator().setSourceContent(sourceFile, sourceContent);
   }
 
-  applySourceMap(
-    consumer: SourceMapConsumer,
-    sourceFile?: string,
-    sourceMapPath?: string,
-  ): void {
+  applySourceMap(consumer: SourceMapConsumer, sourceFile?: string, sourceMapPath?: string): void {
     this.getGenerator().applySourceMap(consumer, sourceFile, sourceMapPath);
   }
 

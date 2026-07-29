@@ -289,9 +289,7 @@ type IndexedSourceMapConsumerLike = {
 
 function isIndexedSourceMapConsumerLike(value: object): value is IndexedSourceMapConsumerLike {
   const candidate = value as Partial<IndexedSourceMapConsumerLike>;
-  return (
-    Array.isArray(candidate._sections) && typeof candidate.originalPositionFor === 'function'
-  );
+  return Array.isArray(candidate._sections) && typeof candidate.originalPositionFor === 'function';
 }
 
 function isSourceMapConsumerLike(value: object): value is SourceMapConsumerLike {

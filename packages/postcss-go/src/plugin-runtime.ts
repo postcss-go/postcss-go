@@ -628,7 +628,9 @@ async function runRootListeners(
 ): Promise<void> {
   if (!listener) return;
   if (root instanceof Document) {
-    await Promise.all(root.nodes.map((child) => runListener(plugin, listener, child, helpers, false)));
+    await Promise.all(
+      root.nodes.map((child) => runListener(plugin, listener, child, helpers, false)),
+    );
   } else {
     await runListener(plugin, listener, root, helpers, false);
   }

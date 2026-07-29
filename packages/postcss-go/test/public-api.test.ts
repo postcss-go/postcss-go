@@ -568,8 +568,14 @@ test('Once and OnceExit run once for every Root inside a Document', async () => 
         root: {
           type: 'document' as const,
           nodes: [
-            { type: 'root' as const, nodes: [{ type: 'rule' as const, selector: '.a', nodes: [] }] },
-            { type: 'root' as const, nodes: [{ type: 'rule' as const, selector: '.b', nodes: [] }] },
+            {
+              type: 'root' as const,
+              nodes: [{ type: 'rule' as const, selector: '.a', nodes: [] }],
+            },
+            {
+              type: 'root' as const,
+              nodes: [{ type: 'rule' as const, selector: '.b', nodes: [] }],
+            },
           ],
         },
       };
@@ -599,9 +605,7 @@ test('ResultMap.toJSON wraps invalid JSON with a stable error', () => {
 });
 
 test('ResultMap exposes SourceMapGenerator mutation methods', () => {
-  const map = new ResultMap(
-    JSON.stringify({ version: 3, sources: [], names: [], mappings: '' }),
-  );
+  const map = new ResultMap(JSON.stringify({ version: 3, sources: [], names: [], mappings: '' }));
   map.addMapping({
     generated: { line: 1, column: 0 },
     original: { line: 1, column: 0 },

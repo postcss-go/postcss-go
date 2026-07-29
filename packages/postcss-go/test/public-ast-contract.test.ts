@@ -88,9 +88,14 @@ test('Input constructor, offsets, ranges, and inline previous maps match the pub
   expect(input.map).toBeInstanceOf(PreviousMap);
   expect(typeof input.map?.consumer).toBe('function');
 
-  const error = input.error('broken', { line: 1, column: 1 }, { line: 1, column: 3 }, {
-    plugin: 'contract',
-  });
+  const error = input.error(
+    'broken',
+    { line: 1, column: 1 },
+    { line: 1, column: 3 },
+    {
+      plugin: 'contract',
+    },
+  );
   expect(error.input).toMatchObject({
     line: 1,
     column: 1,

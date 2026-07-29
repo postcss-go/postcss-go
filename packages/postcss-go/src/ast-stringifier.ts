@@ -40,7 +40,13 @@ const DEFAULT_RAW: Record<string, string | boolean> = {
 function rawValue(node: StringifiableNode, property: keyof StringifiableNode): string {
   const value = String(node[property] ?? '');
   const raw = node.raws[property as string];
-  if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'raw' in raw && raw.value === value) {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    'raw' in raw &&
+    raw.value === value
+  ) {
     return String(raw.raw);
   }
   return value;
@@ -52,7 +58,10 @@ function rootOf(node: StringifiableNode): StringifiableNode {
   return current;
 }
 
-function walk(node: StringifiableNode, callback: (node: StringifiableNode) => boolean | void): boolean {
+function walk(
+  node: StringifiableNode,
+  callback: (node: StringifiableNode) => boolean | void,
+): boolean {
   for (const child of node.nodes ?? []) {
     if (callback(child) === false) return false;
     if (walk(child, callback) === false) return false;
@@ -64,14 +73,19 @@ function detectRaw(node: StringifiableNode, own: string | null, detect: string):
   if (own && node.raws[own] !== undefined) return node.raws[own] as string | boolean;
   const parent = node.parent;
   if (detect === 'before') {
-    if (!parent || (parent.type === 'root' && parent.first === node) || parent.type === 'document') {
+    if (
+      !parent ||
+      (parent.type === 'root' && parent.first === node) ||
+      parent.type === 'document'
+    ) {
       return '';
     }
-    detect = node.type === 'decl'
-      ? 'beforeDecl'
-      : node.type === 'comment'
-        ? 'beforeComment'
-        : 'beforeRule';
+    detect =
+      node.type === 'decl'
+        ? 'beforeDecl'
+        : node.type === 'comment'
+          ? 'beforeComment'
+          : 'beforeRule';
   }
   if (detect === 'after') detect = 'beforeClose';
 
@@ -93,7 +107,11 @@ function detectRaw(node: StringifiableNode, own: string | null, detect: string):
     });
   } else if (detect === 'semicolon') {
     walk(root, (candidate) => {
-      if (candidate.nodes?.length && candidate.last?.type === 'decl' && candidate.raws.semicolon !== undefined) {
+      if (
+        candidate.nodes?.length &&
+        candidate.last?.type === 'decl' &&
+        candidate.raws.semicolon !== undefined
+      ) {
         found = candidate.raws.semicolon as boolean;
         return false;
       }
@@ -146,10 +164,7 @@ export function defaultRaw(
   return detectRaw(node, prop, defaultType ?? prop);
 }
 
-export function stringify(
-  node: StringifiableNode,
-  builder: ChunkBuilder,
-): void {
+export function stringify(node: StringifiableNode, builder: ChunkBuilder): void {
   const raw = (target: StringifiableNode, own: string | null, detect = own ?? '') =>
     detectRaw(target, own, detect);
   const body = (container: StringifiableNode): void => {

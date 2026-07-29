@@ -2,7 +2,13 @@ import { Document, asProcessRoot, fromAst, Node, Root, toAst, type ProcessRoot }
 import { materializePreviousMap } from '@postcss-go/shared/map-options';
 import { createDefaultAsyncService } from './native.js';
 import type { PostcssGoService } from './service.js';
-import type { DocumentNode, ProcessOptions, ProcessResult, RootNode, ResultMessage } from './types.js';
+import type {
+  DocumentNode,
+  ProcessOptions,
+  ProcessResult,
+  RootNode,
+  ResultMessage,
+} from './types.js';
 import { attachInputMetadata } from './input.js';
 import { prepareStringifyOptions } from './source-map-output.js';
 import { hydrateResultMap, hydrateResultMessages, type ResultMap } from './result.js';

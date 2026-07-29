@@ -189,20 +189,22 @@ test('runPluginChain preserves async lifecycle and plugin messages', async () =>
 
 test('processWithGoEngine returns plugin source maps from stringifyResult', async () => {
   const processSpy = vi.fn();
-  const stringifyResult = vi.fn(async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
-    css: `${fromAst(ast).toString()}\n/*# sourceMappingURL=a.css.map */`,
-    ...(options?.map
-      ? {
-          map: JSON.stringify({
-            version: 3,
-            sources: ['a.css'],
-            names: [],
-            mappings: 'AAAA',
-          }),
-          mapFile: '/dist/a.css.map',
-        }
-      : {}),
-  }));
+  const stringifyResult = vi.fn(
+    async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
+      css: `${fromAst(ast).toString()}\n/*# sourceMappingURL=a.css.map */`,
+      ...(options?.map
+        ? {
+            map: JSON.stringify({
+              version: 3,
+              sources: ['a.css'],
+              names: [],
+              mappings: 'AAAA',
+            }),
+            mapFile: '/dist/a.css.map',
+          }
+        : {}),
+    }),
+  );
   const plugin = {
     postcssPlugin: 'to-blue',
     Declaration(decl) {

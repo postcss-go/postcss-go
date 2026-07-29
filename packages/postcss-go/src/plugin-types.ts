@@ -1,12 +1,4 @@
-import type {
-  AtRule,
-  Comment,
-  Declaration,
-  Document,
-  Node,
-  Root,
-  Rule,
-} from './ast.js';
+import type { AtRule, Comment, Declaration, Document, Node, Root, Rule } from './ast.js';
 import type { PluginResult, PluginHelpers } from './plugin-runtime.js';
 
 export type PluginListener<T extends Node = Node> = (

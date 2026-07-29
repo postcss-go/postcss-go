@@ -101,9 +101,7 @@ function decodeInlineMap(annotation: string): string | undefined {
   if (!/^data:application\/json(?:;charset=utf-?8)?(?:;base64)?$/i.test(metadata)) {
     throw new Error(`Unsupported source map encoding ${metadata}`);
   }
-  return metadata.includes(';base64')
-    ? decodeBase64(payload)
-    : decodeURIComponent(payload);
+  return metadata.includes(';base64') ? decodeBase64(payload) : decodeURIComponent(payload);
 }
 
 function decodeBase64(value: string): string {

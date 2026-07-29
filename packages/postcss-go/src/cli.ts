@@ -21,7 +21,6 @@ import {
   processWithGoEngine,
   type CliConfig,
   type CliProcessResult,
-  type GoEngine,
 } from './engine.js';
 import { getPollInterval, usePolling } from './poll.js';
 import { loadConfig } from './config.js';
@@ -103,17 +102,16 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
   ): Promise<CliConfig | undefined> {
     if (argv.use) return Promise.resolve(cliConfig);
 
-    return loadConfig(ctx, configPath)
-      .then((loaded) => {
-        if (!loaded) return undefined;
-        if (loaded.options.from || loaded.options.to) {
-          throw new Error(
-            'Config Error: Can not set from or to options in config file, use CLI arguments instead',
-          );
-        }
-        if (loaded.file) configFiles.add(loaded.file);
-        return loaded;
-      });
+    return loadConfig(ctx, configPath).then((loaded) => {
+      if (!loaded) return undefined;
+      if (loaded.options.from || loaded.options.to) {
+        throw new Error(
+          'Config Error: Can not set from or to options in config file, use CLI arguments instead',
+        );
+      }
+      if (loaded.file) configFiles.add(loaded.file);
+      return loaded;
+    });
   }
 
   function files(fileList: string | string[]): Promise<CliProcessResult[]> {

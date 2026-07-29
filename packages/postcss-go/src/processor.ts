@@ -76,9 +76,7 @@ export class Processor {
         normalized.push(...this.normalize(plugin.plugins));
       } else if (
         typeof plugin === 'function' ||
-        (plugin &&
-          typeof plugin === 'object' &&
-          ('postcssPlugin' in plugin || 'postcss' in plugin))
+        (plugin && typeof plugin === 'object' && ('postcssPlugin' in plugin || 'postcss' in plugin))
       ) {
         normalized.push(plugin);
       } else {

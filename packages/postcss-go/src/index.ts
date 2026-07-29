@@ -65,12 +65,7 @@ export {
   type RangePosition,
 } from './errors.js';
 export { Warning, type WarningOptions } from './warning.js';
-export {
-  Result,
-  ResultMap,
-  hydrateResultMessages,
-  type ResultProcessor,
-} from './result.js';
+export { Result, ResultMap, hydrateResultMessages, type ResultProcessor } from './result.js';
 export type { Parser } from './parser.js';
 export {
   noWorkSync,
@@ -98,17 +93,9 @@ export {
   type SyncPostcssGoService,
   type SynchronousBackendCapabilities,
 } from './service.js';
-export {
-  PreviousMap,
-  setPreviousMapFileLoader,
-  type PreviousMapOptions,
-} from './previous-map.js';
+export { PreviousMap, setPreviousMapFileLoader, type PreviousMapOptions } from './previous-map.js';
 export { list } from './list.js';
-export {
-  type PluginHelpers,
-  type PluginResult,
-  type RuntimePlugin,
-} from './plugin-runtime.js';
+export { type PluginHelpers, type PluginResult, type RuntimePlugin } from './plugin-runtime.js';
 export type {
   AcceptedPlugin,
   Plugin,
@@ -139,11 +126,7 @@ export {
   type NormalizeProcessOptionsInput,
   type ProcessFileOptions,
 } from '@postcss-go/shared/map-options';
-export {
-  getMapfile,
-  joinMapAnnotationPath,
-  toSourceMapPath,
-} from '@postcss-go/shared/map-path';
+export { getMapfile, joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
 export { BrowserPostcssGoService } from './browser.js';
 export { isNativeBridgeAvailable } from './native.js';
 export type {

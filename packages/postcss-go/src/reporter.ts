@@ -1,8 +1,6 @@
 import type { CliProcessResult } from './engine.js';
 
-export function formatWarnings(
-  result: Pick<CliProcessResult, 'messages'>,
-): string {
+export function formatWarnings(result: Pick<CliProcessResult, 'messages'>): string {
   return result.messages
     .filter((message) => message.type === 'warning')
     .map((message) => {
@@ -16,4 +14,3 @@ export function formatWarnings(
     })
     .join('\n');
 }
-

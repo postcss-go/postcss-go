@@ -124,9 +124,7 @@ export class Input {
     const error = origin
       ? new CssSyntaxError(
           message,
-          endLine === undefined
-            ? origin.line
-            : { line: origin.line, column: origin.column },
+          endLine === undefined ? origin.line : { line: origin.line, column: origin.column },
           endLine === undefined
             ? origin.column
             : { line: origin.endLine!, column: origin.endColumn! },
@@ -280,11 +278,7 @@ export function hasPreviousMap(css: string, options: ProcessOptions = {}): boole
 }
 
 /** Attach PostCSS-compatible previous-map metadata to an owned Input. */
-export function attachPreviousMap(
-  input: Input,
-  css: string,
-  options: ProcessOptions = {},
-): Input {
+export function attachPreviousMap(input: Input, css: string, options: ProcessOptions = {}): Input {
   if (!hasPreviousMap(css, options)) {
     delete input.map;
   } else if (!input.map) {
@@ -295,11 +289,7 @@ export function attachPreviousMap(
 }
 
 /** Attach one Input, including previous-map metadata, to a live AST. */
-export function attachInputMetadata(
-  root: Node,
-  css: string,
-  options: ProcessOptions = {},
-): Input {
+export function attachInputMetadata(root: Node, css: string, options: ProcessOptions = {}): Input {
   return attachPreviousMap(attachInput(root, css, options.from), css, options);
 }
 
@@ -365,10 +355,7 @@ function pathToUrl(file: string): string {
   return new URL(`${prefix}${normalized}`).toString();
 }
 
-function resolveOriginalSource(
-  map: PreviousMap,
-  source: string,
-): { file?: string; url: string } {
+function resolveOriginalSource(map: PreviousMap, source: string): { file?: string; url: string } {
   if (/^\w+:\/\//.test(source)) {
     const url = new URL(source).toString();
     return { ...(url.startsWith('file:') ? { file: fileUrlToPath(url) } : {}), url };

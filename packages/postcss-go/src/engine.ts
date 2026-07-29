@@ -126,7 +126,7 @@ export async function processWithGoEngine(
 
     const result = await engine.service.noWork(inputCss, publicOptions);
     const messages = (
-      'messages' in result ? (result as { messages?: CliMessage[] }).messages ?? [] : []
+      'messages' in result ? ((result as { messages?: CliMessage[] }).messages ?? []) : []
     ) as CliMessage[];
     return toCliResult(result.css, result.map, result.mapFile, messages);
   };
