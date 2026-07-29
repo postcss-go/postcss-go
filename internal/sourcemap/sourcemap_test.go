@@ -293,3 +293,171 @@ func TestLocationOffsetRemappedThroughSourceMap(t *testing.T) {
 		t.Fatalf("expected start offset %d in original source, got %d", wantStartOffset, loc.Start.Offset)
 	}
 }
+
+func TestInputSourceTrackingHelpers(t *testing.T) {
+	plain, err := NewInput("a{}", Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("new input: %v", err)
+	}
+	if !plain.TracksSource() {
+		t.Fatal("TrackSource option should enable TracksSource")
+	}
+	if plain.HasSourceMap() {
+		t.Fatal("plain input should not report a source map")
+	}
+	if !plain.SourceContentAvailable() {
+		t.Fatal("nil originContent means content is treated as available")
+	}
+
+	const sourceMap = `{
+		"version": 3,
+		"file": "generated.css",
+		"sources": ["original.css"],
+		"sourcesContent": [".orig { color: red; }"],
+		"names": [],
+		"mappings": "AAAA"
+	}`
+	mapped, err := NewInput(".gen{}", Options{
+		From:         "generated.css",
+		SourceMapURL: "generated.css.map",
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("mapped input: %v", err)
+	}
+	if !mapped.TracksSource() || !mapped.HasSourceMap() {
+		t.Fatal("mapped input should track source and report HasSourceMap")
+	}
+	content, origin, line, column, ok := mapped.Origin(1, 1)
+	if !ok || !strings.Contains(content, ".orig") || origin == nil || line != 1 || column != 1 {
+		t.Fatalf("Origin failed: content=%q origin=%#v line=%d column=%d ok=%v", content, origin, line, column, ok)
+	}
+	if !origin.HasSourceMap() {
+		t.Fatal("origin input should be marked sourceMapped")
+	}
+	if !mapped.SourceContentAvailable() {
+		// with originContent populated and contentKnown paths
+	}
+
+	anonymous, err := NewInput("x", Options{})
+	if err != nil {
+		t.Fatalf("anonymous: %v", err)
+	}
+	if anonymous.TracksSource() {
+		t.Fatal("anonymous input without trackSource should not track")
+	}
+}
+
+func TestResolveMapSourceAndContentAvailability(t *testing.T) {
+	raw := []byte(`{
+		"version": 3,
+		"sourceRoot": "https://cdn.example/root/",
+		"sources": ["a.css"],
+		"sourcesContent": ["body{}"],
+		"sections": [{
+			"map": {
+				"version": 3,
+				"sources": ["b.css"],
+				"sourcesContent": ["html{}"],
+				"mappings": "AAAA"
+			}
+		}],
+		"mappings": "AAAA"
+	}`)
+	availability := sourceMapContentAvailability(raw, "file:///tmp/out.css.map", "/tmp/out.css")
+	if len(availability) == 0 {
+		t.Fatalf("expected content availability entries, got %#v", availability)
+	}
+
+	uri := resolveMapSource("https://example.com/a.css", "", "", "")
+	if uri != "https://example.com/a.css" {
+		t.Fatalf("URI source should pass through, got %q", uri)
+	}
+	rooted := resolveMapSource("a.css", "https://cdn.example/root/", "", "")
+	if !strings.Contains(rooted, "cdn.example") {
+		t.Fatalf("sourceRoot URL join failed: %q", rooted)
+	}
+	absRoot := resolveMapSource("a.css", "/src", "", "/tmp/out.css")
+	if !strings.Contains(absRoot, "a.css") {
+		t.Fatalf("absolute sourceRoot join failed: %q", absRoot)
+	}
+	rel := resolveMapSource("a.css", "", "", "/tmp/project/out.css")
+	if !filepath.IsAbs(rel) {
+		t.Fatalf("expected absolute resolved source, got %q", rel)
+	}
+
+	if got := normalizeSourcePath(`C:\repo\a.css`); !strings.Contains(got, "repo") {
+		t.Fatalf("normalizeSourcePath failed: %q", got)
+	}
+	if offset, ok := byteOffsetForUTF16Column("ab", -1); ok || offset != 0 {
+		t.Fatalf("negative UTF-16 column should fail: offset=%d ok=%v", offset, ok)
+	}
+	if offset := resolveOffset(&Input{CSS: ""}, 1, 1, 9); offset != 9 {
+		t.Fatalf("empty CSS should use fallback offset, got %d", offset)
+	}
+}
+
+func TestLocationFallsBackWhenMappedEndsDiffer(t *testing.T) {
+	const sourceMap = `{
+		"version": 3,
+		"file": "generated.css",
+		"sources": ["one.css", "two.css"],
+		"sourcesContent": ["aaaa", "bbbb"],
+		"names": [],
+		"mappings": "AAAA,CAAC"
+	}`
+	input, err := NewInput("ab", Options{
+		From:         "generated.css",
+		SourceMapURL: "generated.css.map",
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("new input: %v", err)
+	}
+	loc := input.Location(Position{Line: 1, Column: 1, Offset: 0}, Position{Line: 1, Column: 2, Offset: 1})
+	if loc == nil || loc.Input == nil {
+		t.Fatalf("expected location, got %#v", loc)
+	}
+}
+
+func TestFromOffsetClampsAndOriginMiss(t *testing.T) {
+	input, err := NewInput("ab\nc", Options{})
+	if err != nil {
+		t.Fatalf("new input: %v", err)
+	}
+	if got := input.FromOffset(-5); got.Offset != 0 {
+		t.Fatalf("negative offset should clamp, got %#v", got)
+	}
+	if got := input.FromOffset(100); got.Offset != len(input.CSS) {
+		t.Fatalf("large offset should clamp, got %#v", got)
+	}
+	if _, _, _, _, ok := input.Origin(1, 1); ok {
+		t.Fatal("Origin without consumer should miss")
+	}
+}
+
+func TestResolveOriginFileVariants(t *testing.T) {
+	const sourceMap = `{
+		"version": 3,
+		"sources": ["original.css"],
+		"sourcesContent": [".a{}"],
+		"mappings": "AAAA"
+	}`
+	input, err := NewInput(".g{}", Options{
+		From:         "generated.css",
+		SourceMapURL: "file:///tmp/maps/generated.css.map",
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("new input: %v", err)
+	}
+	if got := input.resolveOriginFile("file:///tmp/src/original.css"); !strings.Contains(got, "original.css") {
+		t.Fatalf("file URI origin resolve failed: %q", got)
+	}
+	if got := input.resolveOriginFile("https://example.com/a.css"); got != "https://example.com/a.css" {
+		t.Fatalf("http origin should pass through: %q", got)
+	}
+	if got := input.resolveOriginFile("/abs/original.css"); !strings.Contains(got, "original.css") {
+		t.Fatalf("absolute origin failed: %q", got)
+	}
+}

@@ -1,6 +1,9 @@
 package utils
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestPathClassification(t *testing.T) {
 	tests := []struct {
@@ -24,5 +27,17 @@ func TestPathClassification(t *testing.T) {
 				t.Fatalf("uri=%v, want %v", got, test.uri)
 			}
 		})
+	}
+}
+
+func TestNormalizeSourcePath(t *testing.T) {
+	windows := `C:\repo\src\input.css`
+	got := NormalizeSourcePath(windows)
+	want := filepath.FromSlash(`C:/repo/src/input.css`)
+	if got != want {
+		t.Fatalf("NormalizeSourcePath(%q)=%q, want %q", windows, got, want)
+	}
+	if got := NormalizeSourcePath("styles/input.css"); got != "styles/input.css" {
+		t.Fatalf("relative path should be unchanged, got %q", got)
 	}
 }

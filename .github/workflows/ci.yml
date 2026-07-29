@@ -32,7 +32,7 @@ jobs:
         run: node ./scripts/check-upstream-postcss-sync.mjs
 
   coverage:
-    name: Coverage Upload
+    name: Coverage
     runs-on: ubuntu-latest
     env:
       GOFLAGS: -mod=mod

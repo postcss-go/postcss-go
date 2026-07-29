@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"postcss-go/internal/codec"
+	"postcss-go/internal/result"
 )
 
 func TestParseReturnsBinaryCodec(t *testing.T) {
@@ -95,5 +96,38 @@ func TestNoWorkPreservesCSS(t *testing.T) {
 	}
 	if result.CSS != css {
 		t.Fatalf("noWork should preserve css, got %q", result.CSS)
+	}
+}
+
+func TestCallErrorAndWarningPaths(t *testing.T) {
+	if _, err := Call(Parse, []byte(".a {"), []byte("bad.css")); err == nil {
+		t.Fatal("expected parse error for unclosed rule")
+	}
+
+	encoded, err := Call(Parse, []byte("a { color: red; }"), nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	payload, err := Call(Stringify, encoded, []byte(`{"map":true,"mapInline":false,"mapAnnotationDisabled":true,"to":"out.css"}`))
+	if err != nil {
+		t.Fatalf("stringify with options: %v", err)
+	}
+	var mapped stringifyResult
+	if err := json.Unmarshal(payload, &mapped); err != nil {
+		t.Fatalf("decode mapped stringify: %v", err)
+	}
+	if mapped.Map == "" {
+		t.Fatal("expected external source map from stringify options")
+	}
+	if _, err := Call(Stringify, encoded, []byte(`{`)); err == nil {
+		t.Fatal("expected bad stringify options error")
+	}
+
+	if got := warnings(nil); got != nil {
+		t.Fatalf("expected nil warnings for empty input, got %#v", got)
+	}
+	converted := warnings([]result.Warning{{Type: "warning", Text: "heads up", Plugin: "demo"}})
+	if len(converted) != 1 || converted[0].Text != "heads up" || converted[0].Plugin != "demo" {
+		t.Fatalf("unexpected warnings conversion: %#v", converted)
 	}
 }

@@ -68,17 +68,18 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Label            | Measures                                                                 |
-| ---------------- | ------------------------------------------------------------------------ |
-| `tokenize[…]`    | Tokenizer only — drain `Next` until EOF (no parse/walk/stringify)        |
-| `walk[…]`        | Walk an already-parsed tree (ns/op only; no MB/s)                        |
-| `plugin[…]`      | Full `Process` with a `display` visitor rewrite (dispatch + stringify)   |
-| `sourcemap[…]`   | Full `Process` with source map generation (external map, not inlined)    |
+| Go / CodSpeed id                              | Stage      | Measures                                                                 |
+| --------------------------------------------- | ---------- | ------------------------------------------------------------------------ |
+| `BenchmarkTokenize_*` / `BenchmarkTokenizeReal_*` | tokenize | Tokenizer only — drain `Next` until EOF (no parse/walk/stringify)        |
+| `BenchmarkWalk_*` / `BenchmarkWalkReal_*`         | walk     | Walk an already-parsed tree (ns/op only; no MB/s)                        |
+| `BenchmarkPluginPipeline_*`                       | plugin   | Full `Process` with a `display` visitor rewrite (dispatch + stringify)   |
+| `BenchmarkProcessSourceMap_*`                     | sourcemap| Full `Process` with source map generation (external map, not inlined)    |
 
-Names follow the [oxc CodSpeed](https://app.codspeed.io/oxc-project/oxc) `stage[fixture]`
-style (e.g. `linter[App.tsx]`). Go still requires a `Benchmark` function, so raw
-`go test` / CodSpeed ids look like `Benchmark/tokenize[bootstrap.css]`. Synthetic
-sizes (`small` / `medium` / `large`) are 10 / 1,000 / 10,000 rules.
+Stage names stay as discrete top-level `Benchmark*` functions so CodSpeed keeps
+stable ids and does not run every heavy stage before Parse/Process (which can
+bias walltime on shared runners). Docs still refer to them as tokenize / walk /
+plugin / sourcemap in the [oxc](https://app.codspeed.io/oxc-project/oxc) sense.
+Synthetic sizes (`small` / `medium` / `large`) are 10 / 1,000 / 10,000 rules.
 
 Lightning CSS's Node API exposes parsing and printing together through
 `transform()`, without exposing its AST parser or an equivalent PostCSS-style

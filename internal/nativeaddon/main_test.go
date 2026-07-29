@@ -27,3 +27,8 @@ func TestFitPayload(t *testing.T) {
 		}
 	})
 }
+
+func TestMainIsCallable(t *testing.T) {
+	// main is intentionally empty for the c-archive entrypoint.
+	main()
+}

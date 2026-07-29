@@ -6,29 +6,42 @@ codecov:
 coverage:
   precision: 1
   round: down
-  range: '50...90'
-
-status:
-  project:
-    default:
-      informational: true
-    go:
-      flags:
-        - go
-      paths:
-        - 'internal/'
-        - 'benchmark/'
-        - 'cmd/'
-      informational: true
-    js:
-      flags:
-        - js
-      paths:
-        - 'packages/'
-      informational: true
-  patch:
-    default:
-      informational: true
+  range: '70...90'
+  status:
+    project:
+      default:
+        target: 90%
+        informational: false
+      go:
+        target: 90%
+        flags:
+          - go
+        paths:
+          - 'internal/'
+          - 'benchmark/'
+          - 'cmd/'
+        informational: false
+      js:
+        target: 90%
+        flags:
+          - js
+        paths:
+          - 'packages/'
+        informational: false
+    patch:
+      default:
+        target: 90%
+        informational: false
+      go:
+        target: 90%
+        flags:
+          - go
+        informational: false
+      js:
+        target: 90%
+        flags:
+          - js
+        informational: false
 
 flags:
   go:

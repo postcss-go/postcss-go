@@ -175,6 +175,77 @@ func TestNodeErrorWithoutSourceFallsBackToCssInput(t *testing.T) {
 	}
 }
 
+func TestFacadeHelpers(t *testing.T) {
+	root := NewRoot()
+	doc := NewDocument()
+	rule := NewRule(".card")
+	at := NewAtRule("media", "screen")
+	decl := NewDeclaration("color", "red")
+	comment := NewComment("note")
+	rule.Append(decl, comment)
+	root.Append(rule)
+	doc.Append(root)
+
+	if at.Name != "media" || at.Params != "screen" {
+		t.Fatalf("unexpected at-rule: %#v", at)
+	}
+	if got := Stringify(root); !strings.Contains(got, "color: red") {
+		t.Fatalf("unexpected stringify: %q", got)
+	}
+
+	input, err := NewInput(".x{}", ParseOptions{From: "facade.css"})
+	if err != nil || !strings.HasSuffix(input.From(), "facade.css") {
+		t.Fatalf("NewInput failed: input=%#v err=%v", input, err)
+	}
+
+	var walked []string
+	if err := Walk(root, func(node Node) error {
+		walked = append(walked, string(node.Type()))
+		return nil
+	}); err != nil {
+		t.Fatalf("Walk failed: %v", err)
+	}
+	if len(walked) < 3 {
+		t.Fatalf("expected walk to visit nodes, got %#v", walked)
+	}
+	if err := WalkRules(root, func(rule *Rule) error {
+		if rule.Selector != ".card" {
+			t.Fatalf("unexpected rule: %q", rule.Selector)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkRules failed: %v", err)
+	}
+	if err := WalkAtRules(doc, func(rule *AtRule) error { return nil }); err != nil {
+		t.Fatalf("WalkAtRules failed: %v", err)
+	}
+	if err := WalkDecls(root, func(decl *Declaration) error {
+		if decl.Prop != "color" {
+			t.Fatalf("unexpected decl: %#v", decl)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkDecls failed: %v", err)
+	}
+	if err := WalkComments(root, func(c *Comment) error {
+		if c.Text != "note" {
+			t.Fatalf("unexpected comment: %q", c.Text)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkComments failed: %v", err)
+	}
+
+	noWork, err := NoWork(".a { color: red; }", ProcessOptions{})
+	if err != nil || noWork.CSS != ".a { color: red; }" {
+		t.Fatalf("NoWork failed: %#v err=%v", noWork, err)
+	}
+	stringified, err := StringifyWithOptions(root, ProcessOptions{})
+	if err != nil || !strings.Contains(stringified.CSS, ".card") {
+		t.Fatalf("StringifyWithOptions failed: %#v err=%v", stringified, err)
+	}
+}
+
 func TestNodeMutationAPI(t *testing.T) {
 	root, err := Parse(".a, .b { color: red; }")
 	if err != nil {
