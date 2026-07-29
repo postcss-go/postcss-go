@@ -8,8 +8,6 @@ import (
 	"unicode/utf8"
 
 	"postcss-go/internal/tokenizer"
-
-	"github.com/creachadair/jrpc2/handler"
 )
 
 var nextTokenizeSessionID int64
@@ -79,18 +77,6 @@ var (
 	tokenizeSessions   = map[int64]*tokenizeSession{}
 	tokenizeSessionsMu sync.Mutex
 )
-
-func tokenizeAssigner() handler.Map {
-	return handler.Map{
-		"tokenize":          handler.New(TokenizeBatchRPC),
-		"tokenize.open":     handler.New(TokenizeOpenRPC),
-		"tokenize.next":     handler.New(TokenizeNextRPC),
-		"tokenize.back":     handler.New(TokenizeBackRPC),
-		"tokenize.position": handler.New(TokenizePositionRPC),
-		"tokenize.eof":      handler.New(TokenizeEOFRPC),
-		"tokenize.close":    handler.New(TokenizeCloseRPC),
-	}
-}
 
 func TokenizeOpenRPC(_ context.Context, params TokenizeOpenParams) (*TokenizeOpenResult, error) {
 	id := atomic.AddInt64(&nextTokenizeSessionID, 1)

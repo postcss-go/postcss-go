@@ -5,7 +5,7 @@
  * Lezer produces a concrete syntax tree and does not expose an equivalent CSS
  * stringifier, so this benchmark only emits Parse results.
  *
- * Output is JSON lines for scripts/compare-benchmarks.mjs.
+ * Output is JSON lines for benchmark/run.mjs.
  */
 import { parser } from '@lezer/css';
 import { performance } from 'node:perf_hooks';

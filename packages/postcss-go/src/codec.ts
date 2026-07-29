@@ -7,6 +7,7 @@
  */
 
 import { AtRule, Comment, Declaration, Document, Node, Root, Rule, type ChildNode } from './ast.js';
+import { UnsupportedAstNodeError } from './errors.js';
 import type { AstNode, Raws, SourceLocation } from './types.js';
 
 const MAGIC = Buffer.from('PCGW');
@@ -27,6 +28,14 @@ const RAW_INT = 4;
 const RAW_FLOAT = 5;
 const RAW_MAP = 6;
 const RAW_LIST = 7;
+const BUILTIN_NODE_TYPES = new Set(['root', 'document', 'rule', 'atrule', 'decl', 'comment']);
+
+/** Validate a tree before JSON, binary, native, or WASM transport. */
+export function assertSupportedAst(node: AstNode | Node): void {
+  if (!BUILTIN_NODE_TYPES.has(node.type)) throw new UnsupportedAstNodeError(node.type);
+  const children = (node as AstNode & { nodes?: AstNode[] }).nodes;
+  for (const child of children ?? []) assertSupportedAst(child);
+}
 
 class Reader {
   offset = 0;
@@ -440,8 +449,21 @@ function encodeSource(writer: Writer, source: SourceLocation | undefined): void 
     css?: string;
     map?: string | Record<string, unknown>;
     mapUrl?: string;
-    input?: { file?: string; from?: string; css?: string };
+    input?: {
+      file?: string;
+      from?: string;
+      css?: string;
+      map?: { file?: string; text?: string; toString?: () => string };
+    };
   };
+  const inputMap = extended.input?.map;
+  const inputMapText =
+    typeof inputMap?.text === 'string'
+      ? inputMap.text
+      : typeof inputMap?.toString === 'function'
+        ? inputMap.toString()
+        : '';
+  const mapText = typeof extended.map === 'string' ? extended.map : inputMapText;
   writer.u8(1);
   writer.varint(source.start.line);
   writer.varint(source.start.column);
@@ -450,9 +472,18 @@ function encodeSource(writer: Writer, source: SourceLocation | undefined): void 
   writer.varint(source.end.column);
   writer.varint(source.end.offset);
   writer.string(source.file ?? extended.input?.file ?? extended.input?.from ?? '');
-  writer.string(extended.css ?? '');
-  writer.string(typeof extended.map === 'string' ? extended.map : '');
-  writer.string(extended.mapUrl ?? '');
+  writer.string(extended.css ?? extended.input?.css ?? '');
+  writer.string(mapText);
+  writer.string(
+    mapText
+      ? (extended.mapUrl ??
+          inputMap?.file ??
+          extended.input?.file ??
+          extended.input?.from ??
+          source.file ??
+          '')
+      : '',
+  );
 }
 
 function encodeDTONode(writer: Writer, node: AstNode): void {
@@ -484,7 +515,7 @@ function encodeDTONode(writer: Writer, node: AstNode): void {
       writer.string(node.text ?? '');
       break;
     default:
-      throw new Error(`codec: unsupported node type`);
+      throw new UnsupportedAstNodeError(String((node as { type?: unknown }).type));
   }
 
   encodeRaws(writer, node.raws);
@@ -555,7 +586,7 @@ function encodeLiveNode(writer: Writer, node: Node): void {
     encodeSource(writer, node.source);
     return;
   }
-  throw new Error(`codec: unsupported live node type ${node.type}`);
+  throw new UnsupportedAstNodeError(node.type);
 }
 
 function openReader(buffer: Buffer | Uint8Array): Reader {

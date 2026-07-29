@@ -46,7 +46,9 @@ export async function loadConfig(
     exported = await exported({ env: process.env.NODE_ENV, ...context });
   }
   if (!exported || typeof exported !== 'object') {
-    throw new Error(`Config Error: ${file} must export an object or a function returning an object`);
+    throw new Error(
+      `Config Error: ${file} must export an object or a function returning an object`,
+    );
   }
   const config = exported as Record<string, unknown>;
   const { plugins: pluginConfig, ...options } = config;
@@ -66,7 +68,13 @@ async function findConfig(searchFrom: string): Promise<string | undefined> {
   while (true) {
     for (const name of CONFIG_NAMES) {
       const candidate = path.join(directory, name);
-      if (await fs.access(candidate).then(() => true, () => false)) return candidate;
+      if (
+        await fs.access(candidate).then(
+          () => true,
+          () => false,
+        )
+      )
+        return candidate;
     }
     const parent = path.dirname(directory);
     if (parent === directory) return undefined;
@@ -74,7 +82,10 @@ async function findConfig(searchFrom: string): Promise<string | undefined> {
   }
 }
 
-async function normalizeConfiguredPlugins(value: unknown, directory: string): Promise<AcceptedPlugin[]> {
+async function normalizeConfiguredPlugins(
+  value: unknown,
+  directory: string,
+): Promise<AcceptedPlugin[]> {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter(Boolean) as AcceptedPlugin[];
   if (typeof value !== 'object') {
@@ -90,9 +101,10 @@ async function normalizeConfiguredPlugins(value: unknown, directory: string): Pr
     const imported = await import(specifier);
     const creator = imported.default ?? imported;
     plugins.push(
-      typeof creator === 'function' ? creator(pluginOptions === true ? undefined : pluginOptions) : creator,
+      typeof creator === 'function'
+        ? creator(pluginOptions === true ? undefined : pluginOptions)
+        : creator,
     );
   }
   return plugins;
 }
-

@@ -29,10 +29,14 @@ function ensureBinary() {
     bridgeDir,
     process.platform === 'win32' ? 'postcss-go-api.exe' : 'postcss-go-api',
   );
-  execFileSync('go', ['build', '-mod=mod', '-o', bridgeBinary, './cmd/api'], {
-    cwd: repositoryRoot(),
-    stdio: 'pipe',
-  });
+  execFileSync(
+    'go',
+    ['build', '-mod=mod', '-o', bridgeBinary, './packages/postcss-compat/internal/bridge'],
+    {
+      cwd: repositoryRoot(),
+      stdio: 'pipe',
+    },
+  );
   return bridgeBinary;
 }
 

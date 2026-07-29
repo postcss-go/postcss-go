@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path"
@@ -43,6 +44,8 @@ type Options struct {
 }
 
 var sourceMapAnnotationPattern = regexp.MustCompile(`(?s)/\*\s*# sourceMappingURL=(.*?)\*/`)
+
+const maxPreviousMapBytes = 32 << 20
 
 type Visitor struct {
 	Once                func(*ast.Root, *result.Result) error
@@ -158,6 +161,7 @@ func (p *Processor) Process(css string, optsList ...Options) (*result.Result, er
 		res.CSS = stringified.CSS
 		res.Map = stringified.Map
 		applyMapAnnotation(res, opts)
+		setResultMapFile(res, opts)
 		return res, nil
 	}
 
@@ -208,6 +212,35 @@ func NoWork(css string, opts Options) (*result.Result, error) {
 	res.CSS = stringified.CSS
 	res.Map = stringified.Map
 	applyMapAnnotation(res, opts)
+	setResultMapFile(res, opts)
+	return res, nil
+}
+
+// Stringify serializes an existing AST and owns all map output behavior,
+// including inline/external selection and sourceMappingURL emission.
+func Stringify(node ast.Node, opts Options) (*result.Result, error) {
+	applyBareMapDefaults(&opts)
+	res := &result.Result{}
+	if !opts.Map && !opts.MapAuto {
+		res.CSS = stringifier.Stringify(node)
+		return res, nil
+	}
+	stringified, err := stringifier.StringifyWithSourceMap(node, stringifier.SourceMapOptions{
+		From:               opts.From,
+		To:                 opts.To,
+		MapFile:            opts.MapFile,
+		SourceMapFrom:      opts.SourceMapFrom,
+		SourcesContent:     opts.SourcesContent,
+		Absolute:           opts.Absolute,
+		PreserveAnnotation: opts.PreserveAnnotation,
+	})
+	if err != nil {
+		return nil, err
+	}
+	res.CSS = stringified.CSS
+	res.Map = stringified.Map
+	applyMapAnnotation(res, opts)
+	setResultMapFile(res, opts)
 	return res, nil
 }
 
@@ -222,6 +255,27 @@ func applyMapAnnotation(res *result.Result, opts Options) {
 			res.CSS += eol + "/*# sourceMappingURL=" + annotation + " */"
 		}
 	}
+}
+
+func setResultMapFile(res *result.Result, opts Options) {
+	if res.Map == "" {
+		return
+	}
+	res.MapFile = resolvedMapFile(opts)
+}
+
+func resolvedMapFile(opts Options) string {
+	if opts.MapFile != "" {
+		return opts.MapFile
+	}
+	outputFile := opts.To
+	if outputFile == "" {
+		outputFile = opts.From
+		if outputFile == "" {
+			outputFile = "to.css"
+		}
+	}
+	return outputFile + ".map"
 }
 
 // applyBareMapDefaults mirrors PostCSS `map: true`: when map generation is on
@@ -274,14 +328,7 @@ func resolvedMapAnnotation(opts Options) string {
 	}
 	mapFile := opts.MapFile
 	if mapFile == "" {
-		outputFile := opts.To
-		if outputFile == "" {
-			outputFile = opts.From
-			if outputFile == "" {
-				outputFile = "to.css"
-			}
-		}
-		mapFile = outputFile + ".map"
+		mapFile = resolvedMapFile(opts)
 	}
 	if parsed, err := url.Parse(mapFile); err == nil && parsed.Scheme != "" && !utils.IsWindowsDrivePath(mapFile) {
 		return path.Base(parsed.Path)
@@ -291,9 +338,9 @@ func resolvedMapAnnotation(opts Options) string {
 
 func previousSourceMap(css string, opts Options) (string, string, error) {
 	if opts.PreviousMapPath != "" {
-		raw, err := os.ReadFile(opts.PreviousMapPath)
+		raw, err := readPreviousMapFile(opts.PreviousMapPath)
 		if err != nil {
-			return "", "", fmt.Errorf("Unable to load previous source map: %s", opts.PreviousMapPath)
+			return "", "", fmt.Errorf("Unable to load previous source map %s: %w", opts.PreviousMapPath, err)
 		}
 		return strings.TrimSpace(string(raw)), filepath.ToSlash(opts.PreviousMapPath), nil
 	}
@@ -317,7 +364,7 @@ func previousSourceMap(css string, opts Options) (string, string, error) {
 	if !ok || !strings.EqualFold(filepath.Ext(mapFile), ".map") {
 		return "", "", nil
 	}
-	raw, err := os.ReadFile(mapFile)
+	raw, err := readPreviousMapFile(mapFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", nil
@@ -360,10 +407,7 @@ func sourceMapFile(annotation, from string) (string, bool) {
 		return "", false
 	}
 	if parsed.Scheme != "" && !utils.IsWindowsDrivePath(annotation) {
-		if parsed.Scheme != "file" {
-			return "", false
-		}
-		return filepath.FromSlash(parsed.Path), true
+		return "", false
 	}
 	if fromURL, err := url.Parse(from); err == nil && fromURL.Scheme != "" && !utils.IsWindowsDrivePath(from) {
 		if fromURL.Scheme != "file" {
@@ -372,12 +416,76 @@ func sourceMapFile(annotation, from string) (string, bool) {
 		from = filepath.FromSlash(fromURL.Path)
 	}
 	if utils.IsAbsoluteSourcePath(annotation) {
-		return annotation, true
+		return "", false
 	}
-	if from == "" {
-		return annotation, true
+	base := "."
+	if from != "" {
+		base = filepath.Dir(from)
 	}
-	return filepath.Join(filepath.Dir(from), filepath.FromSlash(annotation)), true
+	candidate := filepath.Join(base, filepath.FromSlash(annotation))
+	if !pathWithinBase(base, candidate) {
+		return "", false
+	}
+	return candidate, true
+}
+
+func pathWithinBase(base, candidate string) bool {
+	baseAbs, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return false
+	}
+	if !relativePathWithin(baseAbs, candidateAbs) {
+		return false
+	}
+
+	resolvedCandidate, err := filepath.EvalSymlinks(candidateAbs)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	resolvedBase, err := filepath.EvalSymlinks(baseAbs)
+	if err != nil {
+		return false
+	}
+	return relativePathWithin(resolvedBase, resolvedCandidate)
+}
+
+func relativePathWithin(base, candidate string) bool {
+	relative, err := filepath.Rel(base, candidate)
+	if err != nil {
+		return false
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func readPreviousMapFile(filename string) ([]byte, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("previous source map is not a regular file: %s", filename)
+	}
+	if info.Size() > maxPreviousMapBytes {
+		return nil, fmt.Errorf("previous source map exceeds %d bytes: %s", maxPreviousMapBytes, filename)
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxPreviousMapBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxPreviousMapBytes {
+		return nil, fmt.Errorf("previous source map exceeds %d bytes: %s", maxPreviousMapBytes, filename)
+	}
+	return raw, nil
 }
 
 func walk(node ast.Node, res *result.Result, plugins []Plugin) error {

@@ -5,7 +5,7 @@
  * esbuild does not expose its CSS AST parser, so this benchmark only emits
  * ParseStringify results.
  *
- * Output is JSON lines for scripts/compare-benchmarks.mjs.
+ * Output is JSON lines for benchmark/run.mjs.
  */
 import { transformSync } from 'esbuild';
 import { performance } from 'node:perf_hooks';

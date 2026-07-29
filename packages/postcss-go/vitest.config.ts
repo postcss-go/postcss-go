@@ -11,7 +11,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/types.ts', 'src/cli.ts', 'src/browser.ts', 'src/shims.d.ts'],
       excludeAfterRemap: true,
-      reporter: ['text', 'html'],
+      reporter: ['text', 'html', 'lcov'],
       thresholds: {
         statements: 90,
         branches: 75,

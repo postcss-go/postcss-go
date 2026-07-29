@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { parse, process as processCss } from '../src/index.ts';
+import { parse, process as processCss, Warning } from '../src/index.ts';
 
 test('parse and process reuse an explicit service without closing it', async () => {
   const calls = [];
@@ -30,4 +30,21 @@ test('parse and process reuse an explicit service without closing it', async () 
     ['process', 'b{}', { from: 'b.css' }],
   ]);
   expect(closed).toBe(0);
+});
+
+test('standalone process hydrates backend warnings', async () => {
+  const service = {
+    async process(css: string) {
+      return {
+        css,
+        root: { type: 'root' as const, nodes: [] },
+        messages: [{ type: 'warning', text: 'check', plugin: 'fixture' }],
+      };
+    },
+    async close() {},
+  };
+
+  const result = await processCss('a{}', {}, service as never);
+  expect(result.messages[0]).toBeInstanceOf(Warning);
+  expect(result.messages[0].toString()).toBe('fixture: check');
 });

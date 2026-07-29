@@ -2,7 +2,7 @@
  * Benchmark postcss (https://github.com/postcss/postcss) using the same
  * workloads as benchmark/bench_test.go.
  *
- * Output is JSON lines for scripts/compare-benchmarks.mjs.
+ * Output is JSON lines for benchmark/run.mjs.
  */
 import postcss from 'postcss';
 import { performance } from 'node:perf_hooks';

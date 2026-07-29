@@ -1,11 +1,21 @@
 import path from 'node:path';
 import postcss from 'postcss';
 import { expect, test, vi } from 'vitest';
+import { isExternalSourceMap, isSourceMapEnabled } from '@postcss-go/shared/map-options';
 
-import { fromAst } from '../src/ast.ts';
+import { fromAst, Root, type Declaration, type Rule } from '../src/ast.ts';
+import {
+  assertGoCompatibility,
+  createGoEngine,
+  getEffectiveMapOption,
+  processWithGoEngine,
+  runPluginChain,
+  type GoEngine,
+} from '../src/engine.ts';
+import type { AcceptedPlugin } from '../src/plugin-types.ts';
 
-vi.mock('../src/node.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/node.ts')>();
+vi.mock('../src/native.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/native.ts')>();
   const parse = async (css: string) => ({ root: postcss.parse(css).toJSON() });
   const stringify = async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString();
   const stringifyResult = async (
@@ -26,7 +36,7 @@ vi.mock('../src/node.ts', async (importOriginal) => {
   });
   return {
     ...actual,
-    createNodeService: vi.fn(() => ({
+    createDefaultAsyncService: vi.fn(() => ({
       process: vi.fn(),
       noWork: vi.fn(),
       parse: vi.fn(parse),
@@ -37,49 +47,43 @@ vi.mock('../src/node.ts', async (importOriginal) => {
   };
 });
 
-import {
-  assertGoCompatibility,
-  createGoEngine,
-  getEffectiveMapOption,
-  isExternalSourceMap,
-  isSourceMapEnabled,
-  processWithGoEngine,
-  runPluginChain,
-} from '../src/engine.ts';
-
 function mockEngine(service: {
   process: ReturnType<typeof vi.fn>;
   noWork?: ReturnType<typeof vi.fn>;
   parse?: ReturnType<typeof vi.fn>;
   stringify?: ReturnType<typeof vi.fn>;
   stringifyResult?: ReturnType<typeof vi.fn>;
-}) {
+}): GoEngine {
+  const engineService: GoEngine['service'] = {
+    process: service.process,
+    noWork: service.noWork ?? service.process,
+    parse: service.parse ?? vi.fn(async (css: string) => ({ root: postcss.parse(css).toJSON() })),
+    stringify:
+      service.stringify ??
+      vi.fn(async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString()),
+    stringifyResult:
+      service.stringifyResult ??
+      vi.fn(async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
+        css: fromAst(ast).toString(),
+        ...(options?.map
+          ? {
+              map: JSON.stringify({
+                version: 3,
+                sources: ['input.css'],
+                names: [],
+                mappings: 'AAAA',
+              }),
+            }
+          : {}),
+      })),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
   return {
-    name: 'go' as const,
+    name: 'go',
     queue: Promise.resolve(),
-    service: {
-      process: service.process,
-      noWork: service.noWork ?? service.process,
-      parse: service.parse ?? vi.fn(async (css: string) => ({ root: postcss.parse(css).toJSON() })),
-      stringify:
-        service.stringify ??
-        vi.fn(async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString()),
-      stringifyResult:
-        service.stringifyResult ??
-        vi.fn(async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
-          css: fromAst(ast).toString(),
-          ...(options?.map
-            ? {
-                map: JSON.stringify({
-                  version: 3,
-                  sources: ['input.css'],
-                  names: [],
-                  mappings: 'AAAA',
-                }),
-              }
-            : {}),
-        })),
-      close: vi.fn().mockResolvedValue(undefined),
+    service: engineService,
+    async close() {
+      await engineService.close();
     },
   };
 }
@@ -111,32 +115,30 @@ test('processWithGoEngine converts buffer input and warning objects', async () =
   });
   expect(result.map).toBeUndefined();
   expect(result.messages).toEqual([{ type: 'warning', text: 'be careful' }]);
-  expect(result.warnings()[0].toString()).toBe('be careful');
+  expect(result.warnings()[0]?.toString?.()).toBe('be careful');
 });
 
-test('processWithGoEngine runs plugins before the Go bridge', async () => {
-  const processSpy = vi.fn().mockImplementation(async (css) => ({
-    css,
-    messages: [],
+test('processWithGoEngine finalizes plugins via stringifyResult without a second process', async () => {
+  const processSpy = vi.fn();
+  const stringifyResult = vi.fn(async (ast: Parameters<typeof fromAst>[0]) => ({
+    css: fromAst(ast).toString(),
   }));
   const plugin = {
     postcssPlugin: 'to-blue',
-    Declaration(decl: postcss.Declaration) {
+    Declaration(decl) {
       decl.value = 'blue';
     },
-  };
+  } satisfies AcceptedPlugin;
 
   const result = await processWithGoEngine(
-    mockEngine({ process: processSpy }),
+    mockEngine({ process: processSpy, stringifyResult }),
     { plugins: [plugin] },
     '.a { color: red; }',
     { from: 'a.css', map: false },
   );
 
-  expect(processSpy).toHaveBeenCalledWith(
-    expect.stringContaining('blue'),
-    expect.objectContaining({ from: 'a.css', map: false }),
-  );
+  expect(stringifyResult).toHaveBeenCalled();
+  expect(processSpy).not.toHaveBeenCalled();
   expect(result.css).toContain('blue');
 });
 
@@ -161,15 +163,15 @@ test('runPluginChain preserves async lifecycle and plugin messages', async () =>
     prepare(result) {
       result.messages.push({ type: 'dependency', file: 'tokens.css' });
       return {
-        Once: async (root) => {
-          root.first.first.value = 'blue';
+        Once: async (root: Root) => {
+          ((root.first as Rule).first as Declaration).value = 'blue';
         },
-        DeclarationExit(decl) {
+        DeclarationExit(decl: Declaration) {
           decl.warn(result, 'checked declaration');
         },
       };
     },
-  };
+  } satisfies AcceptedPlugin;
 
   const result = await runPluginChain({ plugins: [plugin] }, '.a { color: red; }', {
     from: 'input.css',
@@ -185,35 +187,46 @@ test('runPluginChain preserves async lifecycle and plugin messages', async () =>
   );
 });
 
-test('processWithGoEngine passes the plugin map to the Go bridge for composition', async () => {
-  const processSpy = vi.fn().mockImplementation(async (css) => ({
-    css,
-    map: '{"version":3,"sources":[],"names":[],"mappings":""}',
-    messages: [],
-  }));
+test('processWithGoEngine returns plugin source maps from stringifyResult', async () => {
+  const processSpy = vi.fn();
+  const stringifyResult = vi.fn(
+    async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
+      css: `${fromAst(ast).toString()}\n/*# sourceMappingURL=a.css.map */`,
+      ...(options?.map
+        ? {
+            map: JSON.stringify({
+              version: 3,
+              sources: ['a.css'],
+              names: [],
+              mappings: 'AAAA',
+            }),
+            mapFile: '/dist/a.css.map',
+          }
+        : {}),
+    }),
+  );
   const plugin = {
     postcssPlugin: 'to-blue',
-    Declaration(decl: postcss.Declaration) {
+    Declaration(decl) {
       decl.value = 'blue';
     },
-  };
+  } satisfies AcceptedPlugin;
 
-  await processWithGoEngine(
-    mockEngine({ process: processSpy }),
+  const result = await processWithGoEngine(
+    mockEngine({ process: processSpy, stringifyResult }),
     { plugins: [plugin] },
     '.a { color: red; }',
     { from: '/src/a.css', to: '/dist/a.css', map: { inline: false } },
   );
 
-  expect(processSpy).toHaveBeenCalledWith(
-    expect.stringContaining('blue'),
-    expect.objectContaining({
-      map: { inline: false },
-      previousMap: expect.stringContaining('"version":3'),
-      previousMapUrl: '/dist/a.css.map',
-    }),
+  expect(processSpy).not.toHaveBeenCalled();
+  expect(stringifyResult).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ map: { inline: false } }),
   );
-  expect(processSpy.mock.calls[0][1].mapFile).toBeUndefined();
+  expect(result.css).toContain('blue');
+  expect(result.map?.toString()).toContain('"version":3');
+  expect(result.mapFile).toBe('/dist/a.css.map');
 });
 
 test('processWithGoEngine keeps inline maps when annotation is false', async () => {
@@ -245,6 +258,7 @@ test('processWithGoEngine computes auto-external output path after Go returns a 
   const noWorkSpy = vi.fn().mockResolvedValue({
     css: '.a {}\n/*# sourceMappingURL=input.css.map */',
     map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
+    mapFile: 'input.css.map',
   });
 
   const result = await processWithGoEngine(
@@ -287,11 +301,13 @@ test('processWithGoEngine resolves dynamic source map annotations before the Go 
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a {}\n/*# sourceMappingURL=maps/custom.map */',
     map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
+    mapFile: '/dist/maps/custom.map',
     messages: [],
   });
   const parseSpy = vi.fn().mockResolvedValue({ root });
-  const annotation = vi.fn((_to, receivedRoot) => {
-    expect(receivedRoot).toBe(root);
+  const annotation = vi.fn(async (_to, receivedRoot) => {
+    expect(receivedRoot).toBeInstanceOf(Root);
+    expect(receivedRoot).not.toBe(root);
     return 'maps/custom.map';
   });
 
@@ -307,7 +323,7 @@ test('processWithGoEngine resolves dynamic source map annotations before the Go 
   );
 
   expect(parseSpy).toHaveBeenCalledWith('.a {}', { from: '/src/a.css' });
-  expect(annotation).toHaveBeenCalledWith('/dist/a.css', root);
+  expect(annotation).toHaveBeenCalledWith('/dist/a.css', expect.any(Root));
   const expectedMapFile = path.resolve('/dist/maps/custom.map');
   expect(processSpy).toHaveBeenCalledWith(
     expect.any(String),
@@ -329,8 +345,11 @@ test('processWithGoEngine requires parse for annotation callbacks', async () => 
           process: vi.fn(),
           noWork: vi.fn(),
           parse: undefined as never,
+          stringify: vi.fn(),
+          stringifyResult: vi.fn(),
           close: vi.fn(),
         },
+        async close() {},
       },
       { plugins: [] },
       '.a {}',
@@ -385,7 +404,7 @@ test('assertGoCompatibility identifies custom config parser options', () => {
   ).toBe(false);
 });
 
-test('assertGoCompatibility allows explicit PostCSS default syntax delegates', () => {
+test('assertGoCompatibility rejects explicit PostCSS default syntax delegates', () => {
   expect(
     assertGoCompatibility(
       {},
@@ -397,7 +416,7 @@ test('assertGoCompatibility allows explicit PostCSS default syntax delegates', (
         },
       },
     ),
-  ).toBe(true);
+  ).toBe(false);
 });
 
 test('assertGoCompatibility still rejects a genuinely custom syntax', () => {

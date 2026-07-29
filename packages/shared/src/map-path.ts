@@ -1,4 +1,4 @@
-import type { MapOptions, ProcessFileOptions } from './map-options.js';
+import type { ProcessFileOptions } from './map-options.js';
 
 /**
  * Browser-safe join of an output CSS path and a map annotation file name.
@@ -27,5 +27,3 @@ export function getMapfile(options: ProcessFileOptions): string {
   }
   return `${options.to ?? options.from ?? 'to.css'}.map`;
 }
-
-export type { MapOptions, ProcessFileOptions };

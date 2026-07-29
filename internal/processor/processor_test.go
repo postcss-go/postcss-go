@@ -21,10 +21,9 @@ type testSourceMap struct {
 	Mappings       string    `json:"mappings"`
 }
 
-func TestSourceMapFileAcceptsWindowsDrivePaths(t *testing.T) {
-	got, ok := sourceMapFile(`C:\repo\generated.css.map`, "")
-	if !ok || got != `C:\repo\generated.css.map` {
-		t.Fatalf("unexpected Windows source map path: %q, ok=%v", got, ok)
+func TestSourceMapFileRejectsWindowsDrivePaths(t *testing.T) {
+	if got, ok := sourceMapFile(`C:\repo\generated.css.map`, ""); ok {
+		t.Fatalf("expected Windows absolute source map path to be rejected, got %q", got)
 	}
 }
 
@@ -370,6 +369,40 @@ func TestProcessorPreservesCRLFForMapAnnotations(t *testing.T) {
 	}
 }
 
+func TestStringifyOwnsMapOutputMetadata(t *testing.T) {
+	root := ast.NewRoot()
+	rule := ast.NewRule(".a")
+	rule.Append(ast.NewDeclaration("color", "red"))
+	root.Append(rule)
+
+	external, err := Stringify(root, Options{
+		From:                  "input.css",
+		To:                    "output.css",
+		Map:                   true,
+		MapInline:             boolPtr(false),
+		MapAnnotationDefault:  true,
+		MapAnnotationDisabled: false,
+	})
+	if err != nil {
+		t.Fatalf("external stringify: %v", err)
+	}
+	if external.Map == "" || external.MapFile != "output.css.map" {
+		t.Fatalf("expected external map payload and filename, got %#v", external)
+	}
+	if !strings.Contains(external.CSS, "sourceMappingURL=output.css.map") {
+		t.Fatalf("expected Go-owned external annotation, got %q", external.CSS)
+	}
+
+	inline, err := Stringify(root, Options{Map: true})
+	if err != nil {
+		t.Fatalf("inline stringify: %v", err)
+	}
+	if inline.Map != "" || inline.MapFile != "" ||
+		!strings.Contains(inline.CSS, "sourceMappingURL=data:application/json;base64,") {
+		t.Fatalf("expected Go-owned inline map output, got %#v", inline)
+	}
+}
+
 func TestNoWorkLoadsPreviousMapPath(t *testing.T) {
 	tempDir := t.TempDir()
 	previousPath := filepath.Join(tempDir, "previous.css.map")
@@ -586,6 +619,77 @@ func TestProcessorCanDisablePreviousMapAndPreserveAnnotation(t *testing.T) {
 	}
 	if len(sourceMap.Sources) != 1 || !strings.HasSuffix(sourceMap.Sources[0], "generated.css") {
 		t.Fatalf("previous map must be disabled, got %#v", sourceMap.Sources)
+	}
+}
+
+func TestAnnotationPreviousMapCannotEscapeInputDirectory(t *testing.T) {
+	base := t.TempDir()
+	inputDir := filepath.Join(base, "input")
+	if err := os.Mkdir(inputDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(base, "outside.map")
+	if err := os.WriteFile(outside, []byte(`{"version":3,"sources":["secret.css"],"names":[],"mappings":"AAAA"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	css := "a{}\n/*# sourceMappingURL=../outside.map */"
+	result, err := NoWork(css, Options{
+		From:          filepath.Join(inputDir, "input.css"),
+		MapAuto:       true,
+		MapInlineAuto: true,
+	})
+	if err != nil {
+		t.Fatalf("NoWork: %v", err)
+	}
+	if result.Map != "" {
+		t.Fatalf("untrusted traversal annotation loaded a map: %q", result.Map)
+	}
+}
+
+func TestAnnotationPreviousMapRejectsSymlinkEscape(t *testing.T) {
+	base := t.TempDir()
+	inputDir := filepath.Join(base, "input")
+	if err := os.Mkdir(inputDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(base, "outside.map")
+	if err := os.WriteFile(outside, []byte(`{"version":3,"sources":[],"names":[],"mappings":""}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(inputDir, "linked.map")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	css := "a{}\n/*# sourceMappingURL=linked.map */"
+	result, err := NoWork(css, Options{
+		From:          filepath.Join(inputDir, "input.css"),
+		MapAuto:       true,
+		MapInlineAuto: true,
+	})
+	if err != nil {
+		t.Fatalf("NoWork: %v", err)
+	}
+	if result.Map != "" {
+		t.Fatalf("untrusted symlink annotation loaded a map: %q", result.Map)
+	}
+}
+
+func TestExplicitPreviousMapPathHasSizeLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.map")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxPreviousMapBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = NoWork("a{}", Options{Map: true, PreviousMapPath: path})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected size-limit error, got %v", err)
 	}
 }
 

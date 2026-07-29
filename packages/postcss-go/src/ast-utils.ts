@@ -78,11 +78,27 @@ export function markBridgeBlocks(node: AstNode): void {
 export function restoreBridgeSources(node: AstNode, inputs: readonly unknown[]): void {
   const source = node.source as (SourceLocation & { inputId?: number }) | undefined;
   if (source?.inputId !== undefined) {
-    const input = inputs[source.inputId] as { file?: unknown; from?: unknown } | undefined;
+    const input = inputs[source.inputId] as
+      | {
+          css?: unknown;
+          file?: unknown;
+          from?: unknown;
+          map?: { file?: unknown; text?: unknown; toString?: () => string };
+        }
+      | undefined;
+    const mapText =
+      typeof input?.map?.text === 'string'
+        ? input.map.text
+        : typeof input?.map?.toString === 'function'
+          ? input.map.toString()
+          : undefined;
     const { inputId: _inputId, input: _input, ...position } = source;
     node.source = {
       ...position,
       ...(input?.from || input?.file ? { file: String(input.from ?? input.file) } : {}),
+      ...(typeof input?.css === 'string' ? { css: input.css } : {}),
+      ...(mapText ? { map: mapText } : {}),
+      ...(mapText ? { mapUrl: String(input?.map?.file ?? input?.file ?? input?.from ?? '') } : {}),
     };
   }
   if ('nodes' in node && node.nodes) {
@@ -103,46 +119,4 @@ export function serializeJSONValue(value: unknown, inputs?: Map<unknown, number>
     return result;
   }
   return value;
-}
-
-export function splitList(value: string, separator: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let depth = 0;
-  let quote = '';
-  let escaped = false;
-  for (const char of value) {
-    if (escaped) {
-      current += char;
-      escaped = false;
-      continue;
-    }
-    if (char === '\\') {
-      current += char;
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      current += char;
-      if (char === quote) quote = '';
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      current += char;
-    } else if (char === '(') {
-      depth++;
-      current += char;
-    } else if (char === ')') {
-      depth = Math.max(0, depth - 1);
-      current += char;
-    } else if (char === separator && depth === 0) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  if (current !== '' || value.endsWith(separator)) result.push(current.trim());
-  return result;
 }

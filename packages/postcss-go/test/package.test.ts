@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
+import * as publicApi from '../src/index.ts';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(packageRoot, '../..');
@@ -79,21 +80,60 @@ test('@postcss-go/core has no production PostCSS dependency', () => {
   }
 });
 
+test('@postcss-go/core package contains only the JavaScript CLI launcher', () => {
+  const files = npmPackFiles(packageRoot);
+  expect(files).toContain('bin/postcss-go.js');
+  expect(files).not.toContain('bin/postcss-go');
+  expect(files).not.toContain('bin/postcss-go.exe');
+});
+
+test('@postcss-go/core does not expose native implementation internals', () => {
+  for (const name of [
+    'createDefaultAsyncService',
+    'createNativeService',
+    'getDefaultAsyncBackendCapabilities',
+    'isNativeAsyncBridgeAvailable',
+    'NativePostcssGoService',
+    'encodeAst',
+    'decodeAst',
+    'hydrateAst',
+    'serializeAst',
+    'postcssApi',
+    'parseCliArgs',
+    'runCLI',
+    'getPollInterval',
+    'usePolling',
+    'createDependencyGraph',
+  ]) {
+    expect(publicApi).not.toHaveProperty(name);
+  }
+});
+
 test('host platform package contains the native addon', () => {
   const tuple = hostTuple();
   const platformPkgRoot = resolve(repoRoot, 'npm/postcss-go', tuple);
   const addonName = `postcss-go.${tuple}.node`;
   const addonPath = resolve(platformPkgRoot, addonName);
 
-  // Go c-archive is MinGW-only on Windows while node-gyp links with MSVC, so the
-  // native `.node` often cannot be produced there. Stdio JSON-RPC remains the
-  // fallback; still assert pack contents whenever the addon did build.
   if (!existsSync(addonPath)) {
-    if (process.platform !== 'win32') {
-      expect.fail(`native addon missing at ${addonPath}; expected on ${tuple}`);
-    }
-    return;
+    expect.fail(`native addon missing at ${addonPath}; expected on ${tuple}`);
   }
 
   expect(npmPackFiles(platformPkgRoot)).toContain(addonName);
+
+  if (process.platform === 'darwin') {
+    const symbols = execFileSync('nm', ['-gU', addonPath], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).at(-1))
+      .sort();
+    expect(symbols).toEqual(['_napi_register_module_v1', '_node_api_module_get_api_version_v1']);
+  } else if (process.platform === 'linux') {
+    const symbols = execFileSync('nm', ['-D', '--defined-only', addonPath], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).at(-1))
+      .sort();
+    expect(symbols).toEqual(['napi_register_module_v1', 'node_api_module_get_api_version_v1']);
+  }
 });

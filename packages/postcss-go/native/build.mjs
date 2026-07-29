@@ -5,7 +5,7 @@
  *
  *   node packages/postcss-go/native/build.mjs
  *
- * Failure is non-fatal: the stdio JSON-RPC bridge remains the fallback.
+ * Native is the only Node backend, so build failures are fatal.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,6 +18,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../..');
 const outDir = resolve(here, 'go-out');
 const require = createRequire(import.meta.url);
+const deploymentTarget = process.env.MACOSX_DEPLOYMENT_TARGET ?? '11.0';
+const deploymentEnv =
+  process.platform === 'darwin'
+    ? {
+        MACOSX_DEPLOYMENT_TARGET: deploymentTarget,
+        CGO_CFLAGS:
+          `${process.env.CGO_CFLAGS ?? ''} -mmacosx-version-min=${deploymentTarget}`.trim(),
+        CGO_LDFLAGS:
+          `${process.env.CGO_LDFLAGS ?? ''} -mmacosx-version-min=${deploymentTarget}`.trim(),
+      }
+    : {};
 
 mkdirSync(outDir, { recursive: true });
 
@@ -90,11 +101,18 @@ writeCompileFlags();
 
 const archive = run(
   'go',
-  ['build', '-buildmode=c-archive', '-o', resolve(outDir, 'libpostcssgo.a'), './cmd/native'],
+  [
+    'build',
+    '-buildmode=c-archive',
+    '-o',
+    resolve(outDir, 'libpostcssgo.a'),
+    './internal/nativeaddon',
+  ],
   {
     cwd: repoRoot,
     env: {
       ...process.env,
+      ...deploymentEnv,
       CGO_ENABLED: '1',
       GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
     },
@@ -102,25 +120,24 @@ const archive = run(
 );
 
 if (archive.status !== 0) {
-  console.warn('postcss-go: native c-archive build failed; stdio bridge remains available');
-  process.exit(0);
+  console.error('postcss-go: native c-archive build failed');
+  process.exit(archive.status ?? 1);
 }
 
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const addon = run(npx, ['--yes', 'node-gyp', 'rebuild'], {
+const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js');
+const addon = run(process.execPath, [nodeGyp, 'rebuild'], {
   cwd: here,
-  // .cmd shims require a shell on Windows; spawn cannot run them directly.
-  shell: process.platform === 'win32',
+  env: { ...process.env, ...deploymentEnv },
 });
 if (addon.status !== 0) {
-  console.warn('postcss-go: native addon build failed; stdio bridge remains available');
-  process.exit(0);
+  console.error('postcss-go: native addon build failed');
+  process.exit(addon.status ?? 1);
 }
 
 const builtAddon = resolve(here, 'build/Release/postcss_go.node');
 if (!existsSync(builtAddon)) {
-  console.warn('postcss-go: native addon output missing; stdio bridge remains available');
-  process.exit(0);
+  console.error('postcss-go: native addon output missing');
+  process.exit(1);
 }
 
 const tuple = hostTuple();

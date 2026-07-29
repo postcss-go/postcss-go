@@ -1,9 +1,11 @@
 import type { Node } from './ast.js';
-import type { SourcePosition } from './types.js';
+import type { SourceInput, SourcePosition } from './types.js';
 
 export interface WarningOptions {
   plugin?: string;
   node?: Node;
+  input?: SourceInput;
+  source?: string;
   index?: number;
   word?: string;
   start?: SourcePosition;
@@ -17,6 +19,8 @@ export class Warning {
   text: string;
   plugin?: string;
   node?: Node;
+  input?: SourceInput;
+  source?: string;
   line?: number;
   column?: number;
   endLine?: number;
@@ -27,6 +31,11 @@ export class Warning {
     this.text = text;
     this.plugin = options.plugin;
     this.node = options.node;
+    this.input = options.node?.source?.input;
+    this.source =
+      typeof options.node?.source?.input?.css === 'string'
+        ? options.node.source.input.css
+        : undefined;
     const range = options.node?.rangeBy(options) ?? {
       start: options.start,
       end: options.end,
@@ -45,11 +54,13 @@ export class Warning {
   }
 
   toString(): string {
-    const location =
-      this.line && this.column
-        ? `${this.node?.source?.file ?? '<css input>'}:${this.line}:${this.column}: `
-        : '';
-    return `${location}${this.plugin ? `${this.plugin}: ` : ''}${this.text}`;
+    if (this.node) {
+      return this.node.error(this.text, {
+        index: typeof this.index === 'number' ? this.index : undefined,
+        plugin: this.plugin,
+        word: typeof this.word === 'string' ? this.word : undefined,
+      }).message;
+    }
+    return `${this.plugin ? `${this.plugin}: ` : ''}${this.text}`;
   }
 }
-

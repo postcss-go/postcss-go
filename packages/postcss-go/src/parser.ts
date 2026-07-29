@@ -1,6 +1,8 @@
+import { materializePreviousMap } from '@postcss-go/shared/map-options';
+
 import { AtRule, Comment, Declaration, Root, Rule } from './ast.js';
 import { CssSyntaxError, positionAt } from './errors.js';
-import { Input } from './input.js';
+import { attachPreviousMap, Input } from './input.js';
 import type { ProcessOptions, SourceLocation } from './types.js';
 
 type Parent = Root | Rule | AtRule;
@@ -10,11 +12,13 @@ type Parent = Root | Rule | AtRule;
  * The Go parser remains the authoritative async pipeline parser; this parser
  * deliberately implements the same core node set without importing PostCSS.
  */
-export function parseSync(cssInput: string | { toString(): string }, options: ProcessOptions = {}): Root {
+export function parseOwnedSync(
+  cssInput: string | { toString(): string },
+  options: ProcessOptions = {},
+): Root {
+  options = materializePreviousMap(options);
   const css = String(cssInput);
-  const input = new Input();
-  input.css = css;
-  input.file = options.from;
+  const input = new Input(css, options);
   const root = new Root();
   const stack: Parent[] = [root];
   let index = 0;
@@ -30,6 +34,7 @@ export function parseSync(cssInput: string | { toString(): string }, options: Pr
     const point = positionAt(css, offset);
     throw new CssSyntaxError(message, {
       file: options.from,
+      input,
       source: css,
       line: point.line,
       column: point.column,
@@ -146,6 +151,7 @@ export function parseSync(cssInput: string | { toString(): string }, options: Pr
   }
   root.raws.after = pending;
   root.source = location(0, css.length);
+  attachPreviousMap(input, css, options);
   return root;
 
   function parseStatement(statement: string, offset: number, terminated: boolean): void {
@@ -277,4 +283,4 @@ function scanBoundary(css: string, from: number): { index: number; char: '{' | '
   return null;
 }
 
-export type Parser = typeof parseSync;
+export type Parser = typeof parseOwnedSync;

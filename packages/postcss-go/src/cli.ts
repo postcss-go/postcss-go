@@ -12,17 +12,16 @@ import { glob } from 'tinyglobby';
 
 import { parseCliArgs } from './args.js';
 import createDependencyGraph, { type GraphMessage } from './create-dependency-graph.js';
+import { isExternalSourceMap } from '@postcss-go/shared/map-options';
+import { getMapfile } from '@postcss-go/shared/map-path';
 import {
   assertGoCompatibility,
   createGoEngine,
   getEffectiveMapOption,
-  isExternalSourceMap,
   processWithGoEngine,
   type CliConfig,
   type CliProcessResult,
-  type GoEngine,
 } from './engine.js';
-import { getMapfile } from '@postcss-go/shared/map-path';
 import { getPollInterval, usePolling } from './poll.js';
 import { loadConfig } from './config.js';
 import { formatWarnings } from './reporter.js';
@@ -103,17 +102,16 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
   ): Promise<CliConfig | undefined> {
     if (argv.use) return Promise.resolve(cliConfig);
 
-    return loadConfig(ctx, configPath)
-      .then((loaded) => {
-        if (!loaded) return undefined;
-        if (loaded.options.from || loaded.options.to) {
-          throw new Error(
-            'Config Error: Can not set from or to options in config file, use CLI arguments instead',
-          );
-        }
-        if (loaded.file) configFiles.add(loaded.file);
-        return loaded;
-      });
+    return loadConfig(ctx, configPath).then((loaded) => {
+      if (!loaded) return undefined;
+      if (loaded.options.from || loaded.options.to) {
+        throw new Error(
+          'Config Error: Can not set from or to options in config file, use CLI arguments instead',
+        );
+      }
+      if (loaded.file) configFiles.add(loaded.file);
+      return loaded;
+    });
   }
 
   function files(fileList: string | string[]): Promise<CliProcessResult[]> {
@@ -389,5 +387,3 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
     }
   }
 }
-
-export type { CliConfig, CliProcessResult, GoEngine };

@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest';
 
 import { fromAst } from '../src/ast.ts';
 import { runPluginsWithBridge } from '../src/plugin-runtime.ts';
+import { NATIVE_BACKEND_CAPABILITIES } from '../src/service.ts';
 import type { AstNode, ProcessResult } from '../src/types.ts';
 
 function bridge() {
@@ -110,6 +111,74 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
   expect(service.process).not.toHaveBeenCalled();
 });
 
+test('async plugin runtime uses the live native bridge without synchronous N-API calls', async () => {
+  const service = bridge();
+  const parseLive = vi.fn(async (css: string) => ({
+    root: fromAst(postcss.parse(css).toJSON() as AstNode),
+  }));
+  const stringifyResultLive = vi.fn(async (root: AstNode | ReturnType<typeof fromAst>) => ({
+    css: fromAst(root as AstNode).toString(),
+  }));
+  const parseSync = vi.fn(() => {
+    throw new Error('async plugin path must not call parseSync');
+  });
+  const stringifyResultSync = vi.fn(() => {
+    throw new Error('async plugin path must not call stringifyResultSync');
+  });
+  const nativeService = {
+    ...service,
+    capabilities: NATIVE_BACKEND_CAPABILITIES,
+    parseLive,
+    parseSync,
+    stringifyResultLive,
+    stringifyResultSync,
+  };
+  let asyncVisitorCompleted = false;
+  let asyncAnnotationCompleted = false;
+
+  const result = await runPluginsWithBridge(
+    nativeService,
+    [
+      {
+        postcssPlugin: 'async-native-hot-path',
+        async Declaration(decl) {
+          await Promise.resolve();
+          decl.value = 'blue';
+          asyncVisitorCompleted = true;
+        },
+      },
+    ],
+    '.a { color: red }',
+    {
+      from: 'input.css',
+      map: {
+        inline: false,
+        async annotation() {
+          await Promise.resolve();
+          asyncAnnotationCompleted = true;
+          return 'custom.css.map';
+        },
+      },
+    },
+  );
+
+  expect(asyncVisitorCompleted).toBe(true);
+  expect(asyncAnnotationCompleted).toBe(true);
+  expect(result.css).toContain('color: blue');
+  expect(stringifyResultLive).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      map: expect.objectContaining({ annotation: 'custom.css.map' }),
+    }),
+  );
+  expect(parseLive).toHaveBeenCalledOnce();
+  expect(stringifyResultLive).toHaveBeenCalledOnce();
+  expect(service.parse).not.toHaveBeenCalled();
+  expect(service.stringifyResult).not.toHaveBeenCalled();
+  expect(parseSync).not.toHaveBeenCalled();
+  expect(stringifyResultSync).not.toHaveBeenCalled();
+});
+
 test('plugin runtime builds AST-based maps that keep original source content', async () => {
   const service = bridge();
   const original = '.a { color: red; }';
@@ -129,7 +198,7 @@ test('plugin runtime builds AST-based maps that keep original source content', a
   expect(service.process).not.toHaveBeenCalled();
   expect(service.stringifyResult).toHaveBeenCalledOnce();
 
-  const map = JSON.parse(result.map ?? '{}') as {
+  const map = result.map?.toJSON() as {
     sources: string[];
     sourcesContent: string[];
     mappings: string;
@@ -138,7 +207,7 @@ test('plugin runtime builds AST-based maps that keep original source content', a
   expect(map.sourcesContent).toEqual([original]);
   expect(map.mappings.length).toBeGreaterThan(0);
 
-  const consumer = await new SourceMapConsumer(result.map ?? '');
+  const consumer = await new SourceMapConsumer(result.map?.toString() ?? '');
   const originalPos = consumer.originalPositionFor({ line: 1, column: 0 });
   expect(originalPos.source).toBe('input.css');
   expect(originalPos.line).toBe(1);
@@ -156,6 +225,22 @@ test('plugin runtime attributes callback errors to the active plugin', async () 
   await expect(
     runPluginsWithBridge(service, [plugin], '.a {}', { from: 'input.css', map: false }),
   ).rejects.toMatchObject({ message: 'broken', plugin: 'broken-plugin' });
+});
+
+test('plugin runtime refreshes CssSyntaxError messages after attributing the plugin', async () => {
+  const plugin = {
+    postcssPlugin: 'syntax-plugin',
+    Rule(rule) {
+      throw rule.error('broken');
+    },
+  } satisfies AcceptedPlugin;
+
+  await expect(
+    runPluginsWithBridge(bridge(), [plugin], '.a {}', { from: 'input.css', map: false }),
+  ).rejects.toMatchObject({
+    plugin: 'syntax-plugin',
+    message: expect.stringContaining('syntax-plugin:'),
+  });
 });
 
 test('named AtRule visitors run general filters before specific filters', async () => {
@@ -340,7 +425,7 @@ test('Comment visitors run and non-root parse responses fail', async () => {
   }));
   await expect(
     runPluginsWithBridge(broken, [], '.a{}', { from: 'input.css', map: false }),
-  ).rejects.toThrow(/not a root/);
+  ).rejects.toThrow(/Root or Document/);
 });
 
 test('previous map metadata is attached from annotation and opts.prev', async () => {
@@ -411,7 +496,7 @@ test('AST map stringifier covers at-rules, comments, and helpers extras', async 
   expect(result.css).toContain('note');
   expect(result.css).toContain('color: blue !important');
   expect(result.css).toContain('@import');
-  expect(JSON.parse(result.map ?? '{}').sourcesContent).toEqual([original]);
+  expect(result.map?.toJSON().sourcesContent).toEqual([original]);
 });
 
 test('property mutations dirty the tree and trigger rewalk', async () => {
@@ -535,5 +620,7 @@ test('hasPreviousMap treats map.prev false as absent', async () => {
     { from: 'input.css', map: { prev: false } },
   );
 
-  expect((result.root.source as unknown as { input?: unknown } | undefined)?.input).toBeUndefined();
+  expect(
+    (result.root.source as unknown as { input?: { map?: unknown } } | undefined)?.input?.map,
+  ).toBeUndefined();
 });

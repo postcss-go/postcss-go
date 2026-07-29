@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
  * Run postcss-go and external CSS engine benchmarks and print a comparison table.
+ *
+ *   pnpm bench
+ *   node benchmark/run.mjs
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -254,7 +257,7 @@ printParserSection(
 console.log(
   'Fixtures: modern-normalize, Tailwind preflight, animate.css, Bootstrap (formatted + minified)',
 );
-console.log('Go:   go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5');
+console.log('Go:            go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5');
 console.log('PostCSS:       node benchmark/postcss.bench.mjs');
 console.log('Lightning CSS: node benchmark/lightningcss.bench.mjs');
 console.log('CSSTree:       node benchmark/csstree.bench.mjs');

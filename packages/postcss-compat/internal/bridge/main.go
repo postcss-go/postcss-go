@@ -1,3 +1,5 @@
+// Command bridge is a private upstream-compatibility test harness. It is not
+// built, shipped, or selected by @postcss-go/core.
 package main
 
 import (
@@ -10,6 +12,7 @@ import (
 
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
+	"github.com/creachadair/jrpc2/handler"
 	"postcss-go/internal/jsbridge"
 )
 
@@ -37,8 +40,24 @@ func main() {
 }
 
 func run() error {
-	srv := jrpc2.NewServer(jsbridge.Assigner(), nil).Start(channel.Line(os.Stdin, nopWriteCloser{}))
+	srv := jrpc2.NewServer(rpcMethods(), nil).Start(channel.Line(os.Stdin, nopWriteCloser{}))
 	return srv.Wait()
+}
+
+func rpcMethods() handler.Map {
+	return handler.Map{
+		"parse":             handler.New(jsbridge.ParseRPC),
+		"process":           handler.New(jsbridge.ProcessRPC),
+		"noWork":            handler.New(jsbridge.NoWorkRPC),
+		"stringify":         handler.New(jsbridge.StringifyRPC),
+		"tokenize":          handler.New(jsbridge.TokenizeBatchRPC),
+		"tokenize.open":     handler.New(jsbridge.TokenizeOpenRPC),
+		"tokenize.next":     handler.New(jsbridge.TokenizeNextRPC),
+		"tokenize.back":     handler.New(jsbridge.TokenizeBackRPC),
+		"tokenize.position": handler.New(jsbridge.TokenizePositionRPC),
+		"tokenize.eof":      handler.New(jsbridge.TokenizeEOFRPC),
+		"tokenize.close":    handler.New(jsbridge.TokenizeCloseRPC),
+	}
 }
 
 type singleRequest struct {

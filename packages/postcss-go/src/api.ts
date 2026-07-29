@@ -1,30 +1,39 @@
-import { Document, fromAst, Root, toAst } from './ast.js';
-import { createNodeService, NodePostcssGoService } from './node.js';
+import { Document, asProcessRoot, fromAst, Node, Root, toAst, type ProcessRoot } from './ast.js';
+import { materializePreviousMap } from '@postcss-go/shared/map-options';
+import { createDefaultAsyncService } from './native.js';
 import type { PostcssGoService } from './service.js';
 import type {
   DocumentNode,
-  ParseResult,
   ProcessOptions,
   ProcessResult,
   RootNode,
-  Warning,
+  ResultMessage,
 } from './types.js';
+import { attachInputMetadata } from './input.js';
+import { prepareStringifyOptions } from './source-map-output.js';
+import { hydrateResultMap, hydrateResultMessages, type ResultMap } from './result.js';
 
 export interface DocumentResult {
   css: string;
-  map?: string;
-  root: DocumentNode | RootNode;
-  messages: Warning[];
+  map?: ResultMap;
+  mapFile?: string;
+  root: ProcessRoot;
+  messages: ResultMessage[];
 }
 
 export async function parse(
   css: string,
   options: ProcessOptions = {},
   service?: PostcssGoService,
-): Promise<ParseResult> {
-  const activeService = service ?? new NodePostcssGoService();
+): Promise<Root> {
+  options = materializePreviousMap(options);
+  const activeService = service ?? createDefaultAsyncService();
   try {
-    return await activeService.parse(css, options);
+    const parsed = await activeService.parse(css, options);
+    const root = asProcessRoot(fromAst(parsed.root));
+    if (!(root instanceof Root)) throw new Error('postcss-go parse response is not a root');
+    attachInputMetadata(root, css, options);
+    return root;
   } finally {
     if (!service) {
       await activeService.close();
@@ -37,9 +46,21 @@ export async function process(
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<ProcessResult> {
-  const activeService = service ?? new NodePostcssGoService();
+  options = materializePreviousMap(options);
+  const activeService = service ?? createDefaultAsyncService();
   try {
-    return await activeService.process(css, options);
+    const processed = await activeService.process(css, options);
+    const root = asProcessRoot(
+      processed.root instanceof Node
+        ? processed.root
+        : fromAst(processed.root as RootNode | DocumentNode),
+    );
+    attachInputMetadata(root, css, options);
+    return {
+      ...processed,
+      root,
+      messages: hydrateResultMessages(processed.messages),
+    };
   } finally {
     if (!service) {
       await activeService.close();
@@ -47,17 +68,47 @@ export async function process(
   }
 }
 
+/** Parse CSS into a serializable Go AST DTO (no live-node hydration). */
 export async function parseAst(
   css: string,
   options: ProcessOptions = {},
   service?: PostcssGoService,
-): Promise<Root> {
-  const activeService = service ?? createNodeService();
+): Promise<RootNode> {
+  options = materializePreviousMap(options);
+  const activeService = service ?? createDefaultAsyncService();
   try {
-    const result: ParseResult = await activeService.parse(css, options);
-    const root = fromAst(result.root);
-    if (!(root instanceof Root)) throw new Error('postcss-go parse response is not a root');
-    return root;
+    return (await activeService.parse(css, options)).root;
+  } finally {
+    if (!service) await activeService.close();
+  }
+}
+
+/** Explicit asynchronous stringifier. */
+export async function stringify(
+  node: Node,
+  options: ProcessOptions = {},
+  service?: PostcssGoService,
+): Promise<string> {
+  options = materializePreviousMap(options);
+  const activeService = service ?? createDefaultAsyncService();
+  try {
+    const effectiveOptions = prepareStringifyOptions(node, options);
+    return (await activeService.stringifyResult(toAst(node), effectiveOptions)).css;
+  } finally {
+    if (!service) await activeService.close();
+  }
+}
+
+/** Explicit asynchronous no-plugin source-map path. */
+export async function noWork(
+  css: string,
+  options: ProcessOptions = {},
+  service?: PostcssGoService,
+) {
+  options = materializePreviousMap(options);
+  const activeService = service ?? createDefaultAsyncService();
+  try {
+    return await activeService.noWork(css, options);
   } finally {
     if (!service) await activeService.close();
   }
@@ -67,7 +118,7 @@ export async function stringifyAst(
   root: Root | Document,
   service?: PostcssGoService,
 ): Promise<string> {
-  const activeService = service ?? createNodeService();
+  const activeService = service ?? createDefaultAsyncService();
   try {
     return await activeService.stringify(toAst(root));
   } finally {
@@ -76,27 +127,27 @@ export async function stringifyAst(
 }
 
 /**
- * Stringify an existing Document and optionally generate a source map. Mapping
- * is delegated to the CSS process path because the bridge process endpoint
- * accepts CSS, while the returned root remains the original Document DTO.
+ * Stringify an existing Document or Root and optionally generate a source map.
+ * Mapping uses `stringifyResult` so Document structure is preserved; the returned
+ * `root` is the same live node instance passed in.
  */
 export async function toResult(
   document: Document | Root,
   options: ProcessOptions = {},
   service?: PostcssGoService,
 ): Promise<DocumentResult> {
-  const activeService = service ?? createNodeService();
+  options = materializePreviousMap(options);
+  const activeService = service ?? createDefaultAsyncService();
   try {
-    const ast = toAst(document) as DocumentNode | RootNode;
-    const css = await activeService.stringify(ast);
-    if (!options.map) return { css, root: ast, messages: [] };
-
-    const processed = await activeService.process(css, options);
+    const root = asProcessRoot(document);
+    const effectiveOptions = prepareStringifyOptions(root, options);
+    const stringified = await activeService.stringifyResult(toAst(root), effectiveOptions);
     return {
-      css: processed.css,
-      map: processed.map,
-      root: ast,
-      messages: processed.messages,
+      css: stringified.css,
+      map: hydrateResultMap(stringified.map),
+      mapFile: stringified.mapFile,
+      root,
+      messages: [],
     };
   } finally {
     if (!service) await activeService.close();
