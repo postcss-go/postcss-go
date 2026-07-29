@@ -68,12 +68,19 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Benchmark group    | Measures                                                   |
-| ------------------ | ---------------------------------------------------------- |
-| `Tokenize`         | Tokenizer only, draining the token stream                  |
-| `Walk`             | AST traversal over an already parsed tree                  |
-| `PluginPipeline`   | `Process` with one declaration visitor plugin              |
-| `ProcessSourceMap` | `Process` with source map generation (external map output) |
+| Conceptual label (oxc-style) | Go / CodSpeed id                         | Measures                                                               |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `tokenize[…]`                | `BenchmarkTokenize_*`                    | Tokenizer only — drain `Next` until EOF                                |
+| `walk[…]`                    | `BenchmarkWalk_*`                        | Walk an already-parsed tree (ns/op only; no MB/s)                      |
+| `plugin[…]`                  | `BenchmarkPlugin_*`                      | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
+| `sourcemap[…]`               | `BenchmarkSourcemap_*`                   | Full `Process` with source map generation (external map, not inlined)  |
+
+Each stage case is a discrete top-level `Benchmark*` function (for example
+`BenchmarkTokenize_bootstrap_css` ↔ `tokenize[bootstrap.css]`). CodSpeed has no
+rename alias: changing these ids is a delete+create, so rename in an isolated
+PR, merge to `main` to seed the new baseline, then [archive](https://codspeed.io/docs/features/archiving-benchmarks)
+the skipped old ids in the CodSpeed UI. Synthetic sizes (`small` / `medium` /
+`large`) are 10 / 1,000 / 10,000 rules.
 
 Lightning CSS's Node API exposes parsing and printing together through
 `transform()`, without exposing its AST parser or an equivalent PostCSS-style
