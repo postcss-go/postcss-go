@@ -68,18 +68,19 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Go / CodSpeed id                                  | Stage     | Measures                                                               |
-| ------------------------------------------------- | --------- | ---------------------------------------------------------------------- |
-| `BenchmarkTokenize_*` / `BenchmarkTokenizeReal_*` | tokenize  | Tokenizer only — drain `Next` until EOF (no parse/walk/stringify)      |
-| `BenchmarkWalk_*` / `BenchmarkWalkReal_*`         | walk      | Walk an already-parsed tree (ns/op only; no MB/s)                      |
-| `BenchmarkPluginPipeline_*`                       | plugin    | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
-| `BenchmarkProcessSourceMap_*`                     | sourcemap | Full `Process` with source map generation (external map, not inlined)  |
+| Conceptual label (oxc-style) | Go / CodSpeed id                         | Measures                                                               |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `tokenize[…]`                | `BenchmarkTokenize_*`                    | Tokenizer only — drain `Next` until EOF                                |
+| `walk[…]`                    | `BenchmarkWalk_*`                        | Walk an already-parsed tree (ns/op only; no MB/s)                      |
+| `plugin[…]`                  | `BenchmarkPlugin_*`                      | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
+| `sourcemap[…]`               | `BenchmarkSourcemap_*`                   | Full `Process` with source map generation (external map, not inlined)  |
 
-Stage names stay as discrete top-level `Benchmark*` functions so CodSpeed keeps
-stable ids and does not run every heavy stage before Parse/Process (which can
-bias walltime on shared runners). Docs still refer to them as tokenize / walk /
-plugin / sourcemap in the [oxc](https://app.codspeed.io/oxc-project/oxc) sense.
-Synthetic sizes (`small` / `medium` / `large`) are 10 / 1,000 / 10,000 rules.
+Each stage case is a discrete top-level `Benchmark*` function (for example
+`BenchmarkTokenize_bootstrap_css` ↔ `tokenize[bootstrap.css]`). CodSpeed has no
+rename alias: changing these ids is a delete+create, so rename in an isolated
+PR, merge to `main` to seed the new baseline, then [archive](https://codspeed.io/docs/features/archiving-benchmarks)
+the skipped old ids in the CodSpeed UI. Synthetic sizes (`small` / `medium` /
+`large`) are 10 / 1,000 / 10,000 rules.
 
 Lightning CSS's Node API exposes parsing and printing together through
 `transform()`, without exposing its AST parser or an equivalent PostCSS-style
