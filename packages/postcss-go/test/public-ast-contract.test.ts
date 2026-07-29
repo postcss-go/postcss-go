@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { CssSyntaxError, Input, PreviousMap, Warning, postcss } from '../src/index.ts';
+import { CssSyntaxError, Input, PreviousMap, Warning, hydrateInput, postcss } from '../src/index.ts';
 
 type RootLike = ReturnType<typeof upstream.parse>;
 
@@ -85,8 +85,15 @@ test('Input constructor, offsets, ranges, and inline previous maps match the pub
   expect(input.file).toMatch(/a\.css$/);
   expect(input.fromLineAndColumn(2, 1)).toBe(4);
   expect(input.fromOffset(4)).toEqual({ line: 2, col: 1 });
+  expect(input.fromOffset(-1)).toBeNull();
   expect(input.map).toBeInstanceOf(PreviousMap);
   expect(typeof input.map?.consumer).toBe('function');
+  expect(input.mapResolve('https://example.com/a.css')).toBe('https://example.com/a.css');
+  expect(input.mapResolve('orig.css')).toContain('orig.css');
+
+  const plain = new Input('ab\nc', { from: 'plain.css' });
+  expect(plain.error('broken', 2)).toMatchObject({ line: 1, column: 3 });
+  expect(() => plain.error('bad', -1)).toThrow(/Invalid CSS offset/);
 
   const error = input.error(
     'broken',
@@ -104,6 +111,18 @@ test('Input constructor, offsets, ranges, and inline previous maps match the pub
   });
   expect(error.message).toContain('contract:');
   expect(error.toString()).toContain('CssSyntaxError:');
+
+  const json = input.toJSON();
+  expect(json.map).toBeTruthy();
+  expect((json.map as { consumerCache?: unknown }).consumerCache).toBeUndefined();
+
+  const hydrated = hydrateInput({
+    css: '.a{}',
+    file: 'x.css',
+    map: { text: Buffer.from(sourceMap, 'base64').toString('utf8'), inline: true },
+  }) as Input;
+  expect(hydrated).toBeInstanceOf(Input);
+  expect(hydrated.map).toBeInstanceOf(PreviousMap);
 });
 
 test('Warning string formatting follows node error formatting', () => {

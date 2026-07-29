@@ -570,6 +570,29 @@ test('fromJSON restores the Input prototype for shared sources', () => {
   expect(input.toJSON()).toEqual(serialized);
 });
 
+test('clones nested raws objects and rejects unsupported fromJSON payloads', () => {
+  const root = new Root({
+    nodes: [
+      new Rule({
+        selector: '.a',
+        raws: {
+          before: ' ',
+          between: ' ',
+          nested: { left: '  ', items: [{ mark: '*' }] },
+        } as never,
+        nodes: [new Declaration({ prop: 'color', value: 'red' })],
+      }),
+    ],
+  });
+  const clone = root.clone();
+  expect((clone.first as Rule).raws).toMatchObject({
+    nested: { left: '  ', items: [{ mark: '*' }] },
+  });
+
+  expect(fromJSON({ nodes: [] }).type).toBe('root');
+  expect(() => fromJSON({} as never)).toThrow(/Unsupported AST node type/);
+});
+
 test('shares the top-level JSON input table with nodes in custom properties', () => {
   const input = {
     css: 'a{color:red}',
