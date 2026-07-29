@@ -1,8 +1,21 @@
-import type { Node } from './ast.js';
+import type {
+  AtRule,
+  Comment,
+  Declaration,
+  Document,
+  Node,
+  Root,
+  Rule,
+} from './ast.js';
 import type { PluginResult, PluginHelpers } from './plugin-runtime.js';
 
-export type PluginListener = (node: Node, helpers: PluginHelpers) => unknown;
-export type PluginListenerGroup = PluginListener | Record<string, PluginListener | undefined>;
+export type PluginListener<T extends Node = Node> = (
+  node: T,
+  helpers: PluginHelpers,
+) => void | Promise<void>;
+export type PluginListenerGroup<T extends Node = Node> =
+  | PluginListener<T>
+  | Record<string, PluginListener<T> | undefined>;
 
 export interface Plugin {
   postcssPlugin: string;
@@ -10,24 +23,24 @@ export interface Plugin {
   prepare?: (
     result: PluginResult,
   ) => Record<string, unknown> | void | Promise<Record<string, unknown> | void>;
-  Once?: PluginListener;
-  OnceExit?: PluginListener;
-  Document?: PluginListenerGroup;
-  DocumentExit?: PluginListenerGroup;
-  Root?: PluginListenerGroup;
-  RootExit?: PluginListenerGroup;
-  Rule?: PluginListenerGroup;
-  RuleExit?: PluginListenerGroup;
-  AtRule?: PluginListenerGroup;
-  AtRuleExit?: PluginListenerGroup;
-  Declaration?: PluginListenerGroup;
-  DeclarationExit?: PluginListenerGroup;
-  Comment?: PluginListenerGroup;
-  CommentExit?: PluginListenerGroup;
+  Once?: PluginListener<Root>;
+  OnceExit?: PluginListener<Root>;
+  Document?: PluginListener<Document>;
+  DocumentExit?: PluginListener<Document>;
+  Root?: PluginListener<Root>;
+  RootExit?: PluginListener<Root>;
+  Rule?: PluginListener<Rule>;
+  RuleExit?: PluginListener<Rule>;
+  AtRule?: PluginListenerGroup<AtRule>;
+  AtRuleExit?: PluginListenerGroup<AtRule>;
+  Declaration?: PluginListenerGroup<Declaration>;
+  DeclarationExit?: PluginListenerGroup<Declaration>;
+  Comment?: PluginListener<Comment>;
+  CommentExit?: PluginListener<Comment>;
   [key: string]: unknown;
 }
 
-export type Transformer = (root: Node, result: PluginResult) => unknown;
+export type Transformer = (root: Root, result: PluginResult) => void | Promise<void>;
 export type PluginCreator = (() => Plugin | Promise<Plugin>) & { postcss?: true };
 export type AcceptedPlugin =
   | Plugin

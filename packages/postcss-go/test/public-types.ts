@@ -4,6 +4,8 @@ import postcss, {
   isSyncPostcssGoService,
   type PluginHelpers,
   type PostcssGoService,
+  type Declaration,
+  type Rule,
 } from '../src/index.js';
 
 const processor = postcss({
@@ -19,6 +21,21 @@ const processor = postcss({
 });
 
 void processor.process('.a{}');
+
+postcss({
+  postcssPlugin: 'specific-listener-types',
+  Declaration(decl) {
+    const declaration: Declaration = decl;
+    declaration.value = 'blue';
+  },
+  Rule(rule) {
+    const typedRule: Rule = rule;
+    typedRule.selector = '.b';
+  },
+  Once(root) {
+    root.walkDecls(() => undefined);
+  },
+});
 
 const input = postcss.parse('.a{}').source?.input;
 if (input?.map instanceof PreviousMap) {

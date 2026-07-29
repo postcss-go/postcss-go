@@ -18,7 +18,7 @@ processing APIs.
 | Process | `postcss(plugins).process`, `process` | `postcss(plugins).processSync`, `processSync` |
 | Output  | `stringify`                           | `stringifySync`                               |
 | No work | `noWork`                              | `noWorkSync`                                  |
-| Service | `createNodeService`                   | N-API backend selected by the sync helpers    |
+| Service | Worker-backed native by default       | In-process native N-API                       |
 
 ## Processor lifecycle
 
@@ -65,10 +65,11 @@ console.log(await stringify(root));
 | `stringify(root, options)` | Resolve to serialized CSS.                                 |
 | `noWork(css, options)`     | Apply no-plugin source-map behavior.                       |
 
-`parseAst`, `stringifyAst`, and `toResult` remain available as lower-level
-service-oriented helpers. Public `process()` returns a live `Root` (or
-`Document`) with shared `Input` metadata, matching `parse()` and
-`Processor#process()`.
+`parseAst` returns the serializable AST DTO from the service. `stringifyAst` and
+`toResult` remain available as lower-level helpers. Public `process()` and
+`toResult()` return a live `Root` (or `Document`) with shared `Input` metadata,
+matching `parse()` and `Processor#process()`. `toResult` generates source maps
+through `stringifyResult` so Document structure is preserved.
 
 `postcss.parse` / `helpers.postcss.parse` use the owned synchronous JavaScript
 parser so plugins can insert CSS without requiring the N-API backend.
@@ -79,33 +80,37 @@ pipeline input; use `postcss.parse` inside plugin helpers.
 
 PostCSS-shaped `map` options are normalized before they cross the bridge. Go
 owns previous-map loading and composition, identity maps for empty plugin
-pipelines, annotation cleanup, and inline/external `sourceMappingURL` emission.
-`PreviousMap` exposes owned annotation, inline-map, JSON, and source-content
-metadata to JavaScript callers.
+pipelines, annotation cleanup, inline/external `sourceMappingURL` emission, and
+the resolved external map filename for process, no-work, and stringify.
+JavaScript callback options (`map.prev` and `map.annotation`) are evaluated once
+at the API boundary; `map.prev` must be synchronous, while annotation callbacks
+may be async and receive a live PostCSS-shaped root. `PreviousMap` exposes owned
+annotation, inline-map, JSON, and source-content metadata to JavaScript callers.
+`Result.mapFile` surfaces the external map path reported by Go.
 
 ## Explicit synchronous APIs
 
 `parseSync`, `processSync`, `stringifySync`, and `noWorkSync` use the in-process
-Node N-API backend. They never start the stdio bridge and never wait on a
-Promise. If the native addon is unavailable they throw
+Node N-API backend and never wait on a Promise. If the native addon is unavailable they throw
 `SyncBackendUnavailableError`.
 
 Use `getBackendCapabilities()` to inspect the default asynchronous backend and
 whether a synchronous backend is installed. Each service also exposes a stable
-`capabilities` object. Setting `POSTCSS_GO_DISABLE_NATIVE=1` explicitly disables
-native discovery, which is useful when validating async-only deployments.
+`capabilities` object, including `backendWorkOffMainThread`. Setting
+`POSTCSS_GO_DISABLE_NATIVE=1` explicitly disables native discovery, which is
+useful when validating missing-native diagnostics or an explicitly selected
+platform-package failure.
 
 `processSync()` rejects a Promise or thenable returned by a plugin creator,
 `prepare`, a visitor, `Once`, `OnceExit`, or a map annotation callback with
 `AsyncPluginError`. Use `process()` for asynchronous plugins.
 
 Synchronous parsing and processing block the Node.js event loop. Prefer the
-asynchronous API or a Worker Thread for server request paths. The default
-`Processor#process()` path uses the asynchronous stdio service so Go parsing
-and stringifying do not run on the Node.js main thread. Callers that explicitly
-inject `createNativeService()` into `Processor#process()` opt into synchronous
-native work behind a Promise-shaped API and should use a Worker Thread when
-main-thread latency matters.
+asynchronous API for server request paths. Promise-returning APIs prefer the
+native addon's `napi_async_work` methods, which execute Go outside the Node.js
+main thread. The default is intentionally native-required: when the compatible
+async addon is unavailable, Promise-returning APIs throw
+`AsyncBackendUnavailableError` instead of silently changing transports.
 
 `stringifySync(root, builder)` is the owned JavaScript builder adapter required
 by the PostCSS-shaped API. `stringifySync(root, options)` returns a string via
@@ -113,13 +118,11 @@ N-API; the two call forms are explicit and do not select a backend implicitly.
 
 ## Engine and service
 
-Use `createNodeService` when several asynchronous operations should share one
-persistent Go bridge. `createGoEngine` and `processWithGoEngine` provide the
-CLI-oriented reusable engine. Unlike the public Promise-returning APIs, the CLI
-engine prefers the in-process native backend when the addon is available because
-the CLI already owns a dedicated process. Set `POSTCSS_GO_BRIDGE=stdio` (or
-`child`) to force the asynchronous stdio backend. The browser-compatible service
-is exposed through the package's `./browser` entry point.
+`createGoEngine` and `processWithGoEngine` provide the CLI-oriented reusable
+engine. CLI and public Promise-returning APIs use the same worker-backed native
+backend. Node has no transport-selection environment variable. The
+browser-compatible service is exposed through the package's `./browser` entry
+point.
 
 ## Compatibility boundary
 

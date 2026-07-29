@@ -71,6 +71,22 @@ test.skipIf(process.env.COVERAGE_RUN === 'true')(
   },
 );
 
+test('the CLI reports a missing default native backend without falling back', async () => {
+  const output = tmp('output.css');
+  const { error, stderr } = await cli(
+    ['test/fixtures/a.css', '-o', output, '--no-map'],
+    packageRoot,
+    {
+      env: {
+        POSTCSS_GO_DISABLE_NATIVE: '1',
+      },
+    },
+  );
+
+  expect(error).toBeTruthy();
+  expect(stderr).toContain('AsyncBackendUnavailableError');
+});
+
 test('the Go engine runs --use plugins by default', async () => {
   const output = tmp('output.css');
 

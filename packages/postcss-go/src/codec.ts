@@ -449,8 +449,21 @@ function encodeSource(writer: Writer, source: SourceLocation | undefined): void 
     css?: string;
     map?: string | Record<string, unknown>;
     mapUrl?: string;
-    input?: { file?: string; from?: string; css?: string };
+    input?: {
+      file?: string;
+      from?: string;
+      css?: string;
+      map?: { file?: string; text?: string; toString?: () => string };
+    };
   };
+  const inputMap = extended.input?.map;
+  const inputMapText =
+    typeof inputMap?.text === 'string'
+      ? inputMap.text
+      : typeof inputMap?.toString === 'function'
+        ? inputMap.toString()
+        : '';
+  const mapText = typeof extended.map === 'string' ? extended.map : inputMapText;
   writer.u8(1);
   writer.varint(source.start.line);
   writer.varint(source.start.column);
@@ -459,9 +472,18 @@ function encodeSource(writer: Writer, source: SourceLocation | undefined): void 
   writer.varint(source.end.column);
   writer.varint(source.end.offset);
   writer.string(source.file ?? extended.input?.file ?? extended.input?.from ?? '');
-  writer.string(extended.css ?? '');
-  writer.string(typeof extended.map === 'string' ? extended.map : '');
-  writer.string(extended.mapUrl ?? '');
+  writer.string(extended.css ?? extended.input?.css ?? '');
+  writer.string(mapText);
+  writer.string(
+    mapText
+      ? (extended.mapUrl ??
+          inputMap?.file ??
+          extended.input?.file ??
+          extended.input?.from ??
+          source.file ??
+          '')
+      : '',
+  );
 }
 
 function encodeDTONode(writer: Writer, node: AstNode): void {

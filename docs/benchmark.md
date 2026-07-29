@@ -121,19 +121,20 @@ node benchmark/run.mjs
 
 ## Boundary cost
 
-Lives in `benchmark/boundary/`. Today a plugin run can cross the Go↔JS boundary in two ways:
+Lives in `benchmark/boundary/`. Production plugin runs use one Go↔JS boundary:
 
-1. **Native sync + binary codec (preferred when the addon builds)** — `packages/postcss-go/native` links a Go c-archive into a Node-API addon. `parse` returns a compact binary AST (`internal/codec`); JavaScript hydrates it with `fromAst`. After plugins run, `toAst` + binary encode feeds `stringify`. Set `POSTCSS_GO_BRIDGE=child` to force the stdio fallback.
-2. **Stdio JSON-RPC (fallback)** — the original child-process bridge. Still used when the native addon is unavailable.
+1. **Native async + binary codec (default and required)** — `packages/postcss-go/native` links a Go c-archive into a Node-API addon. Promise operations run through `napi_async_work`, while explicit `*Sync` APIs use the synchronous exports. Parse returns a compact binary AST (`internal/codec`); after plugins run, binary encoding feeds stringify. A missing compatible async addon is reported instead of silently changing transports.
 
-The boundary benchmark suite prices each stage so the serialization design can be argued from measurements instead of intuition.
+The boundary benchmark suite compares this with a synthetic JSON DTO baseline,
+without retaining a production stdio transport, so the serialization design can
+be argued from measurements instead of intuition.
 
 It also prices a single **synchronous** crossing, by building two things that do not otherwise exist in the repo:
 
 - a Node-API addon — Go compiled with `-buildmode=c-archive`, linked into a `.node` through a thin C shim
 - a wasip1 reactor module — Go compiled with `//go:wasmexport` and `-buildmode=c-shared`, callable synchronously from Node
 
-Both spike artifacts under `benchmark/boundary/` are isolated in nested modules (`napi/go.mod`, `wasm/go.mod`) so their cgo and WASM code never reaches `go build ./...` or CI. The production native path lives in `cmd/native` + `packages/postcss-go/native`.
+Both spike artifacts under `benchmark/boundary/` are isolated in nested modules (`napi/go.mod`, `wasm/go.mod`) so their cgo and WASM code never reaches `go build ./...` or CI. The production native path lives in `internal/nativeaddon`, `internal/nativebridge`, and `packages/postcss-go/native`.
 
 ### The two halves
 
@@ -163,7 +164,7 @@ codec round-trips every fixture and prints JSON vs binary payload sizes.
 Prerequisites differ:
 
 - The default `pnpm bench:boundary` run needs `packages/postcss-go/dist` and
-  `bin/postcss-go` built (`pnpm build`), a working cgo toolchain, and network
+  the native addon built (`pnpm build`), a working cgo toolchain, and network
   access the first time `node-gyp` fetches Node headers.
 - `node benchmark/run-boundary.mjs --go-only` needs only the Go toolchain.
 

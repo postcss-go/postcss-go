@@ -12,6 +12,7 @@ export interface SourceInput {
   from?: string;
   id?: string;
   map?: PreviousMap | Record<string, unknown>;
+  error?: (...args: any[]) => import('./errors.js').CssSyntaxError;
   toJSON?: () => Record<string, unknown>;
   [property: string]: unknown;
 }
@@ -23,10 +24,12 @@ export interface SourceLocation {
   input?: SourceInput;
 }
 
-export interface Warning {
-  type: 'warning';
-  text: string;
+/** Bridge / service message payload before hydration into a live `Warning` class. */
+export interface ResultMessage {
+  type: string;
+  text?: string;
   plugin?: string;
+  [property: string]: unknown;
 }
 
 export interface RawValue {
@@ -120,6 +123,8 @@ export type PreviousSourceMap =
   | false
   | string
   | Record<string, unknown>
+  | import('source-map-js').SourceMapConsumer
+  | import('source-map-js').SourceMapGenerator
   | ((file?: string) => false | string | Record<string, unknown> | undefined);
 
 export interface SourceMapOptions {
@@ -127,7 +132,10 @@ export interface SourceMapOptions {
   annotation?:
     | boolean
     | string
-    | ((file: string | undefined, root: RootNode) => string | Promise<string>);
+    | ((
+        file: string | undefined,
+        root: import('./ast.js').ProcessRoot,
+      ) => string | Promise<string>);
   from?: string;
   inline?: boolean;
   prev?: PreviousSourceMap;
@@ -135,6 +143,7 @@ export interface SourceMapOptions {
 }
 
 export interface ProcessOptions {
+  document?: string | { toString(): string };
   from?: string;
   to?: string;
   parser?: CustomParser;
@@ -163,18 +172,26 @@ export interface ProcessOptions {
 export interface ProcessResult {
   css: string;
   map?: string;
+  mapFile?: string;
   /**
    * Bridge services return a DTO tree; public `process()` hydrates this to a
    * live `Root` or `Document` before returning to callers.
    */
   root: RootNode | DocumentNode | import('./ast.js').ProcessRoot;
-  messages: Warning[];
+  messages: ResultMessage[];
 }
 
 /** A source map value returned by postcss-go. */
 export interface SourceMap {
   toString(): string;
   toJSON?(): Record<string, unknown>;
+  addMapping?(mapping: import('source-map-js').Mapping): void;
+  setSourceContent?(sourceFile: string, sourceContent: string | null | undefined): void;
+  applySourceMap?(
+    consumer: import('source-map-js').SourceMapConsumer,
+    sourceFile?: string,
+    sourceMapPath?: string,
+  ): void;
 }
 
 /** Parser contract accepted by JavaScript-only integration points. */
@@ -193,6 +210,7 @@ export type CustomStringifier = (
   builder: StringifierBuilder,
 ) => void | Promise<void>;
 
+/** Custom parse/stringify pair accepted by `ProcessOptions.syntax`. */
 export interface Syntax {
   parse?: CustomParser;
   stringify?: CustomStringifier;
@@ -201,11 +219,13 @@ export interface Syntax {
 export interface NoWorkResult {
   css: string;
   map?: string;
+  mapFile?: string;
 }
 
 export interface AstStringifyResult {
   css: string;
   map?: string;
+  mapFile?: string;
 }
 
 export interface ParseResult {

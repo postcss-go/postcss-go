@@ -149,6 +149,7 @@ func TestStringifyBridgePreservesRawsFromDTO(t *testing.T) {
 }
 
 func TestStringifyBridgeGeneratesSourceMapFromAST(t *testing.T) {
+	inline := false
 	source := &SourceLocationDTO{
 		Start: SourcePositionDTO{Line: 1, Column: 1, Offset: 0},
 		End:   SourcePositionDTO{Line: 1, Column: 15, Offset: 14},
@@ -157,7 +158,13 @@ func TestStringifyBridgeGeneratesSourceMapFromAST(t *testing.T) {
 	}
 	resp := Execute(Request{
 		Command: "stringify",
-		Options: RequestOpts{Map: true, From: "input.css", To: "output.css"},
+		Options: RequestOpts{
+			Map:                  true,
+			MapInline:            &inline,
+			MapAnnotationDefault: true,
+			From:                 "input.css",
+			To:                   "output.css",
+		},
 		AST: &NodeDTO{
 			Type:   "root",
 			Source: source,

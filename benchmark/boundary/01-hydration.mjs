@@ -1,19 +1,12 @@
 /**
  * Part A of the boundary-cost suite.
  *
- * Compares the legacy JSON-RPC path against the production native + binary
+ * Compares a JSON DTO representation against the production native + binary
  * codec path (direct hydrate/serialize, no intermediate DTO).
  */
-import {
-  createNativeService,
-  createNodeService,
-  fromAst,
-  hydrateAst,
-  isNativeBridgeAvailable,
-  serializeAst,
-  toAst,
-} from '../../packages/postcss-go/dist/index.js';
-import { getBundledGoBridgeBinPath } from '../../packages/postcss-go/dist/resolve-go-bridge.js';
+import { fromAst, isNativeBridgeAvailable, toAst } from '../../packages/postcss-go/dist/index.js';
+import { hydrateAst, serializeAst } from '../../packages/postcss-go/dist/codec.js';
+import { createNativeService } from '../../packages/postcss-go/dist/native.js';
 import { formatBytes, formatNs, legend, measureSlow, table } from './lib/bench.mjs';
 import { countNodes, loadFixtures } from './lib/fixtures.mjs';
 
@@ -62,17 +55,19 @@ function countBoundaryOps(root) {
 
 async function main() {
   const nativeAvailable = isNativeBridgeAvailable();
-  const child = createNodeService({
-    binPath: getBundledGoBridgeBinPath(),
-    binArgs: ['--single'],
-  });
-  const native = nativeAvailable ? createNativeService() : null;
+  if (!nativeAvailable) {
+    throw new Error(
+      'Native addon unavailable; build it with `node packages/postcss-go/native/build.mjs`.',
+    );
+  }
+  const native = createNativeService();
   const fixtures = loadFixtures();
   const rows = [];
 
   try {
     for (const fixture of fixtures) {
-      const { root } = await child.parse(fixture.css, { from: `${fixture.name}.css` });
+      const live = native.parseSync(fixture.css, { from: `${fixture.name}.css` }).root;
+      const root = toAst(live);
       const counts = countNodes(root);
       const json = JSON.stringify(root);
       const hydrated = fromAst(root);
@@ -94,9 +89,8 @@ async function main() {
       let nativeRoundTrip = 0;
       let binaryTotal = 0;
 
-      if (native) {
+      {
         // Production path: Go emits binary → hydrateAst → mutate → serializeAst → Go.
-        const live = native.parseSync(fixture.css, { from: `${fixture.name}.css` }).root;
         const bin = serializeAst(live);
         binary = bin.length;
 
@@ -140,29 +134,21 @@ async function main() {
       });
     }
   } finally {
-    await child.close();
-    if (native) await native.close();
+    await native.close();
   }
 
-  console.log('# Part A — JSON-RPC vs native binary codec\n');
-  if (!nativeAvailable) {
-    console.log(
-      'Native addon unavailable; only the JSON-RPC path is measured.\n' +
-        'Build it with `node packages/postcss-go/native/build.mjs`.\n',
-    );
-  } else {
-    console.log(
-      'JSON-RPC still moves a JSON DTO over stdio. The preferred path moves a\n' +
-        'compact binary AST through the in-process native addon and hydrates\n' +
-        'straight into live TypeScript AST classes (no intermediate DTO).\n',
-    );
-  }
+  console.log('# Part A — JSON DTO vs native binary codec\n');
+  console.log(
+    'The DTO baseline prices JSON plus object hydration without retaining a\n' +
+      'production stdio transport. The native path moves a compact binary AST\n' +
+      'through the addon directly into live TypeScript AST classes.\n',
+  );
 
   console.log('## Input shape\n');
   console.log(
     legend('How much data each fixture moves across the boundary.', [
       ['css', 'source stylesheet size'],
-      ['json dto', 'legacy bridge payload'],
+      ['json dto', 'synthetic JSON DTO payload'],
       ['binary', 'production codec payload (native path)'],
       ['nodes', 'AST nodes, including the root'],
       ['decls', 'declaration nodes, the ones plugins touch most'],
@@ -186,9 +172,9 @@ async function main() {
     ]),
   );
 
-  console.log('\n## Legacy JSON-RPC path (per file, JS side)\n');
+  console.log('\n## JSON DTO baseline (per file, JS side)\n');
   console.log(
-    legend('What JavaScript pays per file on the stdio JSON bridge.', [
+    legend('What JavaScript would pay per file for a JSON DTO boundary.', [
       ['JSON.stringify', 'encode the mutated AST for the stringify request'],
       ['JSON.parse', 'decode the parse response from Go'],
       ['fromAst', 'build TypeScript AST objects from the decoded DTO'],
@@ -216,7 +202,7 @@ async function main() {
         ['JS total', 'hydrate + serialize'],
         ['native parse', 'Go parse + binary encode + hydrateAst'],
         ['round-trip', 'parseSync → stringifyResultSync'],
-        ['vs JSON', 'JS total compared with the legacy JSON total'],
+        ['vs JSON', 'JS total compared with the JSON DTO baseline'],
       ]),
     );
     console.log(
@@ -247,7 +233,7 @@ async function main() {
         ['nodes', 'AST nodes, including the root'],
         ['native calls', 'crossings that walk would need, one per field or step'],
         ['calls/node', 'native calls divided by node count'],
-        ['break-even (JSON)', 'per-call budget against the legacy JSON total'],
+        ['break-even (JSON)', 'per-call budget against the JSON DTO total'],
         ['break-even (bin)', 'per-call budget against the binary JS total'],
       ],
     ),

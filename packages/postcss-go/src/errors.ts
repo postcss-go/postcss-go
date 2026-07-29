@@ -11,6 +11,11 @@ export interface CssSyntaxErrorOptions {
   endColumn?: number;
 }
 
+export interface RangePosition {
+  line: number;
+  column: number;
+}
+
 /** A PostCSS-compatible syntax error owned by postcss-go. */
 export class CssSyntaxError extends Error {
   reason: string;
@@ -27,16 +32,16 @@ export class CssSyntaxError extends Error {
   constructor(message: string, options?: CssSyntaxErrorOptions);
   constructor(
     message: string,
-    line?: number,
-    column?: number,
+    line?: number | RangePosition,
+    column?: number | RangePosition,
     source?: string,
     file?: string,
     plugin?: string,
   );
   constructor(
     message: string,
-    optionsOrLine: CssSyntaxErrorOptions | number = {},
-    column?: number,
+    optionsOrLine: CssSyntaxErrorOptions | number | RangePosition = {},
+    column?: number | RangePosition,
     source?: string,
     file?: string,
     plugin?: string,
@@ -44,35 +49,81 @@ export class CssSyntaxError extends Error {
     super(message);
     this.name = 'CssSyntaxError';
     this.reason = message;
-    const options =
-      typeof optionsOrLine === 'number'
-        ? { line: optionsOrLine, column, source, file, plugin }
-        : optionsOrLine;
+    let options: CssSyntaxErrorOptions;
+    if (typeof optionsOrLine === 'number') {
+      options = {
+        line: optionsOrLine,
+        column: typeof column === 'number' ? column : undefined,
+        source,
+        file,
+        plugin,
+      };
+    } else if (isRangePosition(optionsOrLine) && isRangePosition(column)) {
+      options = {
+        line: optionsOrLine.line,
+        column: optionsOrLine.column,
+        endLine: column.line,
+        endColumn: column.column,
+        source,
+        file,
+        plugin,
+      };
+    } else {
+      options = optionsOrLine;
+    }
     Object.assign(this, options);
+    this.setMessage();
+    if (Error.captureStackTrace) Error.captureStackTrace(this, CssSyntaxError);
+  }
+
+  setMessage(): void {
+    this.message = this.plugin ? `${this.plugin}: ` : '';
+    this.message += this.file ?? '<css input>';
+    if (this.line !== undefined) {
+      this.message += `:${this.line}:${this.column ?? 1}`;
+    }
+    this.message += `: ${this.reason}`;
   }
 
   showSourceCode(color = false): string {
-    if (!this.source || !this.line || !this.column) return '';
+    if (!this.source || this.line === undefined || this.column === undefined) return '';
     const lines = this.source.split(/\r?\n/);
-    const sourceLine = lines[this.line - 1] ?? '';
-    const markerLength =
-      this.endLine === this.line && this.endColumn ? Math.max(1, this.endColumn - this.column) : 1;
-    const marker = `${' '.repeat(Math.max(0, this.column - 1))}${'^'.repeat(markerLength)}`;
-    if (!color) return `${sourceLine}\n${marker}`;
-    return `${sourceLine}\n\u001B[31;1m${marker}\u001B[0m`;
+    const start = Math.max(this.line - 3, 0);
+    const end = Math.min(this.line + 2, lines.length);
+    const width = String(end).length;
+    return lines
+      .slice(start, end)
+      .map((sourceLine, index) => {
+        const number = start + index + 1;
+        const gutter = ` ${String(number).padStart(width)} | `;
+        if (number !== this.line) return ` ${gutter}${sourceLine}`;
+        const spacing = `${gutter.replace(/\d/g, ' ')}${sourceLine
+          .slice(0, Math.max(0, this.column! - 1))
+          .replace(/[^\t]/g, ' ')}`;
+        const markerLength =
+          this.endLine === this.line && this.endColumn !== undefined
+            ? Math.max(1, this.endColumn - this.column!)
+            : 1;
+        const marker = '^'.repeat(markerLength);
+        const renderedMarker = color ? `\u001B[31;1m${marker}\u001B[0m` : marker;
+        return `>${gutter}${sourceLine}\n ${spacing}${renderedMarker}`;
+      })
+      .join('\n');
   }
 
   override toString(): string {
-    const location =
-      this.line && this.column
-        ? `${this.file ?? '<css input>'}:${this.line}:${this.column}: `
-        : this.file
-          ? `${this.file}: `
-          : '';
-    const plugin = this.plugin ? `${this.plugin}: ` : '';
     const source = this.showSourceCode();
-    return `${location}${plugin}${this.reason}${source ? `\n\n${source}` : ''}`;
+    return `${this.name}: ${this.message}${source ? `\n\n${source}\n` : ''}`;
   }
+}
+
+function isRangePosition(value: unknown): value is RangePosition {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as RangePosition).line === 'number' &&
+    typeof (value as RangePosition).column === 'number'
+  );
 }
 
 /** Raised when an explicit synchronous API has no in-process backend. */
@@ -82,6 +133,16 @@ export class SyncBackendUnavailableError extends Error {
       'A synchronous postcss-go API requires the Node N-API backend, but no native addon is available',
     );
     this.name = 'SyncBackendUnavailableError';
+  }
+}
+
+/** Raised when the default Promise API cannot load the required async native backend. */
+export class AsyncBackendUnavailableError extends Error {
+  constructor() {
+    super(
+      'The asynchronous postcss-go API requires the worker-backed Node N-API backend, but no compatible native addon is available; reinstall @postcss-go/core for the current platform',
+    );
+    this.name = 'AsyncBackendUnavailableError';
   }
 }
 

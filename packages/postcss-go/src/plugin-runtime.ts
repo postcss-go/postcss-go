@@ -1,4 +1,4 @@
-import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
+import { materializePreviousMap, type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
 import {
   AtRule,
@@ -19,6 +19,7 @@ import { stringify as stringifyOwned } from './ast-stringifier.js';
 import { CssSyntaxError } from './errors.js';
 import { AsyncPluginError, isThenable, observeThenable } from './errors.js';
 import { attachInputMetadata, Input } from './input.js';
+import { list } from './list.js';
 import type { PostcssGoService } from './service.js';
 import type { AstNode as AstDTO, ProcessOptions } from './types.js';
 import type { AcceptedPlugin, Plugin } from './plugin-types.js';
@@ -27,18 +28,24 @@ import { hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
 import { prepareStringifyOptions } from './source-map-output.js';
+import { assertSupportedSyntax } from './syntax-options.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
+  parseLive?(css: string, options?: ProcessOptions): Promise<{ root: ProcessRoot }>;
+  stringifyResultLive?(
+    ast: AstDTO | ProcessRoot,
+    options?: ProcessOptions,
+  ): Promise<{ css: string; map?: string; mapFile?: string }>;
   parseSync?(css: string, options?: ProcessOptions): { root: AstDTO | ProcessRoot };
   stringifyResultSync?(
     ast: AstDTO | ProcessRoot,
     options?: ProcessOptions,
-  ): { css: string; map?: string };
+  ): { css: string; map?: string; mapFile?: string };
 };
 
-type SyncPluginBridgeService = PluginBridgeService &
-  Required<Pick<PluginBridgeService, 'parseSync' | 'stringifyResultSync'>>;
+type LiveAsyncPluginBridgeService = PluginBridgeService &
+  Required<Pick<PluginBridgeService, 'parseLive' | 'stringifyResultLive'>>;
 
 type Listener = (node: Node, helpers: PluginHelpers) => unknown;
 type ListenerGroup = Listener | Record<string, Listener | undefined>;
@@ -104,57 +111,11 @@ export interface PostcssPublic {
   comment: (defaults?: ConstructorParameters<typeof Comment>[0]) => Comment;
 }
 
-export type PluginHelpers = Omit<PostcssPublic, never> & {
+export { list } from './list.js';
+
+export type PluginHelpers = PostcssPublic & {
   result: PluginResult;
   postcss: PostcssPublic;
-};
-
-export const list = {
-  comma(value: string): string[] {
-    return list.split(value, [','], true);
-  },
-  space(value: string): string[] {
-    return list.split(value, [' ', '\n', '\t']);
-  },
-  split(value: string, separators: string[], last?: boolean): string[] {
-    const array: string[] = [];
-    let current = '';
-    let split = false;
-    let func = 0;
-    let inQuote = false;
-    let prevQuote = '';
-    let escape = false;
-
-    for (const letter of value) {
-      if (escape) {
-        escape = false;
-      } else if (letter === '\\') {
-        escape = true;
-      } else if (inQuote) {
-        if (letter === prevQuote) inQuote = false;
-      } else if (letter === '"' || letter === "'") {
-        inQuote = true;
-        prevQuote = letter;
-      } else if (letter === '(') {
-        func += 1;
-      } else if (letter === ')') {
-        if (func > 0) func -= 1;
-      } else if (func === 0 && separators.includes(letter)) {
-        split = true;
-      }
-
-      if (split) {
-        if (current !== '') array.push(current.trim());
-        current = '';
-        split = false;
-      } else {
-        current += letter;
-      }
-    }
-
-    if (last || current !== '') array.push(current.trim());
-    return array;
-  },
 };
 
 export interface ProcessorFacade {
@@ -229,20 +190,21 @@ export async function runPluginsWithBridge(
   options: ProcessFileOptions,
   processor?: ResultProcessorFacade,
 ): Promise<PluginResult> {
+  options = materializePreviousMap(options);
+  // Narrows to `{ from }` before the service call; assert on the full options first.
+  assertSupportedSyntax(options);
   const normalized = await normalizePlugins(plugins);
-  const syncService = hasSyncPluginBridge(service) ? service : undefined;
-  const parsed = syncService
-    ? syncService.parseSync(css, { from: options.from })
+  const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
+  const parsed = liveService
+    ? await liveService.parseLive(css, { from: options.from })
     : await service.parse(css, { from: options.from });
-  const hydrated = asProcessRoot(
-    parsed.root instanceof Node ? parsed.root : fromAst(parsed.root),
-  );
+  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
   attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
   const activePlugins: RuntimePlugin[] = [];
   for (const plugin of normalized) {
-    const prepared = await plugin.prepare?.(result);
+    const prepared = await preparePlugin(plugin, result);
     activePlugins.push(prepared ? { ...plugin, ...prepared } : plugin);
   }
   const helpers = {
@@ -253,7 +215,7 @@ export async function runPluginsWithBridge(
   const listeners = prepareVisitors(activePlugins);
 
   for (const plugin of activePlugins) {
-    await runListener(plugin, plugin.Once, hydrated, helpers, false);
+    await runRootListeners(plugin, plugin.Once, hydrated, helpers);
   }
 
   while (!hydrated.isClean) {
@@ -262,25 +224,29 @@ export async function runPluginsWithBridge(
   }
 
   for (const plugin of activePlugins) {
-    await runListener(plugin, plugin.OnceExit, hydrated, helpers, false);
+    await runRootListeners(plugin, plugin.OnceExit, hydrated, helpers);
   }
 
   const stringifyOptions = prepareStringifyOptions(
     hydrated,
     (await resolveAnnotation(options, hydrated)) as ProcessOptions,
   );
-  const stringified = syncService
-    ? syncService.stringifyResultSync(hydrated, stringifyOptions as ProcessOptions)
+  const stringified = liveService
+    ? await liveService.stringifyResultLive(hydrated, stringifyOptions as ProcessOptions)
     : await service.stringifyResult(toAst(hydrated), stringifyOptions as ProcessOptions);
   result.css = stringified.css;
   result.map = hydrateResultMap(stringified.map);
+  result.mapFile = stringified.mapFile;
   return result;
 }
 
-function hasSyncPluginBridge(service: PluginBridgeService): service is SyncPluginBridgeService {
+function hasLiveAsyncPluginBridge(
+  service: PluginBridgeService,
+): service is LiveAsyncPluginBridgeService {
   return (
-    service.capabilities?.synchronous === true &&
-    typeof service.parseSync === 'function' && typeof service.stringifyResultSync === 'function'
+    service.capabilities?.backend === 'native' &&
+    typeof service.parseLive === 'function' &&
+    typeof service.stringifyResultLive === 'function'
   );
 }
 
@@ -296,17 +262,17 @@ export function runPluginsWithBridgeSync(
   options: ProcessFileOptions,
   processor?: ResultProcessorFacade,
 ): PluginResult {
+  options = materializePreviousMap(options);
+  // Narrows to `{ from }` before the service call; assert on the full options first.
+  assertSupportedSyntax(options);
   const normalized = normalizePluginsSync(plugins);
   const parsed = service.parseSync(css, { from: options.from });
-  const hydrated = asProcessRoot(
-    parsed.root instanceof Node ? parsed.root : fromAst(parsed.root),
-  );
+  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
   attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
   const activePlugins = normalized.map((plugin) => {
-    const prepared = plugin.prepare?.(result);
-    assertSynchronous(prepared, 'prepare', plugin);
+    const prepared = preparePluginSync(plugin, result);
     return prepared ? { ...plugin, ...prepared } : plugin;
   });
   const helpers = {
@@ -317,14 +283,14 @@ export function runPluginsWithBridgeSync(
   const listeners = prepareVisitors(activePlugins);
 
   for (const plugin of activePlugins) {
-    runListenerSync(plugin, plugin.Once, hydrated, helpers, 'Once', false);
+    runRootListenersSync(plugin, plugin.Once, hydrated, helpers, 'Once');
   }
   while (!hydrated.isClean) {
     hydrated.markClean();
     visitNodeSync(hydrated, listeners, helpers);
   }
   for (const plugin of activePlugins) {
-    runListenerSync(plugin, plugin.OnceExit, hydrated, helpers, 'OnceExit', false);
+    runRootListenersSync(plugin, plugin.OnceExit, hydrated, helpers, 'OnceExit');
   }
 
   const stringifyOptions = prepareStringifyOptions(
@@ -334,6 +300,7 @@ export function runPluginsWithBridgeSync(
   const stringified = service.stringifyResultSync(hydrated, stringifyOptions as ProcessOptions);
   result.css = stringified.css;
   result.map = hydrateResultMap(stringified.map);
+  result.mapFile = stringified.mapFile;
   return result;
 }
 
@@ -344,6 +311,36 @@ function createResult(
   processor?: ResultProcessorFacade,
 ): PluginResult {
   return new Result<RuntimePlugin>(processor ?? { plugins }, root, opts);
+}
+
+async function preparePlugin(
+  plugin: RuntimePlugin,
+  result: PluginResult,
+): Promise<Record<string, unknown> | void> {
+  if (!plugin.prepare) return;
+  result.lastPlugin = plugin;
+  try {
+    return await plugin.prepare(result);
+  } catch (error) {
+    attachPluginToError(error, plugin);
+    throw error;
+  }
+}
+
+function preparePluginSync(
+  plugin: RuntimePlugin,
+  result: PluginResult,
+): Record<string, unknown> | void {
+  if (!plugin.prepare) return;
+  result.lastPlugin = plugin;
+  try {
+    const prepared = plugin.prepare(result);
+    assertSynchronous(prepared, 'prepare', plugin);
+    return prepared as Record<string, unknown> | void;
+  } catch (error) {
+    attachPluginToError(error, plugin);
+    throw error;
+  }
 }
 
 async function normalizePlugins(plugins: AcceptedPlugin[]): Promise<RuntimePlugin[]> {
@@ -595,13 +592,7 @@ async function runListener(
   } catch (error) {
     if (error && typeof error === 'object') {
       node.addToError(error as Error);
-      if ((error as { plugin?: unknown }).plugin === undefined) {
-        Object.defineProperty(error, 'plugin', {
-          configurable: true,
-          enumerable: true,
-          value: pluginName(plugin),
-        });
-      }
+      attachPluginToError(error, plugin);
     }
     throw error;
   }
@@ -623,16 +614,53 @@ function runListenerSync(
   } catch (error) {
     if (error && typeof error === 'object') {
       node.addToError(error as Error);
-      if ((error as { plugin?: unknown }).plugin === undefined) {
-        Object.defineProperty(error, 'plugin', {
-          configurable: true,
-          enumerable: true,
-          value: pluginName(plugin),
-        });
-      }
+      attachPluginToError(error, plugin);
     }
     throw error;
   }
+}
+
+async function runRootListeners(
+  plugin: RuntimePlugin,
+  listener: Listener | undefined,
+  root: ProcessRoot,
+  helpers: PluginHelpers,
+): Promise<void> {
+  if (!listener) return;
+  if (root instanceof Document) {
+    await Promise.all(root.nodes.map((child) => runListener(plugin, listener, child, helpers, false)));
+  } else {
+    await runListener(plugin, listener, root, helpers, false);
+  }
+}
+
+function runRootListenersSync(
+  plugin: RuntimePlugin,
+  listener: Listener | undefined,
+  root: ProcessRoot,
+  helpers: PluginHelpers,
+  extensionPoint: string,
+): void {
+  if (!listener) return;
+  if (root instanceof Document) {
+    for (const child of root.nodes) {
+      runListenerSync(plugin, listener, child, helpers, extensionPoint, false);
+    }
+  } else {
+    runListenerSync(plugin, listener, root, helpers, extensionPoint, false);
+  }
+}
+
+function attachPluginToError(error: unknown, plugin: RuntimePlugin): void {
+  if (!error || typeof error !== 'object') return;
+  if ((error as { plugin?: unknown }).plugin === undefined) {
+    Object.defineProperty(error, 'plugin', {
+      configurable: true,
+      enumerable: true,
+      value: pluginName(plugin),
+    });
+  }
+  if (error instanceof CssSyntaxError) error.setMessage();
 }
 
 function assertSynchronous(value: unknown, extensionPoint: string, plugin?: RuntimePlugin): void {

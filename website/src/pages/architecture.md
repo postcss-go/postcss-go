@@ -25,8 +25,8 @@ title: Architecture
       <div class="flex gap-[.85rem]">
         <span class="mt-[.4rem] h-[.55rem] w-[.55rem] shrink-0 rounded-full bg-violet"></span>
         <p class="m-0 text-[.9rem] leading-[1.65] text-white/50">
-          <strong class="mb-1 block font-mono text-xs tracking-[.04em] text-white">JSON-RPC keeps runtimes aligned</strong>
-          Node and WASM share a structured contract for AST, locations, maps, errors, and messages.
+          <strong class="mb-1 block font-mono text-xs tracking-[.04em] text-white">A narrow native boundary</strong>
+          Node uses a compact binary AST over Node-API; WASM keeps its Worker message contract.
         </p>
       </div>
       <div class="flex gap-[.85rem]">
@@ -87,7 +87,7 @@ title: Architecture
       <thead><tr><th class="border-b border-white/[.08] px-[1.1rem] py-4 text-left font-mono text-[.68rem] uppercase tracking-[.12em] text-white/40">Layer</th><th class="border-b border-white/[.08] px-[1.1rem] py-4 text-left font-mono text-[.68rem] uppercase tracking-[.12em] text-white/40">Responsibility</th></tr></thead>
       <tbody>
         <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-acid"></span>Go engine</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Parse, AST mutation, plugin visitors, stringify, warnings, and source maps.</td></tr>
-        <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-violet"></span>Node service</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Child process, request queue, option normalization, and result handling.</td></tr>
+        <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-violet"></span>Node service</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Native addon loading, Node-API async work, synchronous calls, option normalization, and result handling.</td></tr>
         <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-orange-300"></span>JavaScript compatibility</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Config, JS plugins, message combining, and PostCSS-shaped results. Map options are normalized in <code>@postcss-go/shared</code>; Go owns map generation, previous maps, and annotations.</td></tr>
         <tr><td class="w-[34%] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-cyan-300"></span>WASM service</td><td class="px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Same service contract as Node, via a Worker and Go WASM.</td></tr>
       </tbody>
@@ -113,8 +113,8 @@ title: Architecture
     </div>
     <div class="min-h-0 rounded-[.85rem] border border-white/10 bg-white/[.035] p-4 min-[761px]:min-h-36">
       <span class="font-mono text-[.68rem] tracking-[.1em] text-violet">02</span>
-      <strong class="mt-[.8rem] block font-mono text-[.8rem] min-[761px]:mt-[1.7rem]">JSON-RPC bridge</strong>
-      <small class="mt-[.45rem] block text-[.72rem] leading-normal text-white/50">AST · locations · options</small>
+      <strong class="mt-[.8rem] block font-mono text-[.8rem] min-[761px]:mt-[1.7rem]">Node-API boundary</strong>
+      <small class="mt-[.45rem] block text-[.72rem] leading-normal text-white/50">binary AST · options · errors</small>
     </div>
     <div class="ml-[1.2rem] grid grid-cols-[auto_1fr] items-center justify-items-start gap-[.35rem] font-mono text-[.58rem] uppercase tracking-[.08em] text-white/40 min-[761px]:ml-0 min-[761px]:grid-cols-1 min-[761px]:justify-items-center">
       <span class="relative block h-[1.2rem] w-px bg-acid/50 after:absolute after:bottom-0 after:right-[-.2rem] after:h-[.4rem] after:w-[.4rem] after:-rotate-45 after:border-b after:border-l after:border-acid after:content-[''] min-[761px]:h-px min-[761px]:w-[2.4rem] min-[761px]:after:right-0 min-[761px]:after:top-[-.2rem] min-[761px]:after:bottom-auto min-[761px]:after:rotate-45 min-[761px]:after:border-b-0 min-[761px]:after:border-l-0 min-[761px]:after:border-r min-[761px]:after:border-t"></span>
@@ -140,7 +140,7 @@ title: Architecture
       <thead><tr><th class="border-b border-white/[.08] px-[1.1rem] py-4 text-left font-mono text-[.68rem] uppercase tracking-[.12em] text-white/40">Module</th><th class="border-b border-white/[.08] px-[1.1rem] py-4 text-left font-mono text-[.68rem] uppercase tracking-[.12em] text-white/40">Responsibility</th></tr></thead>
       <tbody>
         <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-violet"></span>service</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Shared async service contract.</td></tr>
-        <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-acid"></span>node</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Child process, request queue, and option normalization.</td></tr>
+        <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-acid"></span>native</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Node-API async/sync operations, compact AST codec, and option normalization.</td></tr>
         <tr><td class="w-[34%] border-b border-white/[.08] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-cyan-300"></span>browser</td><td class="border-b border-white/[.08] px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Worker-backed service; <code>@postcss-go/wasm</code> ships the WASM assets.</td></tr>
         <tr><td class="w-[34%] px-[1.1rem] py-4 align-top font-mono text-[.82rem] leading-[1.6]"><span class="mr-[.65rem] inline-block h-2 w-2 rounded-full bg-orange-300"></span>cli</td><td class="px-[1.1rem] py-4 align-top leading-[1.6] text-white/50">Config, JS plugins, message combining, and writing Go-generated CSS and maps.</td></tr>
       </tbody>

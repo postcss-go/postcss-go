@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { SourceMapConsumer, SourceMapGenerator } from 'source-map-js';
 
 import { expect, test } from 'vitest';
 
@@ -13,8 +14,10 @@ import postcss, {
   SyncBackendUnavailableError,
   UnsupportedSyntaxError,
   getBackendCapabilities,
+  noWork,
   noWorkSync,
   parse,
+  parseAst,
   parseSync,
   process,
   processSync,
@@ -33,6 +36,14 @@ test('default entry point creates a reusable Processor', () => {
   expect(postcss({ postcssPlugin: 'one' }, { postcssPlugin: 'two' }).plugins).toHaveLength(2);
 });
 
+test('Processor normalizes plugin packs and rejects invalid plugins eagerly', () => {
+  const packed = postcss({
+    plugins: [{ postcssPlugin: 'one' }, { postcssPlugin: 'two' }],
+  });
+  expect(packed.plugins).toHaveLength(2);
+  expect(() => postcss().use(null as never)).toThrow(/is not a PostCSS plugin/);
+});
+
 test('explicit async parse and stringify use live postcss-go nodes', async () => {
   const root = await parse('.a { color: red }', { from: 'input.css' });
   expect(root).toBeInstanceOf(Root);
@@ -41,7 +52,16 @@ test('explicit async parse and stringify use live postcss-go nodes', async () =>
 });
 
 test('bare parse APIs attach PreviousMap metadata', async () => {
-  const css = '.a{}\n/*# sourceMappingURL=input.css.map */';
+  const previous = Buffer.from(
+    JSON.stringify({
+      version: 3,
+      sources: ['input.css'],
+      names: [],
+      mappings: '',
+      sourcesContent: ['.a{}'],
+    }),
+  ).toString('base64');
+  const css = `.a{}\n/*# sourceMappingURL=data:application/json;base64,${previous} */`;
   const asyncRoot = await parse(css, { from: 'input.css' });
   const syncRoot = parseSync(css, { from: 'input.css' });
 
@@ -93,6 +113,13 @@ test('public backend APIs reject unsupported syntax instead of silently ignoring
   const root = postcss.parse('.a{}');
   expect(() => stringifySync(root, { stringifier })).toThrow(UnsupportedSyntaxError);
   await expect(stringify(root, { stringifier })).rejects.toBeInstanceOf(UnsupportedSyntaxError);
+
+  // Plugin path narrows options before the service; must still reject.
+  const plugin = { postcssPlugin: 'noop' };
+  await expect(postcss([plugin]).process('.a{}', { parser })).rejects.toBeInstanceOf(
+    UnsupportedSyntaxError,
+  );
+  expect(() => postcss([plugin]).processSync('.a{}', { parser })).toThrow(UnsupportedSyntaxError);
 });
 
 test('named custom syntax functions cannot masquerade as default delegates', async () => {
@@ -142,7 +169,16 @@ test('plugin helpers expose both flattened API members and helpers.postcss', asy
 });
 
 test('previous maps preserve the shared Input instance across the tree', async () => {
-  const css = '.a{}\n/*# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozfQ== */';
+  const previousMap = Buffer.from(
+    JSON.stringify({
+      version: 3,
+      sources: ['original.css'],
+      names: [],
+      mappings: 'AAAA',
+      sourcesContent: ['.a{}'],
+    }),
+  ).toString('base64');
+  const css = `.a{}\n/*# sourceMappingURL=data:application/json;base64,${previousMap} */`;
   await postcss({
     postcssPlugin: 'input-contract',
     Once(root) {
@@ -223,6 +259,20 @@ test('standalone stringify finalizes map annotations', async () => {
       map: { inline: false },
     }),
   ).resolves.toContain('sourceMappingURL=output.css.map');
+  expect(
+    stringifySync(root, {
+      from: 'input.css',
+      to: 'output.css',
+      map: { inline: false, annotation: 'maps/custom.map' },
+    }),
+  ).toContain('sourceMappingURL=maps/custom.map');
+  expect(
+    stringifySync(root, {
+      from: 'input.css',
+      to: 'output.css',
+      map: { inline: false, annotation: false },
+    }),
+  ).not.toContain('sourceMappingURL');
 });
 
 test('Once and OnceExit receive the same root stored on Result', async () => {
@@ -249,18 +299,24 @@ test('explicit sync APIs use the native backend', () => {
 
 test('backend capabilities describe default async and optional sync execution', () => {
   expect(getBackendCapabilities()).toEqual({
-    asynchronous: expect.objectContaining({ backend: 'stdio', synchronous: false }),
+    asynchronous: expect.objectContaining({
+      backend: 'native',
+      backendWorkOffMainThread: true,
+      synchronous: true,
+    }),
     synchronous: expect.objectContaining({ backend: 'native', synchronous: true }),
   });
 });
 
-test('sync APIs throw SyncBackendUnavailableError when native is disabled', () => {
+test('default APIs report stable unavailable errors when native is disabled', () => {
   const entry = new URL('../dist/index.js', import.meta.url).href;
   const script = `
     import {
+      AsyncBackendUnavailableError,
       Root,
       getBackendCapabilities,
       noWorkSync,
+      parse,
       parseSync,
       processSync,
       stringifySync
@@ -279,8 +335,17 @@ test('sync APIs throw SyncBackendUnavailableError when native is disabled', () =
         return error.name;
       }
     });
+    let asyncError = null;
+    try {
+      await parse('.a{}');
+    } catch (error) {
+      asyncError = error.name;
+    }
     process.stdout.write(JSON.stringify({
+      asyncError,
+      asyncErrorMatchesExport: asyncError === AsyncBackendUnavailableError.name,
       errors,
+      asynchronous: getBackendCapabilities().asynchronous,
       synchronous: getBackendCapabilities().synchronous
     }));
   `;
@@ -291,7 +356,10 @@ test('sync APIs throw SyncBackendUnavailableError when native is disabled', () =
 
   expect(child.status).toBe(0);
   expect(JSON.parse(child.stdout)).toEqual({
+    asyncError: 'AsyncBackendUnavailableError',
+    asyncErrorMatchesExport: true,
     errors: Array(4).fill(SyncBackendUnavailableError.name),
+    asynchronous: null,
     synchronous: null,
   });
 });
@@ -387,9 +455,38 @@ test('standalone process hydrates a live Root with Input metadata', async () => 
   expect(typeof processed.root.walkDecls).toBe('function');
 });
 
+test('parseAst returns a serializable AST DTO', async () => {
+  const root = await parseAst('.a { color: red }', { from: 'input.css' });
+  expect(root).toMatchObject({ type: 'root' });
+  expect(root).not.toBeInstanceOf(Root);
+  expect(typeof (root as { walk?: unknown }).walk).toBe('undefined');
+});
+
+test('Processor surfaces Go mapFile for external maps', async () => {
+  const result = await postcss().process('.a{}', {
+    from: 'input.css',
+    to: 'output.css',
+    map: { inline: false, annotation: 'maps/out.css.map' },
+  });
+  expect(result.mapFile).toBeTruthy();
+  expect(result.mapFile).toMatch(/out\.css\.map$/);
+  expect(result.css).toContain('sourceMappingURL=maps/out.css.map');
+});
+
+test('materializePreviousMap rejects async map.prev at the public boundary', async () => {
+  await expect(
+    postcss().process('.a{}', {
+      map: { prev: async () => ({ version: 3 }) },
+    }),
+  ).rejects.toThrow(/map\.prev returned a Promise/);
+});
+
 test('map.annotation receives a live Root with and without plugins', async () => {
   const shapes: Array<{ walk: string; name: string }> = [];
-  const annotation = (_to: string | undefined, root: { walk?: unknown; constructor?: { name?: string } }) => {
+  const annotation = (
+    _to: string | undefined,
+    root: { walk?: unknown; constructor?: { name?: string } },
+  ) => {
     shapes.push({
       walk: typeof root.walk,
       name: root.constructor?.name ?? 'plain',
@@ -407,9 +504,9 @@ test('map.annotation receives a live Root with and without plugins', async () =>
     to: 'b.css',
     map: { annotation, inline: false },
   });
-  expect(processSync('.a{}', { map: { annotation, inline: false }, from: 'a.css', to: 'b.css' }).css).toContain(
-    'sourceMappingURL=x.css.map',
-  );
+  expect(
+    processSync('.a{}', { map: { annotation, inline: false }, from: 'a.css', to: 'b.css' }).css,
+  ).toContain('sourceMappingURL=x.css.map');
 
   expect(shapes).toEqual([
     { walk: 'function', name: 'Root' },
@@ -421,12 +518,22 @@ test('map.annotation receives a live Root with and without plugins', async () =>
 test('plugin bridge accepts Document roots from the service parse path', async () => {
   let sawDocument = false;
   const service = {
-    capabilities: { backend: 'stdio' as const, synchronous: false, sourceMaps: true, plugins: true },
+    capabilities: {
+      backend: 'wasm-worker' as const,
+      asynchronous: true,
+      backendWorkOffMainThread: true,
+      synchronous: false,
+    },
     async parse() {
       return {
         root: {
           type: 'document' as const,
-          nodes: [{ type: 'root' as const, nodes: [{ type: 'rule' as const, selector: '.a', nodes: [] }] }],
+          nodes: [
+            {
+              type: 'root' as const,
+              nodes: [{ type: 'rule' as const, selector: '.a', nodes: [] }],
+            },
+          ],
         },
       };
     },
@@ -447,9 +554,64 @@ test('plugin bridge accepts Document roots from the service parse path', async (
   expect(result.root.type).toBe('document');
 });
 
+test('Once and OnceExit run once for every Root inside a Document', async () => {
+  const calls: string[] = [];
+  const service = {
+    capabilities: {
+      backend: 'wasm-worker' as const,
+      asynchronous: true,
+      backendWorkOffMainThread: true,
+      synchronous: false,
+    },
+    async parse() {
+      return {
+        root: {
+          type: 'document' as const,
+          nodes: [
+            { type: 'root' as const, nodes: [{ type: 'rule' as const, selector: '.a', nodes: [] }] },
+            { type: 'root' as const, nodes: [{ type: 'rule' as const, selector: '.b', nodes: [] }] },
+          ],
+        },
+      };
+    },
+    async stringifyResult() {
+      return { css: '.a{}.b{}' };
+    },
+    async close() {},
+  };
+
+  await postcss({
+    postcssPlugin: 'document-once',
+    Once(root) {
+      calls.push(`once:${root.first?.type}`);
+    },
+    OnceExit(root) {
+      calls.push(`exit:${root.first?.type}`);
+    },
+  }).process('', {}, { service: service as never });
+
+  expect(calls).toEqual(['once:rule', 'once:rule', 'exit:rule', 'exit:rule']);
+});
+
 test('ResultMap.toJSON wraps invalid JSON with a stable error', () => {
   const map = new ResultMap('{not-json');
   expect(() => map.toJSON()).toThrow(/not valid JSON/);
+});
+
+test('ResultMap exposes SourceMapGenerator mutation methods', () => {
+  const map = new ResultMap(
+    JSON.stringify({ version: 3, sources: [], names: [], mappings: '' }),
+  );
+  map.addMapping({
+    generated: { line: 1, column: 0 },
+    original: { line: 1, column: 0 },
+    source: 'input.css',
+  });
+  map.setSourceContent('input.css', '.a{}');
+  expect(map.toJSON()).toMatchObject({
+    sources: ['input.css'],
+    sourcesContent: ['.a{}'],
+  });
 });
 
 test('PreviousMap exposes annotation, inline text, and source content', () => {
@@ -465,4 +627,34 @@ test('PreviousMap exposes annotation, inline text, and source content', () => {
   expect(map.inline).toBe(true);
   expect(map.withContent()).toBe(true);
   expect(map.toJSON()?.version).toBe(3);
+});
+
+test('map.prev accepts SourceMapConsumer and SourceMapGenerator on public backend paths', async () => {
+  const rawMap = {
+    version: 3,
+    sources: ['original.css'],
+    names: [],
+    mappings: 'AAAA',
+    sourcesContent: ['.a{}'],
+  };
+  const consumer = new SourceMapConsumer(rawMap);
+  const generator = SourceMapGenerator.fromSourceMap(consumer);
+  const options = {
+    from: 'input.css',
+    to: 'output.css',
+    map: { inline: false, annotation: false },
+  };
+
+  await expect(
+    process('.a{}', { ...options, map: { ...options.map, prev: consumer } }),
+  ).resolves.toMatchObject({ map: expect.any(String) });
+  await expect(
+    noWork('.a{}', { ...options, map: { ...options.map, prev: generator } }),
+  ).resolves.toMatchObject({ map: expect.any(String) });
+  await expect(
+    stringify(postcss.parse('.a{}', { from: 'input.css' }), {
+      ...options,
+      map: { ...options.map, prev: consumer },
+    }),
+  ).resolves.toContain('.a{}');
 });

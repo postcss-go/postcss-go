@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   NATIVE_BACKEND_CAPABILITIES,
-  STDIO_BACKEND_CAPABILITIES,
+  WASM_WORKER_BACKEND_CAPABILITIES,
   UnsupportedServiceError,
   isSyncPostcssGoService,
   type PostcssGoService,
@@ -27,7 +27,7 @@ test('isSyncPostcssGoService validates capability and the complete sync surface'
 
   expect(
     isSyncPostcssGoService({
-      capabilities: STDIO_BACKEND_CAPABILITIES,
+      capabilities: WASM_WORKER_BACKEND_CAPABILITIES,
       ...methods,
     } as unknown as PostcssGoService),
   ).toBe(false);

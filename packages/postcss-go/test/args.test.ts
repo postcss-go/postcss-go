@@ -1,15 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 const originalArgv = [...process.argv];
-const originalBin = process.env.POSTCSS_GO_NODE_API_BIN;
 
 afterEach(() => {
   process.argv = [...originalArgv];
-  if (originalBin === undefined) {
-    delete process.env.POSTCSS_GO_NODE_API_BIN;
-  } else {
-    process.env.POSTCSS_GO_NODE_API_BIN = originalBin;
-  }
 });
 
 async function importArgs(args: string[], env: Record<string, string | undefined> = {}) {

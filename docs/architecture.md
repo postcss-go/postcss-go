@@ -9,15 +9,15 @@ flowchart LR
     Input[CSS input] --> CLI[Node.js CLI / API]
     CLI --> Plugins[PostCSS plugin chain]
     Plugins --> Service[PostcssGoService]
-    Service --> Bridge[JSON-RPC bridge]
+    Service --> Bridge[Node-API native addon]
     Bridge --> Core[Go core engine]
     Core --> Output[CSS, AST, warnings, source map]
     Service --> Browser[Browser / WASM service]
 ```
 
 - **Go core** — parse, canonical AST operations, stringify, warnings, source maps
-- **Node.js packages** — public API, CLI, plugin loading, process management, and the synchronous AST facade required by JavaScript plugins
-- **Bridge** — serialize requests and AST results between JavaScript and Go
+- **Node.js packages** — public API, CLI, plugin loading, and the AST facade required by JavaScript plugins
+- **Native boundary** — one private C ABI dispatcher behind sync calls and Node-API async work
 - **Browser / WASM** — same service contract as Node, via a Worker and Go WASM
 
 ## Processing pipeline
@@ -47,13 +47,17 @@ Five node kinds: `Root`, `Rule`, `AtRule`, `Declaration`, `Comment`. Nodes share
 
 The tokenizer never builds AST nodes; the parser never runs plugins; the processor coordinates without owning tokenization or serialization.
 
-## JavaScript bridge
+## Native Node boundary
 
 ```text
-TypeScript service → JSON-RPC → cmd/api → jsbridge → Go facade
+TypeScript service → Node-API addon → internal/nativeaddon → internal/nativebridge → Go core
 ```
 
-Four core operations: `parse`, `process`, `noWork`, and `stringify`. The DTO carries semantic fields, children, source locations, and `Raws` so the bridge does not silently change CSS or maps. `noWork` handles the no-plugin map path without parsing or re-stringifying CSS. `cmd/api` only wires RPC to bridge handlers.
+Four core operations—`parse`, `process`, `noWork`, and `stringify`—share one
+private Go/C dispatcher. ASTs use the compact binary codec; result metadata uses
+small JSON payloads. Promise operations run as Node-API async work, while the
+explicit sync API calls the same Go operations on the Node thread. The old
+production stdio child-process backend is not shipped.
 
 ## Node.js integration
 
@@ -66,13 +70,13 @@ sequenceDiagram
 
     User->>Plugins: load config and plugins
     Plugins->>Service: parse / process / noWork / stringify
-    Service->>Go: JSON-RPC request
+    Service->>Go: Node-API call (binary AST)
     Go-->>Service: CSS, AST, map, warnings
     Service-->>User: PostCSS-shaped result
 ```
 
 - **service** — shared async contract
-- **node** — child process, request queue; map-option normalization via `@postcss-go/shared`
+- **native** — addon loading, async-work and sync surfaces; map-option normalization via `@postcss-go/shared`
 - **browser** — Worker-backed service; `@postcss-go/wasm` ships the WASM assets
 - **cli** — config, JS plugins, message combining, writing Go-generated CSS and maps
 - **shared** — dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; used by core and vendored compat overrides
@@ -83,24 +87,26 @@ JavaScript stays responsible for ecosystem-facing behavior and synchronous JavaS
 
 Ownership is split so PostCSS-shaped options stay in JavaScript while map generation stays in Go:
 
-| Layer                   | Owns                                                                                                                                                                   |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@postcss-go/shared`    | Normalize `map` / `map.prev` / `map.annotation` into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …); resolve annotation callbacks and map file paths |
-| Node / browser / compat | Call `normalizeProcessOptions` before `process` / `noWork`; empty plugin pipelines use `noWork`                                                                        |
-| Go `processor`          | Load previous maps, compose or build identity maps, clear or preserve annotations, emit inline/external `sourceMappingURL`                                             |
-| Go `stringifier`        | AST stringify with optional source-map annotation stripping; raw-CSS `ClearSourceMapAnnotations` for the no-work path                                                  |
+| Layer                   | Owns                                                                                                                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@postcss-go/shared`    | Materialize JavaScript `map.prev` and `map.annotation` callbacks once, then normalize PostCSS-shaped options into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …) |
+| Node / browser / compat | Supply live PostCSS roots to callbacks, expose `PreviousMap` / `ResultMap` facades, surface Go's resolved `mapFile` on results, and write the final files reported by Go |
+| Go `processor`          | Load previous maps, compose or build maps, select inline/external output, emit `sourceMappingURL`, and report the resolved external `mapFile` for process, no-work, and stringify  |
+| Go `stringifier`        | AST stringify with optional source-map annotation stripping; raw-CSS `ClearSourceMapAnnotations` for the no-work path                                                              |
 
 Contract notes:
 
+- CLI `processWithGoEngine` and `Processor#process` share the same plugin path: JavaScript plugins run around Go parse/stringifyResult. No second CSS `process` pass is used to compose plugin maps.
 - Bridge `mapInline` is optional JSON (`*bool` in Go). Omitted means unset; `false` means explicit external/no-inline. Bare Go `Map: true` with no output-mode flags defaults to inline, matching PostCSS `map: true`.
 - `process` with maps off strips only `# sourceMappingURL=` comment nodes. `noWork` without maps uses the PostCSS no-work string cleaner (`/*#` comments).
-- When JavaScript plugins still run first, their intermediate map may be passed to Go as `previousMap`; final annotation/inline emission remains Go-owned.
+- AST source records carry previous-map text and URL across the binary boundary, so standalone and plugin-result stringify can compose maps in Go.
+- CSS-provided external annotations are treated as untrusted: only regular `.map` files confined to the input directory are loaded, with a 32 MiB limit. An explicit `map.prev` path remains a trusted caller option but uses the same file type and size checks.
 
 ## Compatibility and performance
 
 **Compatibility** — keep PostCSS-shaped AST and visitors; preserve formatting and source locations; carry source-map options through the processor and bridge; run upstream tests via `packages/postcss-compat`.
 
-**Performance** — keep the core pipeline in Go; reuse one Node bridge process; measure with the fixtures in [Contributing](contributing.md).
+**Performance** — keep the core pipeline in Go; use the binary native boundary; measure with the fixtures in [Contributing](contributing.md).
 
 ## Testing
 

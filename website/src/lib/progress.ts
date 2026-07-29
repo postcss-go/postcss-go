@@ -32,7 +32,7 @@ const GROUP_METADATA: Record<string, Pick<ProgressGroup, 'shortName' | 'descript
   },
   'Node N-API and synchronous execution': {
     shortName: 'Node N-API',
-    description: 'Native sync · packaging · fallback',
+    description: 'Native async/sync · packaging',
   },
   'Core CSS pipeline': {
     shortName: 'Core CSS',

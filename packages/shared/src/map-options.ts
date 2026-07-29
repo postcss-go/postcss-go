@@ -152,11 +152,7 @@ export function normalizeProcessOptions(
     if (typeof mapOptions.prev === 'function') bridgeOptions.previousMapPath = previous;
     else bridgeOptions.previousMap = previous;
   } else if (previous) {
-    const text = String(previous);
-    bridgeOptions.previousMap =
-      (text.startsWith('{') || text.startsWith('[')) && text !== '[object Object]'
-        ? text
-        : JSON.stringify(previous);
+    bridgeOptions.previousMap = serializePreviousMap(previous);
   }
   if (
     (bridgeOptions.previousMap || bridgeOptions.previousMapPath) &&
@@ -191,6 +187,138 @@ export function normalizeProcessOptions(
     bridgeOptions.mapAnnotationDisabled = false;
   }
   return bridgeOptions;
+}
+
+/** Evaluate `map.prev` exactly once at the JavaScript boundary. */
+export function materializePreviousMap<T extends { from?: string; map?: unknown }>(options: T): T {
+  const map = options.map;
+  if (!map || typeof map !== 'object') return options;
+  const mapOptions = map as MapOptions;
+  if (typeof mapOptions.prev === 'function') {
+    const prev = mapOptions.prev(options.from);
+    assertSyncPreviousMap(prev);
+    return {
+      ...options,
+      map: {
+        ...mapOptions,
+        prev,
+      },
+    };
+  }
+  assertSyncPreviousMap(mapOptions.prev);
+  return options;
+}
+
+function assertSyncPreviousMap(prev: unknown): void {
+  if (!isThenable(prev)) return;
+  void Promise.resolve(prev).catch(() => undefined);
+  throw new Error(
+    'map.prev returned a Promise; resolve the previous map before calling postcss-go',
+  );
+}
+
+function serializePreviousMap(previous: unknown): string {
+  if (!previous || typeof previous !== 'object') {
+    throw new Error(`Unsupported previous source map format: ${String(previous)}`);
+  }
+
+  const toJSON = (previous as { toJSON?: unknown }).toJSON;
+  if (typeof toJSON === 'function') {
+    return assertPreviousMapText(JSON.stringify(toJSON.call(previous)));
+  }
+
+  if (isIndexedSourceMapConsumerLike(previous)) {
+    return assertPreviousMapText(
+      JSON.stringify({
+        version: 3,
+        sections: previous._sections.map((section) => ({
+          offset: {
+            line: section.generatedOffset.generatedLine - 1,
+            column: section.generatedOffset.generatedColumn - 1,
+          },
+          map: JSON.parse(serializePreviousMap(section.consumer)),
+        })),
+      }),
+    );
+  }
+
+  if (isSourceMapConsumerLike(previous)) {
+    const consumer = previous as SourceMapConsumerLike;
+    return assertPreviousMapText(
+      JSON.stringify({
+        version: 3,
+        sources: collectionToArray(consumer._sources) ?? [...consumer.sources],
+        names: collectionToArray(consumer._names) ?? [],
+        mappings: consumer._mappings,
+        ...(consumer.file ? { file: consumer.file } : {}),
+        ...(consumer.sourceRoot ? { sourceRoot: consumer.sourceRoot } : {}),
+        ...(consumer.sourcesContent ? { sourcesContent: [...consumer.sourcesContent] } : {}),
+      }),
+    );
+  }
+
+  const text = String(previous);
+  if (text !== '[object Object]') {
+    try {
+      return assertPreviousMapText(text);
+    } catch {
+      // Fall through to JSON serialization for map-like objects.
+    }
+  }
+  return assertPreviousMapText(JSON.stringify(previous));
+}
+
+type SourceMapConsumerLike = {
+  sources: readonly string[];
+  sourcesContent?: readonly string[] | null;
+  file?: string | null;
+  sourceRoot?: string | null;
+  _mappings: string;
+  _sources?: { toArray?: () => string[] };
+  _names?: { toArray?: () => string[] };
+  originalPositionFor: (...args: any[]) => unknown;
+};
+
+type IndexedSourceMapConsumerLike = {
+  _sections: Array<{
+    generatedOffset: { generatedLine: number; generatedColumn: number };
+    consumer: object;
+  }>;
+  originalPositionFor: (...args: any[]) => unknown;
+};
+
+function isIndexedSourceMapConsumerLike(value: object): value is IndexedSourceMapConsumerLike {
+  const candidate = value as Partial<IndexedSourceMapConsumerLike>;
+  return (
+    Array.isArray(candidate._sections) && typeof candidate.originalPositionFor === 'function'
+  );
+}
+
+function isSourceMapConsumerLike(value: object): value is SourceMapConsumerLike {
+  const candidate = value as Partial<SourceMapConsumerLike>;
+  return (
+    Array.isArray(candidate.sources) &&
+    typeof candidate._mappings === 'string' &&
+    typeof candidate.originalPositionFor === 'function'
+  );
+}
+
+function collectionToArray(collection: { toArray?: () => string[] } | undefined) {
+  return typeof collection?.toArray === 'function' ? collection.toArray() : undefined;
+}
+
+function assertPreviousMapText(text: string | undefined): string {
+  if (!text) throw new Error('Unsupported previous source map format');
+  let parsed: { mappings?: unknown; sections?: unknown };
+  try {
+    parsed = JSON.parse(text) as { mappings?: unknown; sections?: unknown };
+  } catch {
+    throw new Error('Previous source map is not valid JSON');
+  }
+  if (typeof parsed.mappings !== 'string' && !Array.isArray(parsed.sections)) {
+    throw new Error('Unsupported previous source map format');
+  }
+  return text;
 }
 
 function hasFlatMapOutputOptions(options: NormalizeProcessOptionsInput): boolean {

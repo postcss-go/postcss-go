@@ -1,4 +1,5 @@
 import {
+  materializePreviousMap,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
 } from '@postcss-go/shared/map-options';
@@ -16,7 +17,7 @@ import type {
   ProcessResult,
 } from './types.js';
 import { assertSupportedSyntax } from './syntax-options.js';
-import { finalizeStringifyResult, prepareStringifyOptions } from './source-map-output.js';
+import { prepareStringifyOptions } from './source-map-output.js';
 
 export interface BrowserWorkerLike {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -68,11 +69,13 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     return this.call<ParseResult>('parse', { css, options });
   }
 
   process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
@@ -96,6 +99,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
@@ -123,6 +127,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     assertSupportedAst(ast);
     const preparedOptions = prepareStringifyOptions(ast, options);
@@ -137,7 +142,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
     if (typeof result?.css !== 'string') {
       throw new Error('postcss-go WASM stringify response is missing css');
     }
-    return finalizeStringifyResult(result, effectiveOptions, ast);
+    return result;
   }
 
   async close(): Promise<void> {
@@ -183,7 +188,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
     ) => string | Promise<string>;
     return this.parse(css, { from: options.from }).then(async (parsed) => {
       const root = asProcessRoot(fromAst(parsed.root));
-      attachInputMetadata(root, css, { from: options.from });
+      attachInputMetadata(root, css, options);
       return {
         ...options,
         map: {

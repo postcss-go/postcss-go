@@ -111,25 +111,33 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
   expect(service.process).not.toHaveBeenCalled();
 });
 
-test('async plugin runtime uses the live native-style sync bridge when both methods exist', async () => {
+test('async plugin runtime uses the live native bridge without synchronous N-API calls', async () => {
   const service = bridge();
-  const parseSync = vi.fn((css: string) => ({
+  const parseLive = vi.fn(async (css: string) => ({
     root: fromAst(postcss.parse(css).toJSON() as AstNode),
   }));
-  const stringifyResultSync = vi.fn((root: AstNode | ReturnType<typeof fromAst>) => ({
+  const stringifyResultLive = vi.fn(async (root: AstNode | ReturnType<typeof fromAst>) => ({
     css: fromAst(root as AstNode).toString(),
   }));
-  const syncService = {
+  const parseSync = vi.fn(() => {
+    throw new Error('async plugin path must not call parseSync');
+  });
+  const stringifyResultSync = vi.fn(() => {
+    throw new Error('async plugin path must not call stringifyResultSync');
+  });
+  const nativeService = {
     ...service,
     capabilities: NATIVE_BACKEND_CAPABILITIES,
+    parseLive,
     parseSync,
+    stringifyResultLive,
     stringifyResultSync,
   };
   let asyncVisitorCompleted = false;
   let asyncAnnotationCompleted = false;
 
   const result = await runPluginsWithBridge(
-    syncService,
+    nativeService,
     [
       {
         postcssPlugin: 'async-native-hot-path',
@@ -157,16 +165,18 @@ test('async plugin runtime uses the live native-style sync bridge when both meth
   expect(asyncVisitorCompleted).toBe(true);
   expect(asyncAnnotationCompleted).toBe(true);
   expect(result.css).toContain('color: blue');
-  expect(stringifyResultSync).toHaveBeenCalledWith(
+  expect(stringifyResultLive).toHaveBeenCalledWith(
     expect.anything(),
     expect.objectContaining({
       map: expect.objectContaining({ annotation: 'custom.css.map' }),
     }),
   );
-  expect(parseSync).toHaveBeenCalledOnce();
-  expect(stringifyResultSync).toHaveBeenCalledOnce();
+  expect(parseLive).toHaveBeenCalledOnce();
+  expect(stringifyResultLive).toHaveBeenCalledOnce();
   expect(service.parse).not.toHaveBeenCalled();
   expect(service.stringifyResult).not.toHaveBeenCalled();
+  expect(parseSync).not.toHaveBeenCalled();
+  expect(stringifyResultSync).not.toHaveBeenCalled();
 });
 
 test('plugin runtime builds AST-based maps that keep original source content', async () => {
@@ -215,6 +225,22 @@ test('plugin runtime attributes callback errors to the active plugin', async () 
   await expect(
     runPluginsWithBridge(service, [plugin], '.a {}', { from: 'input.css', map: false }),
   ).rejects.toMatchObject({ message: 'broken', plugin: 'broken-plugin' });
+});
+
+test('plugin runtime refreshes CssSyntaxError messages after attributing the plugin', async () => {
+  const plugin = {
+    postcssPlugin: 'syntax-plugin',
+    Rule(rule) {
+      throw rule.error('broken');
+    },
+  } satisfies AcceptedPlugin;
+
+  await expect(
+    runPluginsWithBridge(bridge(), [plugin], '.a {}', { from: 'input.css', map: false }),
+  ).rejects.toMatchObject({
+    plugin: 'syntax-plugin',
+    message: expect.stringContaining('syntax-plugin:'),
+  });
 });
 
 test('named AtRule visitors run general filters before specific filters', async () => {

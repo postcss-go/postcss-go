@@ -32,7 +32,7 @@
     "bin"
   ],
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && pnpm --filter @postcss-go/shared build && tsc -p tsconfig.json && node ../../scripts/build-test-bridge.mjs && node ./native/build.mjs",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && pnpm --filter @postcss-go/shared build && tsc -p tsconfig.json && node ./native/build.mjs",
     "build:native": "node ./native/build.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.types.json",
     "test": "pnpm run build && vitest run",
@@ -46,6 +46,7 @@
     "pretty-hrtime": "^1.0.3",
     "read-cache": "^1.0.0",
     "slash": "^5.1.0",
+    "source-map-js": "^1.2.1",
     "tinyglobby": "^0.2.15"
   },
   "optionalDependencies": {
@@ -59,9 +60,9 @@
     "@postcss-go/native-win32-x64-msvc": "workspace:*"
   },
   "devDependencies": {
+    "node-gyp": "11.4.2",
     "node-api-headers": "^1.9.0",
     "postcss": "^8.5.15",
-    "source-map-js": "^1.2.1",
     "vitest": "^3.2.4"
   },
   "keywords": [

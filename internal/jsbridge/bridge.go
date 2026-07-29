@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/creachadair/jrpc2/handler"
 	"postcss-go/internal/ast"
 	postcss "postcss-go/internal/postcss"
 	"postcss-go/internal/stringifier"
@@ -108,6 +107,7 @@ type ProcessParams struct {
 type ProcessResult struct {
 	CSS      string       `json:"css"`
 	Map      string       `json:"map,omitempty"`
+	MapFile  string       `json:"mapFile,omitempty"`
 	Root     *NodeDTO     `json:"root"`
 	Messages []WarningDTO `json:"messages,omitempty"`
 }
@@ -115,8 +115,9 @@ type ProcessResult struct {
 type NoWorkParams = ProcessParams
 
 type NoWorkResult struct {
-	CSS string `json:"css"`
-	Map string `json:"map,omitempty"`
+	CSS     string `json:"css"`
+	Map     string `json:"map,omitempty"`
+	MapFile string `json:"mapFile,omitempty"`
 }
 
 type StringifyParams struct {
@@ -126,22 +127,10 @@ type StringifyParams struct {
 }
 
 type StringifyResult struct {
-	CSS   string                    `json:"css"`
-	Map   string                    `json:"map,omitempty"`
-	Parts []stringifier.BuilderPart `json:"parts"`
-}
-
-func Assigner() handler.Map {
-	assigner := handler.Map{
-		"parse":     handler.New(ParseRPC),
-		"process":   handler.New(ProcessRPC),
-		"noWork":    handler.New(NoWorkRPC),
-		"stringify": handler.New(StringifyRPC),
-	}
-	for method, rpc := range tokenizeAssigner() {
-		assigner[method] = rpc
-	}
-	return assigner
+	CSS     string                    `json:"css"`
+	Map     string                    `json:"map,omitempty"`
+	MapFile string                    `json:"mapFile,omitempty"`
+	Parts   []stringifier.BuilderPart `json:"parts"`
 }
 
 func Execute(req Request) Response {
@@ -204,6 +193,7 @@ func ProcessRPC(_ context.Context, params ProcessParams) (*ProcessResult, error)
 	return &ProcessResult{
 		CSS:      result.CSS,
 		Map:      result.Map,
+		MapFile:  result.MapFile,
 		Root:     dto,
 		Messages: warningsToDTO(result.Messages),
 	}, nil
@@ -214,7 +204,7 @@ func NoWorkRPC(_ context.Context, params NoWorkParams) (*NoWorkResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &NoWorkResult{CSS: result.CSS, Map: result.Map}, nil
+	return &NoWorkResult{CSS: result.CSS, Map: result.Map, MapFile: result.MapFile}, nil
 }
 
 func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, error) {
@@ -225,24 +215,14 @@ func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, 
 	if err != nil {
 		return nil, err
 	}
-	result := &StringifyResult{}
-	if params.Options.Map || params.Options.MapAuto {
-		stringified, err := stringifier.StringifyWithSourceMap(node, stringifier.SourceMapOptions{
-			From:               params.Options.From,
-			To:                 params.Options.To,
-			MapFile:            params.Options.MapFile,
-			SourceMapFrom:      params.Options.SourceMapFrom,
-			SourcesContent:     params.Options.SourcesContent,
-			Absolute:           params.Options.Absolute,
-			PreserveAnnotation: params.Options.PreserveAnnotation,
-		})
-		if err != nil {
-			return nil, err
-		}
-		result.CSS = stringified.CSS
-		result.Map = stringified.Map
-	} else {
-		result.CSS = postcss.Stringify(node)
+	stringified, err := postcss.StringifyWithOptions(node, params.Options)
+	if err != nil {
+		return nil, err
+	}
+	result := &StringifyResult{
+		CSS:     stringified.CSS,
+		Map:     stringified.Map,
+		MapFile: stringified.MapFile,
 	}
 	if params.Builder {
 		result.Parts = stringifier.StringifyWithBuilder(node)

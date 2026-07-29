@@ -6,7 +6,7 @@ import {
   Result,
   Root,
   Warning,
-  postcssApi,
+  postcss,
   stringifySync,
 } from '../src/index.ts';
 import { parseOwnedSync } from '../src/parser.ts';
@@ -27,12 +27,12 @@ test('owned parser and stringifier handle nested CSS without PostCSS constructor
 });
 
 test('plugin helpers expose owned result, warning, input, and error classes', () => {
-  expect(postcssApi.Result).toBe(Result);
-  expect(postcssApi.Warning).toBe(Warning);
-  expect(postcssApi.Input).toBe(Input);
-  expect(postcssApi.CssSyntaxError).toBe(CssSyntaxError);
+  expect(postcss.Result).toBe(Result);
+  expect(postcss.Warning).toBe(Warning);
+  expect(postcss.Input).toBe(Input);
+  expect(postcss.CssSyntaxError).toBe(CssSyntaxError);
 
-  expect(() => postcssApi.parse('a { color: red')).toThrow(CssSyntaxError);
-  const error = new Input().error('broken', 2, 3);
+  expect(() => postcss.parse('a { color: red')).toThrow(CssSyntaxError);
+  const error = new Input('a\nbroken').error('broken', 2, 3);
   expect(error).toMatchObject({ name: 'CssSyntaxError', line: 2, column: 3 });
 });

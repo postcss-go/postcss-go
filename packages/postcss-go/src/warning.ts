@@ -54,10 +54,13 @@ export class Warning {
   }
 
   toString(): string {
-    const location =
-      this.line && this.column
-        ? `${this.node?.source?.file ?? '<css input>'}:${this.line}:${this.column}: `
-        : '';
-    return `${location}${this.plugin ? `${this.plugin}: ` : ''}${this.text}`;
+    if (this.node) {
+      return this.node.error(this.text, {
+        index: typeof this.index === 'number' ? this.index : undefined,
+        plugin: this.plugin,
+        word: typeof this.word === 'string' ? this.word : undefined,
+      }).message;
+    }
+    return `${this.plugin ? `${this.plugin}: ` : ''}${this.text}`;
   }
 }

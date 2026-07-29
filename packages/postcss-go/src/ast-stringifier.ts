@@ -20,7 +20,7 @@ export interface StringifiableNode {
   root?: () => StringifiableNode;
 }
 
-export type Builder = (chunk: string, node?: StringifiableNode, type?: string) => void;
+export type ChunkBuilder = (chunk: string, node?: StringifiableNode, type?: string) => void;
 
 const DEFAULT_RAW: Record<string, string | boolean> = {
   after: '\n',
@@ -148,7 +148,7 @@ export function defaultRaw(
 
 export function stringify(
   node: StringifiableNode,
-  builder: Builder,
+  builder: ChunkBuilder,
 ): void {
   const raw = (target: StringifiableNode, own: string | null, detect = own ?? '') =>
     detectRaw(target, own, detect);

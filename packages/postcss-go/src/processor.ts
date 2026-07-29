@@ -1,10 +1,15 @@
-import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
+import { materializePreviousMap, type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
 import { asProcessRoot, fromAst, Node, Root, toAst } from './ast.js';
 import { stringify as stringifyOwned } from './ast-stringifier.js';
 import { SyncBackendUnavailableError } from './errors.js';
-import { createNativeService, isNativeBridgeAvailable, NativePostcssGoService } from './native.js';
-import { createNodeService } from './node.js';
+import {
+  createDefaultAsyncService,
+  createNativeService,
+  getDefaultAsyncBackendCapabilities,
+  isNativeBridgeAvailable,
+  NativePostcssGoService,
+} from './native.js';
 import { attachInputMetadata } from './input.js';
 import {
   postcssApi,
@@ -14,16 +19,10 @@ import {
   type PostcssPublic,
   type RuntimePlugin,
 } from './plugin-runtime.js';
-import type { AcceptedPlugin, Plugin, PluginCreator } from './plugin-types.js';
-import { hydrateResultMap, Result } from './result.js';
-import {
-  NATIVE_BACKEND_CAPABILITIES,
-  STDIO_BACKEND_CAPABILITIES,
-  type PostcssGoService,
-} from './service.js';
-import type { ProcessOptions, RootNode, DocumentNode, Warning as WarningDTO } from './types.js';
-import { Warning } from './warning.js';
-import { assertSupportedSyntax } from './syntax-options.js';
+import type { AcceptedPlugin, Plugin } from './plugin-types.js';
+import { hydrateResultMap, hydrateResultMessages, Result } from './result.js';
+import { NATIVE_BACKEND_CAPABILITIES, type PostcssGoService } from './service.js';
+import type { ProcessOptions, RootNode, DocumentNode } from './types.js';
 import { prepareStringifyOptions } from './source-map-output.js';
 
 export type CssInput = string | { toString(): string };
@@ -36,14 +35,14 @@ export interface ProcessorOptions {
 
 export interface PostcssGoCapabilities {
   /** Backend selected by default for Promise-returning APIs. */
-  readonly asynchronous: typeof STDIO_BACKEND_CAPABILITIES;
+  readonly asynchronous: typeof NATIVE_BACKEND_CAPABILITIES | null;
   /** Backend available to explicit synchronous APIs, or null when unavailable. */
   readonly synchronous: typeof NATIVE_BACKEND_CAPABILITIES | null;
 }
 
 export function getBackendCapabilities(): PostcssGoCapabilities {
   return {
-    asynchronous: STDIO_BACKEND_CAPABILITIES,
+    asynchronous: getDefaultAsyncBackendCapabilities(),
     synchronous: isNativeBridgeAvailable() ? NATIVE_BACKEND_CAPABILITIES : null,
   };
 }
@@ -57,17 +56,36 @@ export class Processor {
   plugins: AcceptedPlugin[];
 
   constructor(plugins: AcceptedPlugin[] = []) {
-    this.plugins = [];
-    for (const plugin of plugins) this.use(plugin);
+    this.plugins = this.normalize(plugins);
   }
 
   use(plugin: AcceptedPlugin | AcceptedPlugin[]): this {
-    if (Array.isArray(plugin)) {
-      for (const child of plugin) this.use(child);
-    } else {
-      this.plugins.push(plugin);
-    }
+    this.plugins.push(...this.normalize(Array.isArray(plugin) ? plugin : [plugin]));
     return this;
+  }
+
+  normalize(plugins: readonly AcceptedPlugin[]): AcceptedPlugin[] {
+    const normalized: AcceptedPlugin[] = [];
+    for (const plugin of plugins) {
+      if (
+        plugin &&
+        typeof plugin === 'object' &&
+        'plugins' in plugin &&
+        Array.isArray(plugin.plugins)
+      ) {
+        normalized.push(...this.normalize(plugin.plugins));
+      } else if (
+        typeof plugin === 'function' ||
+        (plugin &&
+          typeof plugin === 'object' &&
+          ('postcssPlugin' in plugin || 'postcss' in plugin))
+      ) {
+        normalized.push(plugin);
+      } else {
+        throw new Error(`${String(plugin)} is not a PostCSS plugin`);
+      }
+    }
+    return normalized;
   }
 
   async process(
@@ -75,7 +93,7 @@ export class Processor {
     options: ProcessFileOptions = {},
     processorOptions: ProcessorOptions = {},
   ): Promise<PublicResult> {
-    assertSupportedSyntax(options);
+    options = materializePreviousMap(options);
     const css = String(cssInput);
     const ownedService = processorOptions.service ? undefined : createAsyncService();
     const service = processorOptions.service ?? ownedService!;
@@ -93,7 +111,8 @@ export class Processor {
       const result = new Result<RuntimePlugin>(this, root, options);
       result.css = processed.css;
       result.map = hydrateResultMap(processed.map);
-      result.messages.push(...hydrateMessages(processed.messages));
+      result.mapFile = processed.mapFile;
+      result.messages.push(...hydrateResultMessages(processed.messages));
       return result;
     } finally {
       if (ownedService) await ownedService.close();
@@ -101,7 +120,7 @@ export class Processor {
   }
 
   processSync(cssInput: CssInput, options: ProcessFileOptions = {}): PublicResult {
-    assertSupportedSyntax(options);
+    options = materializePreviousMap(options);
     const service = requireSyncService();
     const css = String(cssInput);
     if (this.plugins.length > 0) {
@@ -117,7 +136,8 @@ export class Processor {
     const result = new Result<RuntimePlugin>(this, root, options);
     result.css = processed.css;
     result.map = hydrateResultMap(processed.map);
-    result.messages.push(...hydrateMessages(processed.messages));
+    result.mapFile = processed.mapFile;
+    result.messages.push(...hydrateResultMessages(processed.messages));
     return result;
   }
 }
@@ -149,7 +169,7 @@ Object.defineProperty(postcss, 'default', {
 setProcessorFactory((plugins) => new Processor(plugins));
 
 export function parseSync(css: CssInput, options: ProcessOptions = {}): Root {
-  assertSupportedSyntax(options);
+  options = materializePreviousMap(options);
   const text = String(css);
   const root = asProcessRoot(requireSyncService().parseSync(text, options).root);
   if (!(root instanceof Root)) throw new Error('postcss-go parseSync response is not a root');
@@ -166,7 +186,7 @@ export function processSync(
 }
 
 export function noWorkSync(css: CssInput, options: ProcessOptions = {}) {
-  assertSupportedSyntax(options);
+  options = materializePreviousMap(options);
   return requireSyncService().noWorkSync(String(css), options);
 }
 
@@ -178,26 +198,16 @@ export function stringifySync(
     stringifyOwned(node, builderOrOptions as never);
     return;
   }
-  assertSupportedSyntax(builderOrOptions ?? {});
-  const effectiveOptions = prepareStringifyOptions(node, builderOrOptions ?? {});
+  const options = materializePreviousMap(builderOrOptions ?? {});
+  const effectiveOptions = prepareStringifyOptions(node, options);
   return requireSyncService().stringifySync(toAst(node), effectiveOptions);
 }
 
 function createAsyncService(): PostcssGoService {
-  return createNodeService();
+  return createDefaultAsyncService();
 }
 
 function requireSyncService(): NativePostcssGoService {
   if (!isNativeBridgeAvailable()) throw new SyncBackendUnavailableError();
   return createNativeService();
 }
-
-function hydrateMessages(messages: WarningDTO[]): Array<Record<string, unknown>> {
-  return messages.map((message) => {
-    if (message.type !== 'warning') return { ...message };
-    const { text, ...options } = message;
-    return new Warning(text, options) as unknown as Record<string, unknown>;
-  });
-}
-
-export type { PluginCreator };

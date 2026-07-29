@@ -36,6 +36,7 @@ type Result struct {
 	Root       *ast.Root
 	CSS        string
 	Map        string
+	MapFile    string
 	Messages   []Warning
 	LastPlugin string
 }

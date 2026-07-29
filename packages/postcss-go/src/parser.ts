@@ -1,3 +1,5 @@
+import { materializePreviousMap } from '@postcss-go/shared/map-options';
+
 import { AtRule, Comment, Declaration, Root, Rule } from './ast.js';
 import { CssSyntaxError, positionAt } from './errors.js';
 import { attachPreviousMap, Input } from './input.js';
@@ -14,10 +16,9 @@ export function parseOwnedSync(
   cssInput: string | { toString(): string },
   options: ProcessOptions = {},
 ): Root {
+  options = materializePreviousMap(options);
   const css = String(cssInput);
-  const input = new Input();
-  input.css = css;
-  input.file = options.from;
+  const input = new Input(css, options);
   const root = new Root();
   const stack: Parent[] = [root];
   let index = 0;

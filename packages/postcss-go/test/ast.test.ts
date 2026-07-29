@@ -7,6 +7,7 @@ import {
   Document,
   Input,
   Node,
+  ResultMap,
   Root,
   Rule,
   fromAst,
@@ -73,7 +74,7 @@ test('accepts arrays as Document children', () => {
   expect(second.parent).toBe(document);
 });
 
-test('toResult stringifies a Document and keeps its Document root', async () => {
+test('toResult stringifies a Document and keeps its live Document root', async () => {
   const document = new Document();
   document.append(new Root({ nodes: [{ type: 'rule', selector: 'a', nodes: [] }] }));
   let closed = 0;
@@ -81,16 +82,14 @@ test('toResult stringifies a Document and keeps its Document root', async () => 
     async parse() {
       throw new Error('parse should not be called');
     },
-    async process(css: string) {
-      return {
-        css: `${css}\n/* mapped */`,
-        map: '{}',
-        root: { type: 'root', nodes: [] },
-        messages: [],
-      };
+    async process() {
+      throw new Error('process should not be called');
     },
     async stringify() {
-      return 'a {}';
+      throw new Error('stringify should not be called');
+    },
+    async stringifyResult() {
+      return { css: 'a {}' };
     },
     async close() {
       closed += 1;
@@ -100,34 +99,41 @@ test('toResult stringifies a Document and keeps its Document root', async () => 
   const result = await document.toResult({}, service);
 
   expect(result.css).toBe('a {}');
+  expect(result.root).toBe(document);
   expect(result.root.type).toBe('document');
+  expect(typeof result.root.walk).toBe('function');
   expect(result.messages).toEqual([]);
   expect(closed).toBe(0);
 });
 
-test('toResult delegates source-map generation to process', async () => {
+test('toResult generates source maps via stringifyResult', async () => {
   const document = new Document();
   document.append(new Root({ nodes: [{ type: 'rule', selector: 'a', nodes: [] }] }));
-  let processed = false;
+  let stringified = false;
   const service = {
     async parse() {
       throw new Error('parse should not be called');
     },
-    async process(css: string, options: { map?: boolean }) {
-      processed = options.map === true;
-      return { css, map: 'map', root: { type: 'root', nodes: [] }, messages: [] };
+    async process() {
+      throw new Error('process should not be called');
     },
     async stringify() {
-      return 'a {}';
+      throw new Error('stringify should not be called');
+    },
+    async stringifyResult(_ast: unknown, options: { map?: boolean }) {
+      stringified = options.map === true;
+      return { css: 'a {}', map: 'map', mapFile: 'a.css.map' };
     },
     async close() {},
   };
 
   const result = await document.toResult({ map: true }, service);
 
-  expect(processed).toBe(true);
-  expect(result.map).toBe('map');
-  expect(result.root.type).toBe('document');
+  expect(stringified).toBe(true);
+  expect(result.map).toBeInstanceOf(ResultMap);
+  expect(result.map?.toString()).toBe('map');
+  expect(result.mapFile).toBe('a.css.map');
+  expect(result.root).toBe(document);
 });
 
 test('supports PostCSS-style walking and filtered visitors', () => {

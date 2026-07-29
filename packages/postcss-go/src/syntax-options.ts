@@ -11,9 +11,12 @@ export function hasUnsupportedSyntax(options: SyntaxBearingOptions = {}): boolea
 }
 
 /**
- * Reject extension points that cannot cross a Go backend boundary. Keep this
- * check at every public/service entry so functions are never silently removed
- * by JSON serialization.
+ * Reject extension points that cannot cross a Go backend boundary.
+ *
+ * Canonical gate: every PostcssGoService method asserts before serialization.
+ * Also assert before any caller narrows options (drops parser/syntax/stringifier)
+ * so those fields are never silently ignored — today that is plugin-runtime and
+ * the CLI engine path.
  */
 export function assertSupportedSyntax(options: SyntaxBearingOptions): void {
   if (options.parser) throw new UnsupportedSyntaxError('Custom parser options');

@@ -3,6 +3,7 @@
   "include": ["src/shims.d.ts", "test/public-types.ts"],
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".",
+    "types": ["node"]
   }
 }

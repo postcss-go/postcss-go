@@ -1,7 +1,13 @@
 import type { ProcessRoot } from './ast.js';
 import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
 import { Warning, type WarningOptions } from './warning.js';
-import type { SourceMap } from './types.js';
+import type { ResultMessage, SourceMap } from './types.js';
+import {
+  SourceMapConsumer,
+  SourceMapGenerator,
+  type Mapping,
+  type RawSourceMap,
+} from 'source-map-js';
 
 export interface ResultProcessor {
   plugins: unknown[];
@@ -9,9 +15,12 @@ export interface ResultProcessor {
 
 /** PostCSS-shaped wrapper around the source-map JSON emitted by Go. */
 export class ResultMap implements SourceMap {
+  private generator?: SourceMapGenerator;
+
   constructor(private readonly text: string) {}
 
   toJSON(): Record<string, unknown> {
+    if (this.generator) return this.generator.toJSON() as unknown as Record<string, unknown>;
     try {
       return JSON.parse(this.text) as Record<string, unknown>;
     } catch (error) {
@@ -21,7 +30,31 @@ export class ResultMap implements SourceMap {
   }
 
   toString(): string {
-    return this.text;
+    return this.generator?.toString() ?? this.text;
+  }
+
+  addMapping(mapping: Mapping): void {
+    this.getGenerator().addMapping(mapping);
+  }
+
+  setSourceContent(sourceFile: string, sourceContent: string | null | undefined): void {
+    this.getGenerator().setSourceContent(sourceFile, sourceContent);
+  }
+
+  applySourceMap(
+    consumer: SourceMapConsumer,
+    sourceFile?: string,
+    sourceMapPath?: string,
+  ): void {
+    this.getGenerator().applySourceMap(consumer, sourceFile, sourceMapPath);
+  }
+
+  private getGenerator(): SourceMapGenerator {
+    if (!this.generator) {
+      const consumer = new SourceMapConsumer(this.toJSON() as unknown as RawSourceMap);
+      this.generator = SourceMapGenerator.fromSourceMap(consumer);
+    }
+    return this.generator;
   }
 }
 
@@ -29,10 +62,20 @@ export function hydrateResultMap(value: string | undefined): ResultMap | undefin
   return value === undefined ? undefined : new ResultMap(value);
 }
 
+export function hydrateResultMessages(messages: ResultMessage[]): ResultMessage[] {
+  return messages.map((message) => {
+    if (message.type !== 'warning' || typeof message.text !== 'string') return { ...message };
+    const { text, ...options } = message;
+    return new Warning(text, options) as ResultMessage;
+  });
+}
+
 /** Mutable processing result shared with plugin callbacks. */
 export class Result<P = unknown> {
   css = '';
   map?: ResultMap;
+  /** Resolved external map path reported by Go, when present. */
+  mapFile?: string;
   root: ProcessRoot;
   messages: Array<Record<string, unknown>> = [];
   opts: ProcessFileOptions;

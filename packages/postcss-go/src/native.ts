@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  materializePreviousMap,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
 } from '@postcss-go/shared/map-options';
@@ -10,11 +11,17 @@ import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
 import { Node, Root, asProcessRoot, fromAst } from './ast.js';
 import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
-import { AsyncPluginError, isThenable, observeThenable } from './errors.js';
+import {
+  AsyncBackendUnavailableError,
+  AsyncPluginError,
+  isThenable,
+  observeThenable,
+} from './errors.js';
 import { attachInputMetadata } from './input.js';
 import { parseOwnedSync } from './parser.js';
 import {
   NATIVE_BACKEND_CAPABILITIES,
+  type PostcssGoService,
   type SyncPostcssGoService,
 } from './service.js';
 import type {
@@ -24,16 +31,20 @@ import type {
   ParseResult,
   ProcessOptions,
   ProcessResult,
-  Warning,
+  ResultMessage,
 } from './types.js';
 import { assertSupportedSyntax } from './syntax-options.js';
-import { finalizeStringifyResult, prepareStringifyOptions } from './source-map-output.js';
+import { prepareStringifyOptions } from './source-map-output.js';
 
 type NativeAddon = {
   parse(css: string, from?: string): Buffer;
+  parseAsync(css: string, from?: string): Promise<Buffer>;
   stringify(ast: Buffer, optionsJson?: string): string;
+  stringifyAsync(ast: Buffer, optionsJson?: string): Promise<string>;
   process(css: string, optionsJson?: string): string;
+  processAsync(css: string, optionsJson?: string): Promise<string>;
   noWork(css: string, optionsJson?: string): string;
+  noWorkAsync(css: string, optionsJson?: string): Promise<string>;
 };
 
 export type LiveParseResult = { root: Root };
@@ -95,6 +106,28 @@ export function isNativeBridgeAvailable(): boolean {
   return loadAddon() !== null;
 }
 
+/** True when the addon exposes genuine worker-backed Promise operations. */
+export function isNativeAsyncBridgeAvailable(): boolean {
+  const addon = loadAddon();
+  return (
+    addon !== null &&
+    typeof addon.parseAsync === 'function' &&
+    typeof addon.stringifyAsync === 'function' &&
+    typeof addon.processAsync === 'function' &&
+    typeof addon.noWorkAsync === 'function'
+  );
+}
+
+/** Create the native backend used by all Promise-returning Node APIs. */
+export function createDefaultAsyncService(): PostcssGoService {
+  if (!isNativeAsyncBridgeAvailable()) throw new AsyncBackendUnavailableError();
+  return createNativeService();
+}
+
+export function getDefaultAsyncBackendCapabilities(): typeof NATIVE_BACKEND_CAPABILITIES | null {
+  return isNativeAsyncBridgeAvailable() ? NATIVE_BACKEND_CAPABILITIES : null;
+}
+
 export function createNativeService(): NativePostcssGoService {
   const addon = loadAddon();
   if (!addon) {
@@ -106,10 +139,9 @@ export function createNativeService(): NativePostcssGoService {
 }
 
 /**
- * Synchronous in-process bridge. Parse/stringify move a binary AST across the
- * Go↔JS boundary instead of JSON over stdio. The sync helpers hydrate and
- * serialize live TypeScript AST nodes so the plugin runtime never builds an
- * intermediate plain DTO.
+ * In-process bridge with two explicit execution surfaces. Promise methods run
+ * Go through Node-API async work; `*Sync` methods call the same binary ABI on
+ * the Node thread. Live-tree helpers avoid an intermediate DTO on plugin paths.
  */
 export class NativePostcssGoService implements SyncPostcssGoService {
   readonly capabilities = NATIVE_BACKEND_CAPABILITIES;
@@ -117,44 +149,73 @@ export class NativePostcssGoService implements SyncPostcssGoService {
   constructor(private readonly addon: NativeAddon) {}
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     try {
-      const buffer = this.addon.parse(css, options.from);
+      const buffer = await this.addon.parseAsync(css, options.from);
       return { root: decodeAst(buffer) as ParseResult['root'] };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
   }
 
+  /** Parse asynchronously into a live tree without an intermediate DTO. */
+  async parseLive(css: string, options: ProcessOptions = {}): Promise<LiveParseResult> {
+    options = materializePreviousMap(options);
+    assertSupportedSyntax(options);
+    try {
+      return { root: hydrateAst(await this.addon.parseAsync(css, options.from)) };
+    } catch (nativeError) {
+      throwStructuredSyntaxError(css, options, nativeError);
+    }
+  }
+
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const effective = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    let payload: { css: string; map?: string; messages?: Warning[]; rootBin: string };
+    let payload: {
+      css: string;
+      map?: string;
+      mapFile?: string;
+      messages?: ResultMessage[];
+      rootBin: string;
+    };
     try {
-      payload = JSON.parse(this.addon.process(css, JSON.stringify(normalized))) as typeof payload;
+      payload = JSON.parse(
+        await this.addon.processAsync(css, JSON.stringify(normalized)),
+      ) as typeof payload;
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
     return {
       css: payload.css,
       map: payload.map,
+      mapFile: payload.mapFile,
       root: decodeAst(Buffer.from(payload.rootBin, 'base64')) as ProcessResult['root'],
       messages: payload.messages ?? [],
     };
   }
 
   processSync(css: string, options: ProcessOptions = {}): ProcessResult {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const effective = this.resolveAnnotationSync(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    let payload: { css: string; map?: string; messages?: Warning[]; rootBin: string };
+    let payload: {
+      css: string;
+      map?: string;
+      mapFile?: string;
+      messages?: ResultMessage[];
+      rootBin: string;
+    };
     try {
       payload = JSON.parse(this.addon.process(css, JSON.stringify(normalized))) as typeof payload;
     } catch (nativeError) {
@@ -163,22 +224,27 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     return {
       css: payload.css,
       map: payload.map,
+      mapFile: payload.mapFile,
       root: decodeAst(Buffer.from(payload.rootBin, 'base64')) as ProcessResult['root'],
       messages: payload.messages ?? [],
     };
   }
 
   async noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const effective = await this.resolveAnnotation(css, options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    return JSON.parse(this.addon.noWork(css, JSON.stringify(normalized))) as NoWorkResult;
+    return JSON.parse(
+      await this.addon.noWorkAsync(css, JSON.stringify(normalized)),
+    ) as NoWorkResult;
   }
 
   noWorkSync(css: string, options: ProcessOptions = {}): NoWorkResult {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const effective = this.resolveAnnotationSync(css, options);
     const normalized = normalizeProcessOptions(
@@ -193,6 +259,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
   }
 
   async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = await this.resolveStringifyAnnotation(ast, prepared);
@@ -200,10 +267,27 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    const result = JSON.parse(
-      this.addon.stringify(encodeAst(ast), JSON.stringify(normalized)),
+    return JSON.parse(
+      await this.addon.stringifyAsync(encodeAst(ast), JSON.stringify(normalized)),
     ) as AstStringifyResult;
-    return finalizeStringifyResult(result, effective, ast);
+  }
+
+  /** Stringify a live tree asynchronously without converting it to a DTO. */
+  async stringifyResultLive(
+    ast: AstNode | Node,
+    options: ProcessOptions = {},
+  ): Promise<AstStringifyResult> {
+    options = materializePreviousMap(options);
+    assertSupportedSyntax(options);
+    const prepared = prepareStringifyOptions(ast, options);
+    const effective = await this.resolveStringifyAnnotationLive(ast, prepared);
+    const normalized = normalizeProcessOptions(
+      effective as NormalizeProcessOptionsInput,
+      joinMapAnnotationPath,
+    ) as ProcessOptions;
+    return JSON.parse(
+      await this.addon.stringifyAsync(encodeBoundaryAst(ast), JSON.stringify(normalized)),
+    ) as AstStringifyResult;
   }
 
   async close(): Promise<void> {
@@ -215,6 +299,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
    * the plugin hot path.
    */
   parseSync(css: string, options: ProcessOptions = {}): LiveParseResult {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     try {
       return { root: hydrateAst(this.addon.parse(css, options.from)) };
@@ -228,6 +313,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
    * node so `toAst` can be skipped.
    */
   stringifyResultSync(ast: AstNode | Node, options: ProcessOptions = {}): AstStringifyResult {
+    options = materializePreviousMap(options);
     assertSupportedSyntax(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = this.resolveStringifyAnnotationSync(ast, prepared);
@@ -235,10 +321,9 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    const result = JSON.parse(
+    return JSON.parse(
       this.addon.stringify(encodeBoundaryAst(ast), JSON.stringify(normalized)),
     ) as AstStringifyResult;
-    return finalizeStringifyResult(result, effective, ast);
   }
 
   stringifySync(ast: AstNode | Node, options: ProcessOptions = {}): string {
@@ -254,7 +339,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       return options;
     }
     const root = this.parseSync(css, { from: options.from }).root;
-    attachInputMetadata(root, css, { from: options.from });
+    attachInputMetadata(root, css, options);
     const annotation = options.map.annotation(options.to, root as never);
     if (isThenable(annotation)) {
       observeThenable(annotation);
@@ -302,6 +387,22 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     return { ...options, map: { ...options.map, annotation } };
   }
 
+  private async resolveStringifyAnnotationLive(
+    root: AstNode | Node,
+    options: ProcessOptions,
+  ): Promise<ProcessOptions> {
+    if (
+      !options.map ||
+      typeof options.map !== 'object' ||
+      typeof options.map.annotation !== 'function'
+    ) {
+      return options;
+    }
+    const live = asProcessRoot(root instanceof Node ? root : fromAst(root));
+    const annotation = await options.map.annotation(options.to, live as never);
+    return { ...options, map: { ...options.map, annotation } };
+  }
+
   private async resolveAnnotation(css: string, options: ProcessOptions): Promise<ProcessOptions> {
     if (
       !options.map ||
@@ -312,7 +413,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     }
     const parsed = await this.parse(css, { from: options.from });
     const root = asProcessRoot(fromAst(parsed.root));
-    attachInputMetadata(root, css, { from: options.from });
+    attachInputMetadata(root, css, options);
     const annotation = await options.map.annotation(options.to, root as never);
     return { ...options, map: { ...options.map, annotation } };
   }

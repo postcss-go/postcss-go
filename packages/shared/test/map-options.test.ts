@@ -6,6 +6,7 @@ import {
   isExternalSourceMap,
   isSourceMapEnabled,
   mapDefersInlineMode,
+  materializePreviousMap,
   normalizeProcessOptions,
 } from '../src/map-options.ts';
 
@@ -80,6 +81,42 @@ test('normalizeProcessOptions disables previous maps and preserves annotations',
   });
 });
 
+test('normalizeProcessOptions serializes source-map consumer and generator shapes', () => {
+  const consumer = {
+    sources: ['input.css'],
+    sourcesContent: ['a{}'],
+    file: 'output.css',
+    sourceRoot: null,
+    _mappings: 'AAAA',
+    _sources: { toArray: () => ['input.css'] },
+    _names: { toArray: () => [] },
+    originalPositionFor() {
+      return {};
+    },
+  };
+  const generator = {
+    toJSON() {
+      return {
+        version: 3,
+        sources: ['input.css'],
+        names: [],
+        mappings: 'AAAA',
+        sourcesContent: ['a{}'],
+      };
+    },
+  };
+
+  for (const prev of [consumer, generator]) {
+    const normalized = normalizeProcessOptions({ map: { prev } });
+    expect(JSON.parse(normalized.previousMap!)).toMatchObject({
+      version: 3,
+      sources: ['input.css'],
+      mappings: 'AAAA',
+    });
+    expect(normalized.previousMap).not.toBe('{}');
+  }
+});
+
 test('applyMapAnnotation evaluates annotation callbacks', () => {
   const root = { type: 'root' };
   const applied = applyMapAnnotation(
@@ -114,6 +151,44 @@ test('applyMapAnnotationAsync awaits annotation callbacks', async () => {
     root,
   );
   expect(applied.map).toEqual({ annotation: 'maps/async.css.map' });
+});
+
+test('materializePreviousMap evaluates map.prev once and replaces the callback', () => {
+  let calls = 0;
+  const options = materializePreviousMap({
+    from: 'input.css',
+    map: {
+      prev(file?: string) {
+        calls++;
+        return { version: 3, sources: [file] };
+      },
+    },
+  });
+
+  expect(calls).toBe(1);
+  expect(options.map.prev).toEqual({ version: 3, sources: ['input.css'] });
+  expect(materializePreviousMap(options)).toBe(options);
+  expect(calls).toBe(1);
+});
+
+test('materializePreviousMap rejects thenable map.prev values', () => {
+  expect(() =>
+    materializePreviousMap({
+      from: 'input.css',
+      map: {
+        prev: async () => ({ version: 3 }),
+      },
+    }),
+  ).toThrow(/map\.prev returned a Promise/);
+
+  expect(() =>
+    materializePreviousMap({
+      from: 'input.css',
+      map: {
+        prev: Promise.resolve({ version: 3 }),
+      },
+    }),
+  ).toThrow(/map\.prev returned a Promise/);
 });
 
 test('map mode helpers match PostCSS inline/external predicates', () => {

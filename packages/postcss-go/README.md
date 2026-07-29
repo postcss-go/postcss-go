@@ -7,13 +7,17 @@ This package is the primary JS/TS integration point for:
 - local Node.js usage
 - bundler integrations
 - CLI (`postcss-go`)
-- binary / IPC bridging to the Go engine
+- native Node-API integration with the Go engine
 
 ## Install
 
 ```bash
 npm i -D @postcss-go/core
 ```
+
+A compatible `@postcss-go/native-*` platform package is required at runtime.
+Missing native artifacts are reported as backend-unavailable errors; there is
+no child-process transport fallback.
 
 ## CLI
 

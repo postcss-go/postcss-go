@@ -4,6 +4,7 @@ export {
   isExternalSourceMap,
   isSourceMapEnabled,
   mapDefersInlineMode,
+  materializePreviousMap,
   normalizeProcessOptions,
   type MapOptions,
   type NormalizeProcessOptionsInput,

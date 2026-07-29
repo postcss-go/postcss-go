@@ -18,12 +18,12 @@ import {
   removeSource,
   restoreBridgeSources,
   serializeJSONValue,
-  splitList,
 } from './ast-utils.js';
 import { defaultRaw } from './ast-stringifier.js';
 import { stringify as stringifyOwned } from './ast-stringifier.js';
 import { CssSyntaxError } from './errors.js';
 import { hydrateInput } from './input.js';
+import { list } from './list.js';
 import { parseOwnedSync } from './parser.js';
 import { Warning } from './warning.js';
 import type { PostcssGoService } from './service.js';
@@ -67,7 +67,8 @@ export interface CommentInit extends NodeInit {
 
 export type Builder = (chunk: string, node?: Node, type?: string) => void;
 export type Stringifier = (node: Node, builder: Builder) => void;
-export type Syntax = { stringify: Stringifier };
+/** Object form accepted by `Node#toString` (distinct from `ProcessOptions` `Syntax`). */
+export type StringifierSyntax = { stringify: Stringifier };
 export type WalkCallback<T extends Node = Node> = (node: T, index: number) => unknown;
 /**
  * Insertion hint passed to `Container#normalize()`. `prepend` matches the PostCSS hint of the same
@@ -357,16 +358,23 @@ export class Node {
     } = {},
   ): Error {
     const range = this.rangeBy(options);
-    const error = new CssSyntaxError(message, {
-      plugin: options.plugin,
-      line: range.start.line,
-      column: range.start.column,
-      endLine: range.end.line,
-      endColumn: range.end.column,
-      file: this.source?.file,
-      source: typeof this.source?.input?.css === 'string' ? this.source.input.css : undefined,
-      input: this.source?.input,
-    });
+    const input = this.source?.input;
+    const error =
+      input && typeof input.error === 'function'
+        ? input.error(
+            message,
+            { line: range.start.line, column: range.start.column },
+            { line: range.end.line, column: range.end.column },
+            options,
+          )
+        : new CssSyntaxError(
+            message,
+            { line: range.start.line, column: range.start.column },
+            { line: range.end.line, column: range.end.column },
+            typeof input?.css === 'string' ? input.css : undefined,
+            this.source?.file,
+            options.plugin,
+          );
     error.postcssNode = this;
     return error;
   }
@@ -405,7 +413,7 @@ export class Node {
     return this.proxyCache;
   }
 
-  toString(stringifier: Stringifier | Syntax = defaultStringifier): string {
+  toString(stringifier: Stringifier | StringifierSyntax = defaultStringifier): string {
     const stringify = typeof stringifier === 'function' ? stringifier : stringifier.stringify;
     let result = '';
     stringify(this, (chunk) => {
@@ -945,7 +953,7 @@ export class Rule extends Container<ChildNode> {
     this.selector = String(init.selector ?? init.selectors?.join(',') ?? '');
   }
   get selectors(): string[] {
-    return splitList(this.selector, ',');
+    return list.comma(this.selector);
   }
   set selectors(values: string[]) {
     const match = this.selector.match(/,\s*/);
