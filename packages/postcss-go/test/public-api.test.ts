@@ -23,6 +23,7 @@ import postcss, {
   process,
   processSync,
   stringify,
+  stringifyAst,
   stringifySync,
 } from '../src/index.ts';
 
@@ -35,6 +36,23 @@ test('default entry point creates a reusable Processor', () => {
   expect(postcss.default).toBe(postcss);
   expect(postcss.parse('.a{}')).toBeInstanceOf(Root);
   expect(postcss({ postcssPlugin: 'one' }, { postcssPlugin: 'two' }).plugins).toHaveLength(2);
+});
+
+test('postcss.plugin creates named plugin creators', async () => {
+  const createBlue = postcss.plugin('set-blue', () => ({
+    Declaration(decl) {
+      decl.value = 'blue';
+    },
+  }));
+  expect(createBlue.postcss).toBe(true);
+
+  const result = await postcss([createBlue()]).process('.a{color:red}', { from: 'input.css' });
+  expect(result.css).toContain('blue');
+});
+
+test('stringifyAst stringifies a live Root without an injected service', async () => {
+  const root = await parse('.a { color: red }', { from: 'input.css' });
+  await expect(stringifyAst(root)).resolves.toContain('color: red');
 });
 
 test('Processor normalizes plugin packs and rejects invalid plugins eagerly', () => {
