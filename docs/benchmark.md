@@ -68,12 +68,12 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Conceptual label (oxc-style) | Go / CodSpeed id                         | Measures                                                               |
-| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| `tokenize[…]`                | `BenchmarkTokenize_*`                    | Tokenizer only — drain `Next` until EOF                                |
-| `walk[…]`                    | `BenchmarkWalk_*`                        | Walk an already-parsed tree (ns/op only; no MB/s)                      |
-| `plugin[…]`                  | `BenchmarkPlugin_*`                      | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
-| `sourcemap[…]`               | `BenchmarkSourcemap_*`                   | Full `Process` with source map generation (external map, not inlined)  |
+| Conceptual label (oxc-style) | Go / CodSpeed id       | Measures                                                               |
+| ---------------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `tokenize[…]`                | `BenchmarkTokenize_*`  | Tokenizer only — drain `Next` until EOF                                |
+| `walk[…]`                    | `BenchmarkWalk_*`      | Walk an already-parsed tree (ns/op only; no MB/s)                      |
+| `plugin[…]`                  | `BenchmarkPlugin_*`    | Full `Process` with a `display` visitor rewrite (dispatch + stringify) |
+| `sourcemap[…]`               | `BenchmarkSourcemap_*` | Full `Process` with source map generation (external map, not inlined)  |
 
 Each stage case is a discrete top-level `Benchmark*` function (for example
 `BenchmarkTokenize_bootstrap_css` ↔ `tokenize[bootstrap.css]`). CodSpeed has no
