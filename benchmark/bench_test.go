@@ -78,15 +78,12 @@ func benchmarkProcess(b *testing.B, rules int) {
 	benchmarkProcessCSS(b, benchmark.GenerateCSS(rules))
 }
 
-func BenchmarkParse_Small(b *testing.B)  { benchmarkParse(b, benchmark.SmallRules) }
 func BenchmarkParse_Medium(b *testing.B) { benchmarkParse(b, benchmark.MediumRules) }
 func BenchmarkParse_Large(b *testing.B)  { benchmarkParse(b, benchmark.LargeRules) }
 
-func BenchmarkParseStringify_Small(b *testing.B)  { benchmarkParseStringify(b, benchmark.SmallRules) }
 func BenchmarkParseStringify_Medium(b *testing.B) { benchmarkParseStringify(b, benchmark.MediumRules) }
 func BenchmarkParseStringify_Large(b *testing.B)  { benchmarkParseStringify(b, benchmark.LargeRules) }
 
-func BenchmarkProcess_Small(b *testing.B)  { benchmarkProcess(b, benchmark.SmallRules) }
 func BenchmarkProcess_Medium(b *testing.B) { benchmarkProcess(b, benchmark.MediumRules) }
 func BenchmarkProcess_Large(b *testing.B)  { benchmarkProcess(b, benchmark.LargeRules) }
 

@@ -28,7 +28,10 @@ jobs:
     # ~10% swings without Go engine changes should be treated as CI noise.
     runs-on: ubuntu-latest
     env:
-      GOFLAGS: -mod=mod
+      # `codspeed` excludes benchmark/small_bench_test.go (*_Small / *_small).
+      # The CodSpeed Go runner discovers Benchmark* from source; -bench filters
+      # alone are not reliable for dropping flaky microbenches.
+      GOFLAGS: -mod=mod -tags=codspeed
 
     steps:
       - name: Checkout
@@ -46,10 +49,4 @@ jobs:
           mode: walltime # go only supports walltime mode
           token: ${{ secrets.CODSPEED_TOKEN }}
           # CodSpeed Go runner only accepts the `-bench` flag.
-          # Exclude *_Small / *_small: on ubuntu-latest walltime those finish in
-          # tens of µs and routinely trip the ~10% regression threshold with no
-          # Go engine change (see CodSpeed "Different runtime environments").
-          # Local `go test -bench=. ./benchmark/` still runs the full suite.
-          run: >-
-            go test ./benchmark/
-            -bench=Benchmark(Parse|ParseStringify|Process).*(_Medium|_Large|Real_)|Benchmark(Tokenize|Walk|Plugin|Sourcemap)_(medium|large|bootstrap|tailwind)
+          run: go test ./benchmark/ -bench=.

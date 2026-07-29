@@ -116,10 +116,6 @@ func benchmarkSourcemapCSS(b *testing.B, css string) {
 	}
 }
 
-func BenchmarkTokenize_small(b *testing.B) {
-	benchmarkTokenizeCSS(b, benchmark.GenerateCSS(benchmark.SmallRules))
-}
-
 func BenchmarkTokenize_medium(b *testing.B) {
 	benchmarkTokenizeCSS(b, benchmark.GenerateCSS(benchmark.MediumRules))
 }
