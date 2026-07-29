@@ -145,20 +145,24 @@ pull request through [CodSpeed](https://codspeed.io), in
 `.github/workflows/codspeed.yml`:
 
 ```bash
-go test -bench=. ./benchmark/
+go test ./benchmark/ -bench=Benchmark(Parse|ParseStringify|Process).*(_Medium|_Large|Real_)|Benchmark(Tokenize|Walk|Plugin|Sourcemap)_(medium|large|bootstrap|tailwind)
 ```
 
 CodSpeed measures them with the
 [walltime instrument](https://codspeed.io/docs/instruments/walltime) — the only
 instrument supported for Go — and reports per-benchmark differences against the
-pull request base. Only the Go engine suite is tracked in CI. The cross-engine
-comparison table (`pnpm bench`) and the boundary suite stay local / opt-in.
+pull request base. CI intentionally omits `*_Small` / `*_small` cases: on shared
+GitHub runners those complete in tens of microseconds and produce false
+regressions under the default ~10% threshold when no Go engine code changed.
+Local `go test -bench=. ./benchmark/` still runs the full suite. Only the Go
+engine suite is tracked in CI. The cross-engine comparison table (`pnpm bench`)
+and the boundary suite stay local / opt-in.
 
 To reproduce a CodSpeed run locally:
 
 ```bash
 curl -fsSL https://codspeed.io/install.sh | sh
-codspeed run --mode walltime --skip-upload -- go test -bench=. ./benchmark/
+codspeed run --mode walltime --skip-upload -- go test ./benchmark/ -bench=Benchmark(Parse|ParseStringify|Process).*(_Medium|_Large|Real_)|Benchmark(Tokenize|Walk|Plugin|Sourcemap)_(medium|large|bootstrap|tailwind)
 ```
 
 ## Boundary cost

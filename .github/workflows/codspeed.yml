@@ -46,4 +46,10 @@ jobs:
           mode: walltime # go only supports walltime mode
           token: ${{ secrets.CODSPEED_TOKEN }}
           # CodSpeed Go runner only accepts the `-bench` flag.
-          run: go test ./benchmark/ -bench=.
+          # Exclude *_Small / *_small: on ubuntu-latest walltime those finish in
+          # tens of µs and routinely trip the ~10% regression threshold with no
+          # Go engine change (see CodSpeed "Different runtime environments").
+          # Local `go test -bench=. ./benchmark/` still runs the full suite.
+          run: >-
+            go test ./benchmark/
+            -bench=Benchmark(Parse|ParseStringify|Process).*(_Medium|_Large|Real_)|Benchmark(Tokenize|Walk|Plugin|Sourcemap)_(medium|large|bootstrap|tailwind)
