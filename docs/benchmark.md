@@ -149,8 +149,8 @@ go test -bench=. ./benchmark/
 CodSpeed measures them with the
 [walltime instrument](https://codspeed.io/docs/instruments/walltime) — the only
 instrument supported for Go — and reports per-benchmark differences against the
-pull request base. Only the engine suite is tracked; the boundary suite stays
-opt-in and is not part of CI.
+pull request base. Only the Go engine suite is tracked in CI. The cross-engine
+comparison table (`pnpm bench`) and the boundary suite stay local / opt-in.
 
 To reproduce a CodSpeed run locally:
 

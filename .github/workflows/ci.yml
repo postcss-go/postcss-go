@@ -109,58 +109,6 @@ jobs:
           token: ${{ env.CODECOV_TOKEN }}
           verbose: true
 
-  benchmark:
-    name: Benchmark Comparison
-    runs-on: ubuntu-latest
-    env:
-      GOFLAGS: -mod=mod
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.12.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify benchmark fixtures parse successfully
-        run: go test -mod=mod ./benchmark/ -run TestRealWorldFixturesParse
-
-      - name: Run benchmark comparison
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm bench | tee benchmark.txt
-          {
-            echo "## Benchmark comparison"
-            echo ""
-            echo '```text'
-            cat benchmark.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload benchmark report
-        uses: actions/upload-artifact@v7
-        with:
-          name: benchmark-report
-          path: benchmark.txt
-
   checks:
     name: Format, Lint, and Build
     runs-on: ubuntu-latest
