@@ -10,9 +10,11 @@ import (
 )
 
 // Stage-level benchmarks complement the end-to-end scenarios in bench_test.go.
-// Tokenize and Walk isolate a single stage; PluginPipeline and ProcessSourceMap
-// are full Process runs that attribute cost to a declaration visitor and to
-// source map generation respectively.
+//
+// Go requires the function name to start with "Benchmark", so the oxc-style
+// label lives in b.Run: reports read as Benchmark/tokenize[bootstrap.css]
+// (CodSpeed UI / go test), matching oxc's tokenize[fixture] shape as closely
+// as the testing package allows.
 
 func benchmarkTokenizeCSS(b *testing.B, css string) {
 	b.SetBytes(int64(len(css)))
@@ -109,50 +111,36 @@ func benchmarkProcessSourceMapCSS(b *testing.B, css string) {
 	}
 }
 
-func BenchmarkTokenize_Small(b *testing.B) {
-	benchmarkTokenizeCSS(b, benchmark.GenerateCSS(benchmark.SmallRules))
-}
+// Benchmark registers stage microbenchmarks. The public names are the b.Run
+// labels (tokenize[…], walk[…], …); the "Benchmark/" prefix is required by Go.
+func Benchmark(b *testing.B) {
+	type stageCase struct {
+		name string
+		css  string
+		run  func(*testing.B, string)
+	}
 
-func BenchmarkTokenize_Medium(b *testing.B) {
-	benchmarkTokenizeCSS(b, benchmark.GenerateCSS(benchmark.MediumRules))
-}
+	cases := []stageCase{
+		{"tokenize[small]", benchmark.GenerateCSS(benchmark.SmallRules), benchmarkTokenizeCSS},
+		{"tokenize[medium]", benchmark.GenerateCSS(benchmark.MediumRules), benchmarkTokenizeCSS},
+		{"tokenize[large]", benchmark.GenerateCSS(benchmark.LargeRules), benchmarkTokenizeCSS},
+		{"tokenize[bootstrap.css]", mustFixture(b, "Bootstrap").CSS, benchmarkTokenizeCSS},
+		{"tokenize[bootstrap.min.css]", mustFixture(b, "BootstrapMin").CSS, benchmarkTokenizeCSS},
 
-func BenchmarkTokenize_Large(b *testing.B) {
-	benchmarkTokenizeCSS(b, benchmark.GenerateCSS(benchmark.LargeRules))
-}
+		{"walk[medium]", benchmark.GenerateCSS(benchmark.MediumRules), benchmarkWalkCSS},
+		{"walk[bootstrap.css]", mustFixture(b, "Bootstrap").CSS, benchmarkWalkCSS},
 
-func BenchmarkTokenizeReal_Bootstrap(b *testing.B) {
-	benchmarkTokenizeCSS(b, mustFixture(b, "Bootstrap").CSS)
-}
+		{"plugin[medium]", benchmark.GenerateCSS(benchmark.MediumRules), benchmarkPluginPipelineCSS},
+		{"plugin[bootstrap.css]", mustFixture(b, "Bootstrap").CSS, benchmarkPluginPipelineCSS},
 
-func BenchmarkTokenizeReal_BootstrapMin(b *testing.B) {
-	benchmarkTokenizeCSS(b, mustFixture(b, "BootstrapMin").CSS)
-}
+		{"sourcemap[medium]", benchmark.GenerateCSS(benchmark.MediumRules), benchmarkProcessSourceMapCSS},
+		{"sourcemap[tailwind-preflight.css]", mustFixture(b, "TailwindPreflight").CSS, benchmarkProcessSourceMapCSS},
+		{"sourcemap[bootstrap.css]", mustFixture(b, "Bootstrap").CSS, benchmarkProcessSourceMapCSS},
+	}
 
-func BenchmarkWalk_Medium(b *testing.B) {
-	benchmarkWalkCSS(b, benchmark.GenerateCSS(benchmark.MediumRules))
-}
-
-func BenchmarkWalkReal_Bootstrap(b *testing.B) {
-	benchmarkWalkCSS(b, mustFixture(b, "Bootstrap").CSS)
-}
-
-func BenchmarkPluginPipeline_Medium(b *testing.B) {
-	benchmarkPluginPipelineCSS(b, benchmark.GenerateCSS(benchmark.MediumRules))
-}
-
-func BenchmarkPluginPipelineReal_Bootstrap(b *testing.B) {
-	benchmarkPluginPipelineCSS(b, mustFixture(b, "Bootstrap").CSS)
-}
-
-func BenchmarkProcessSourceMap_Medium(b *testing.B) {
-	benchmarkProcessSourceMapCSS(b, benchmark.GenerateCSS(benchmark.MediumRules))
-}
-
-func BenchmarkProcessSourceMapReal_TailwindPreflight(b *testing.B) {
-	benchmarkProcessSourceMapCSS(b, mustFixture(b, "TailwindPreflight").CSS)
-}
-
-func BenchmarkProcessSourceMapReal_Bootstrap(b *testing.B) {
-	benchmarkProcessSourceMapCSS(b, mustFixture(b, "Bootstrap").CSS)
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			tc.run(b, tc.css)
+		})
+	}
 }

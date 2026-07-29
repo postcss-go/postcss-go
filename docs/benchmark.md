@@ -68,12 +68,17 @@ In addition, `benchmark/stages_bench_test.go` isolates the individual Go
 pipeline stages, so a change can be attributed to a single stage instead of the
 whole scenario. These are Go-only and have no JavaScript counterpart:
 
-| Benchmark group    | Measures                                                   |
-| ------------------ | ---------------------------------------------------------- |
-| `Tokenize`         | Tokenizer only, draining the token stream                                     |
-| `Walk`             | AST traversal over an already parsed tree (ns/op only; no MB/s)               |
-| `PluginPipeline`   | `Process` with a `display` visitor that rewrites values (dispatch + stringify) |
-| `ProcessSourceMap` | `Process` with source map generation (external map output)                    |
+| Label            | Measures                                                                 |
+| ---------------- | ------------------------------------------------------------------------ |
+| `tokenize[…]`    | Tokenizer only — drain `Next` until EOF (no parse/walk/stringify)        |
+| `walk[…]`        | Walk an already-parsed tree (ns/op only; no MB/s)                        |
+| `plugin[…]`      | Full `Process` with a `display` visitor rewrite (dispatch + stringify)   |
+| `sourcemap[…]`   | Full `Process` with source map generation (external map, not inlined)    |
+
+Names follow the [oxc CodSpeed](https://app.codspeed.io/oxc-project/oxc) `stage[fixture]`
+style (e.g. `linter[App.tsx]`). Go still requires a `Benchmark` function, so raw
+`go test` / CodSpeed ids look like `Benchmark/tokenize[bootstrap.css]`. Synthetic
+sizes (`small` / `medium` / `large`) are 10 / 1,000 / 10,000 rules.
 
 Lightning CSS's Node API exposes parsing and printing together through
 `transform()`, without exposing its AST parser or an equivalent PostCSS-style
