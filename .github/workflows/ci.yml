@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOFLAGS: -mod=mod
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
       - name: Checkout
@@ -85,7 +86,7 @@ jobs:
             packages/postcss-go-wasm/coverage/lcov.info
 
       - name: Upload Go coverage to Codecov
-        if: ${{ secrets.CODECOV_TOKEN != '' }}
+        if: env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage/go.out
@@ -93,11 +94,11 @@ jobs:
           name: codecov-go
           disable_search: true
           fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           verbose: true
 
       - name: Upload JS coverage to Codecov
-        if: ${{ secrets.CODECOV_TOKEN != '' }}
+        if: env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v5
         with:
           files: |
@@ -108,7 +109,7 @@ jobs:
           name: codecov-js
           disable_search: true
           fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           verbose: true
 
   benchmark:
