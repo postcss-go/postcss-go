@@ -112,26 +112,6 @@ func BenchmarkParseReal_BootstrapMin(b *testing.B) {
 	benchmarkParseCSS(b, fixture.CSS)
 }
 
-func BenchmarkParseReal_Bulma(b *testing.B) {
-	fixture := mustFixture(b, "Bulma")
-	benchmarkParseCSS(b, fixture.CSS)
-}
-
-func BenchmarkParseReal_Pure(b *testing.B) {
-	fixture := mustFixture(b, "Pure")
-	benchmarkParseCSS(b, fixture.CSS)
-}
-
-func BenchmarkParseReal_UIkit(b *testing.B) {
-	fixture := mustFixture(b, "UIkit")
-	benchmarkParseCSS(b, fixture.CSS)
-}
-
-func BenchmarkParseReal_Materialize(b *testing.B) {
-	fixture := mustFixture(b, "Materialize")
-	benchmarkParseCSS(b, fixture.CSS)
-}
-
 func BenchmarkParseStringifyReal_ModernNormalize(b *testing.B) {
 	fixture := mustFixture(b, "ModernNormalize")
 	benchmarkParseStringifyCSS(b, fixture.CSS)
@@ -157,26 +137,6 @@ func BenchmarkParseStringifyReal_BootstrapMin(b *testing.B) {
 	benchmarkParseStringifyCSS(b, fixture.CSS)
 }
 
-func BenchmarkParseStringifyReal_Bulma(b *testing.B) {
-	fixture := mustFixture(b, "Bulma")
-	benchmarkParseStringifyCSS(b, fixture.CSS)
-}
-
-func BenchmarkParseStringifyReal_Pure(b *testing.B) {
-	fixture := mustFixture(b, "Pure")
-	benchmarkParseStringifyCSS(b, fixture.CSS)
-}
-
-func BenchmarkParseStringifyReal_UIkit(b *testing.B) {
-	fixture := mustFixture(b, "UIkit")
-	benchmarkParseStringifyCSS(b, fixture.CSS)
-}
-
-func BenchmarkParseStringifyReal_Materialize(b *testing.B) {
-	fixture := mustFixture(b, "Materialize")
-	benchmarkParseStringifyCSS(b, fixture.CSS)
-}
-
 func BenchmarkProcessReal_ModernNormalize(b *testing.B) {
 	fixture := mustFixture(b, "ModernNormalize")
 	benchmarkProcessCSS(b, fixture.CSS)
@@ -199,26 +159,6 @@ func BenchmarkProcessReal_Bootstrap(b *testing.B) {
 
 func BenchmarkProcessReal_BootstrapMin(b *testing.B) {
 	fixture := mustFixture(b, "BootstrapMin")
-	benchmarkProcessCSS(b, fixture.CSS)
-}
-
-func BenchmarkProcessReal_Bulma(b *testing.B) {
-	fixture := mustFixture(b, "Bulma")
-	benchmarkProcessCSS(b, fixture.CSS)
-}
-
-func BenchmarkProcessReal_Pure(b *testing.B) {
-	fixture := mustFixture(b, "Pure")
-	benchmarkProcessCSS(b, fixture.CSS)
-}
-
-func BenchmarkProcessReal_UIkit(b *testing.B) {
-	fixture := mustFixture(b, "UIkit")
-	benchmarkProcessCSS(b, fixture.CSS)
-}
-
-func BenchmarkProcessReal_Materialize(b *testing.B) {
-	fixture := mustFixture(b, "Materialize")
 	benchmarkProcessCSS(b, fixture.CSS)
 }
 
