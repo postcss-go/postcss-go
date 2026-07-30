@@ -100,13 +100,8 @@ export class CssSyntaxError extends Error {
         const spacing = `${gutter.replace(/\d/g, ' ')}${sourceLine
           .slice(0, Math.max(0, this.column! - 1))
           .replace(/[^\t]/g, ' ')}`;
-        const markerLength =
-          this.endLine === this.line && this.endColumn !== undefined
-            ? Math.max(1, this.endColumn - this.column!)
-            : 1;
-        const marker = '^'.repeat(markerLength);
-        const renderedMarker = color ? `\u001B[31;1m${marker}\u001B[0m` : marker;
-        return `>${gutter}${sourceLine}\n ${spacing}${renderedMarker}`;
+        const marker = color ? '\u001B[31;1m^\u001B[0m' : '^';
+        return `>${gutter}${sourceLine}\n ${spacing}${marker}`;
       })
       .join('\n');
   }

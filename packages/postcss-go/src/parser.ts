@@ -76,7 +76,16 @@ export function parseOwnedSync(
       closing.raws.after = pending;
       pending = '';
       index += 1;
-      if (closing.source) closing.source.end = positionAt(css, index);
+      if (closing.source) {
+        // Match PostCSS: end.column is inclusive of `}`, end.offset is exclusive.
+        const endExclusive = index;
+        const endInclusive = positionAt(css, Math.max(0, endExclusive - 1));
+        closing.source.end = {
+          line: endInclusive.line,
+          column: endInclusive.column,
+          offset: endExclusive,
+        };
+      }
       continue;
     }
 
@@ -196,6 +205,9 @@ export function parseOwnedSync(
       importantRaw = importantMatch[1];
       declarationValue = declarationValue.slice(0, -importantMatch[0].length);
     }
+    const declStart = offset + leading.length;
+    const declEndExclusive = declStart + clean.length + Number(terminated);
+    const endPosition = positionAt(css, Math.max(declStart, declEndExclusive - 1));
     append(
       new Declaration({
         prop: property,
@@ -206,7 +218,13 @@ export function parseOwnedSync(
           between: `${afterProperty}:${valueLeading}`,
           ...(importantRaw ? { important: importantRaw } : {}),
         },
-        source: location(offset + leading.length, offset + statement.length + Number(terminated)),
+        source: {
+          start: positionAt(css, declStart),
+          // Match PostCSS: end.column is inclusive, end.offset is exclusive.
+          end: { line: endPosition.line, column: endPosition.column, offset: declEndExclusive },
+          ...(options.from ? { file: options.from } : {}),
+          input,
+        },
       }),
     );
     pending = trailing;

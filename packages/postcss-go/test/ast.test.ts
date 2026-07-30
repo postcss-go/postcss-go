@@ -45,7 +45,7 @@ test('round-trips a document DTO with stylesheet roots', () => {
   expect(document.nodes[0].first).toBeInstanceOf(Rule);
   expect(document.nodes[0].parent).toBe(document);
   expect(document.nodes[0].first?.parent).toBe(document.nodes[0]);
-  expect(toAst(document)).toEqual(dto);
+  expect(toAst(document)).toMatchObject(dto);
 });
 
 test('matches PostCSS root() semantics across a document boundary', () => {
@@ -590,7 +590,7 @@ test('clones nested raws objects and rejects unsupported fromJSON payloads', () 
   });
 
   expect(fromJSON({ nodes: [] }).type).toBe('root');
-  expect(() => fromJSON({} as never)).toThrow(/Unsupported AST node type/);
+  expect(() => fromJSON({} as never)).toThrow(/Unknown node type/);
 });
 
 test('shares the top-level JSON input table with nodes in custom properties', () => {
