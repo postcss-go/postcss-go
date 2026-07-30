@@ -30,7 +30,6 @@ import postcss, {
   stringifySync,
   toResult,
 } from '../src/index.ts';
-
 afterEach(() => {
   setPreviousMapFileLoader((file) => {
     try {
@@ -739,6 +738,28 @@ test('ResultMap exposes SourceMapGenerator mutation methods', () => {
     sources: ['input.css'],
     sourcesContent: ['.a{}'],
   });
+
+  const consumer = new SourceMapConsumer({
+    version: 3,
+    sources: ['nested.css'],
+    names: [],
+    mappings: 'AAAA',
+    sourcesContent: ['.nested{}'],
+  });
+  map.applySourceMap(consumer, 'input.css');
+  expect(map.toString()).toContain('version');
+});
+
+test('Result.warn picks up lastPlugin and messages stay as Warning instances', () => {
+  const result = new Result({ plugins: [] }, new Root());
+  result.lastPlugin = { postcssPlugin: 'from-last-plugin' };
+  const warning = result.warn('watch out');
+  expect(warning.plugin).toBe('from-last-plugin');
+  expect(result.warnings()).toEqual([warning]);
+
+  result.lastPlugin = 'not-an-object' as never;
+  expect(result.warn('again', { plugin: 'explicit' }).plugin).toBe('explicit');
+  expect(result.warn('no-plugin').plugin).toBeUndefined();
 });
 
 test('PreviousMap exposes annotation, inline text, and source content', () => {

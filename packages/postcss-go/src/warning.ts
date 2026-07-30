@@ -49,7 +49,7 @@ export class Warning {
       this.endColumn = range.end.column;
     }
     for (const [name, value] of Object.entries(options)) {
-      if (!['plugin', 'node', 'index', 'word', 'start', 'end'].includes(name)) this[name] = value;
+      if (!['plugin', 'node', 'start', 'end'].includes(name)) this[name] = value;
     }
   }
 

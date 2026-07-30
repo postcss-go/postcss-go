@@ -1,8 +1,8 @@
-import { Document, asProcessRoot, Node, Root, toAst, type ProcessRoot } from './ast.js';
+import { Document, asProcessRoot, Node, Root, toAst } from './ast.js';
 import { createDefaultAsyncService } from './native.js';
 import type { PostcssGoService } from './service.js';
-import type { ProcessOptions, ProcessResult, ResultMessage, RootNode } from './types.js';
-import { hydrateResultMap, type ResultMap } from './result.js';
+import type { ProcessOptions, ProcessResult, RootNode } from './types.js';
+import { hydrateResultMap, Result } from './result.js';
 import {
   dispatchNoWork,
   dispatchParse,
@@ -12,13 +12,9 @@ import {
   dispatchStringifyResult,
 } from './dispatch.js';
 
-export interface DocumentResult {
-  css: string;
-  map?: ResultMap;
+export type DocumentResult = Result & {
   mapFile?: string;
-  root: ProcessRoot;
-  messages: ResultMessage[];
-}
+};
 
 export async function parse(
   css: string,
@@ -118,13 +114,11 @@ export async function toResult(
   try {
     const root = asProcessRoot(document);
     const stringified = await dispatchStringifyResult(activeService, root, options);
-    return {
-      css: stringified.css,
-      map: hydrateResultMap(stringified.map),
-      mapFile: stringified.mapFile,
-      root,
-      messages: [],
-    };
+    const result = new Result({ plugins: [] }, root, options as never) as DocumentResult;
+    result.css = stringified.css;
+    result.map = hydrateResultMap(stringified.map);
+    result.mapFile = stringified.mapFile;
+    return result;
   } finally {
     if (!service) await activeService.close();
   }

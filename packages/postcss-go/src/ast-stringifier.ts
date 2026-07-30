@@ -8,6 +8,7 @@ export interface StringifiableNode {
     last?: StringifiableNode;
   };
   nodes?: StringifiableNode[];
+  first?: StringifiableNode;
   last?: StringifiableNode;
   selector?: string;
   name?: string;
@@ -80,14 +81,9 @@ function detectRaw(node: StringifiableNode, own: string | null, detect: string):
     ) {
       return '';
     }
-    detect =
-      node.type === 'decl'
-        ? 'beforeDecl'
-        : node.type === 'comment'
-          ? 'beforeComment'
-          : 'beforeRule';
+    return beforeAfter(node, 'before');
   }
-  if (detect === 'after') detect = 'beforeClose';
+  if (detect === 'after') return beforeAfter(node, 'after');
 
   const root = rootOf(node);
   let found: string | boolean | undefined;
@@ -125,6 +121,22 @@ function detectRaw(node: StringifiableNode, own: string | null, detect: string):
     });
   } else if (detect === 'indent') {
     if (typeof root.raws.indent === 'string') found = root.raws.indent;
+    else {
+      walk(root, (candidate) => {
+        const parentNode = candidate.parent;
+        if (
+          parentNode &&
+          parentNode !== root &&
+          parentNode.parent &&
+          parentNode.parent === root &&
+          typeof candidate.raws.before === 'string'
+        ) {
+          const parts = candidate.raws.before.split('\n');
+          found = parts[parts.length - 1].replace(/\S/g, '');
+          return false;
+        }
+      });
+    }
   } else if (detect === 'beforeClose') {
     walk(root, (candidate) => {
       if (candidate.nodes?.length && typeof candidate.raws.after === 'string') {
@@ -134,11 +146,33 @@ function detectRaw(node: StringifiableNode, own: string | null, detect: string):
         return false;
       }
     });
-  } else if (detect.startsWith('before')) {
-    const wanted =
-      detect === 'beforeDecl' ? 'decl' : detect === 'beforeComment' ? 'comment' : undefined;
+  } else if (detect === 'beforeDecl') {
     walk(root, (candidate) => {
-      if ((!wanted || candidate.type === wanted) && typeof candidate.raws.before === 'string') {
+      if (candidate.type === 'decl' && typeof candidate.raws.before === 'string') {
+        found = candidate.raws.before.includes('\n')
+          ? candidate.raws.before.replace(/[^\n]+$/, '').replace(/\S/g, '')
+          : candidate.raws.before.replace(/\S/g, '');
+        return false;
+      }
+    });
+    if (found === undefined) return detectRaw(node, null, 'beforeRule');
+  } else if (detect === 'beforeComment') {
+    walk(root, (candidate) => {
+      if (candidate.type === 'comment' && typeof candidate.raws.before === 'string') {
+        found = candidate.raws.before.includes('\n')
+          ? candidate.raws.before.replace(/[^\n]+$/, '').replace(/\S/g, '')
+          : candidate.raws.before.replace(/\S/g, '');
+        return false;
+      }
+    });
+    if (found === undefined) return detectRaw(node, null, 'beforeDecl');
+  } else if (detect === 'beforeRule') {
+    walk(root, (candidate) => {
+      if (
+        candidate.nodes &&
+        (candidate.parent !== root || root.first !== candidate) &&
+        typeof candidate.raws.before === 'string'
+      ) {
         found = candidate.raws.before.includes('\n')
           ? candidate.raws.before.replace(/[^\n]+$/, '').replace(/\S/g, '')
           : candidate.raws.before.replace(/\S/g, '');
@@ -154,6 +188,32 @@ function detectRaw(node: StringifiableNode, own: string | null, detect: string):
     });
   }
   return found ?? DEFAULT_RAW[detect] ?? '';
+}
+
+function beforeAfter(node: StringifiableNode, detect: string): string {
+  let value =
+    node.type === 'decl'
+      ? String(detectRaw(node, null, 'beforeDecl'))
+      : node.type === 'comment'
+        ? String(detectRaw(node, null, 'beforeComment'))
+        : detect === 'before'
+          ? String(detectRaw(node, null, 'beforeRule'))
+          : String(detectRaw(node, null, 'beforeClose'));
+
+  let depth = 0;
+  let buf = node.parent;
+  while (buf && buf.type !== 'root') {
+    depth += 1;
+    buf = buf.parent;
+  }
+
+  if (value.includes('\n')) {
+    const indent = String(detectRaw(node, null, 'indent'));
+    if (indent.length) {
+      for (let step = 0; step < depth; step++) value += indent;
+    }
+  }
+  return value;
 }
 
 export function defaultRaw(
@@ -181,9 +241,14 @@ export function stringify(node: StringifiableNode, builder: ChunkBuilder): void 
   };
   const block = (target: StringifiableNode, start: string): void => {
     builder(`${start}${String(raw(target, 'between', 'beforeOpen'))}{`, target, 'start');
-    if (target.nodes?.length) body(target);
-    const after = String(raw(target, 'after', target.nodes?.length ? 'beforeClose' : 'emptyBody'));
-    if (after) builder(after);
+    if (target.nodes?.length) {
+      body(target);
+      const after = String(raw(target, 'after'));
+      if (after) builder(after);
+    } else {
+      const after = String(raw(target, 'after', 'emptyBody'));
+      if (after) builder(after);
+    }
     builder('}', target, 'end');
   };
   const emit = (target: StringifiableNode, semicolon = false): void => {

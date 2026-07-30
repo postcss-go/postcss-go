@@ -3,8 +3,15 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { Root } from '../src/ast.ts';
-import { decodeAst, encodeAst, hydrateAst, serializeAst } from '../src/codec.ts';
+import { Node, Root } from '../src/ast.ts';
+import {
+  assertSupportedAst,
+  decodeAst,
+  encodeAst,
+  hydrateAst,
+  serializeAst,
+} from '../src/codec.ts';
+import { UnsupportedAstNodeError } from '../src/errors.ts';
 import {
   createNativeService,
   isNativeAsyncBridgeAvailable,
@@ -167,5 +174,13 @@ describe('binary codec + native bridge', () => {
         mapUrl: 'generated.css.map',
       },
     });
+  });
+
+  it('rejects custom AST nodes before they cross a backend boundary', () => {
+    const custom = new Node({ type: 'word' });
+
+    expect(() => assertSupportedAst(custom)).toThrow(UnsupportedAstNodeError);
+    expect(() => serializeAst(custom)).toThrow(UnsupportedAstNodeError);
+    expect(() => encodeAst({ type: 'word' } as never)).toThrow(UnsupportedAstNodeError);
   });
 });

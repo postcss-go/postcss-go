@@ -40,7 +40,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Remove PostCSS class `Symbol.hasInstance` patches and other runtime coupling.
 - [x] Remove every execution path that falls back to the `postcss` package.
 - [x] Keep PostCSS only as a development/test dependency for differential tests, upstream fixtures, and benchmarks.
-- [ ] Verify a clean packed-package installation with `npm ls postcss`.
+- [x] Verify a clean packed-package installation with `npm ls postcss`.
 
 ### Public JavaScript API
 
@@ -51,7 +51,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Provide explicit synchronous `parseSync`, `processSync`, `stringifySync`, and `noWorkSync` APIs.
 - [x] Document compatibility differences instead of reproducing implicit `LazyResult` behavior where it conflicts with explicit sync/async APIs.
 - [x] Implement the baseline Node/Container method, mutation, traversal, JSON, and proxy surface.
-- [ ] Complete Node/Container behavior and type parity through a dedicated upstream contract suite.
+- [x] Complete Node/Container behavior and type parity through a dedicated upstream contract suite.
 - [x] Support `fromJSON` and custom AST nodes in the JavaScript/DTO AST layer.
 - [x] Preserve or explicitly diagnose custom AST nodes across native binary and WASM boundaries.
 - [x] Complete error and warning object parity, including source, input, plugin, node, line, and column metadata.

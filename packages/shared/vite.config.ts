@@ -1,10 +1,17 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dts from 'unplugin-dts/vite';
 import { defineConfig } from 'vite';
 
 const root = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  plugins: [
+    dts({
+      include: ['src'],
+      tsconfigPath: './tsconfig.json',
+    }),
+  ],
   build: {
     emptyOutDir: true,
     minify: false,

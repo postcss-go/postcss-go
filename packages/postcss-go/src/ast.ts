@@ -106,8 +106,34 @@ function asNode(value: Node | AstDTO | NodeInit): Node {
       if ('name' in node) return new AtRule(node as ContainerInit & AtRuleDTO);
       if ('text' in node) return new Comment(node as NodeInit & CommentDTO);
       if ('nodes' in node) return new Root(node);
-      throw new Error(`Unsupported AST node type: ${String(node.type)}`);
+      throw new Error('Unknown node type in node creation');
   }
+}
+
+function sourceOffset(
+  inputCSS: string,
+  position: { line?: number; column?: number; offset?: number } | undefined,
+): number {
+  if (position && typeof position.offset === 'number') return position.offset;
+  if (!position?.line || !position.column) return 0;
+  let column = 1;
+  let line = 1;
+  for (let i = 0; i < inputCSS.length; i++) {
+    if (line === position.line && column === position.column) return i;
+    if (inputCSS[i] === '\n') {
+      column = 1;
+      line += 1;
+    } else {
+      column += 1;
+    }
+  }
+  return inputCSS.length;
+}
+
+function sourceInputText(node: Node): string | undefined {
+  const input = node.source?.input as { css?: string; document?: string } | undefined;
+  if (!input) return undefined;
+  return typeof input.document === 'string' ? input.document : input.css;
 }
 
 function flattenNodeChildren(children: readonly NodeChild[]): Array<NodeInput | string> {
@@ -127,7 +153,6 @@ export class Node {
   type: NodeType;
   source?: SourceLocation;
   raws: Raws;
-  private readonly rawsProvided: boolean;
   private parentNode?: Container<any>;
   private clean = false;
   private proxyCache?: this;
@@ -139,9 +164,16 @@ export class Node {
     this.type = typeof typeOrDefaults === 'string' ? typeOrDefaults : (init.type ?? '');
     this.source = init.source;
     this.raws = cloneRaws(init.raws);
-    this.rawsProvided = init.raws !== undefined;
     for (const [name, value] of Object.entries(init)) {
-      if (name === 'type' || name === 'source' || name === 'raws' || name === 'nodes') continue;
+      if (
+        name === 'type' ||
+        name === 'source' ||
+        name === 'raws' ||
+        name === 'nodes' ||
+        name === 'selectors'
+      ) {
+        continue;
+      }
       (this as unknown as Record<string, unknown>)[name] = value;
     }
   }
@@ -297,17 +329,48 @@ export class Node {
   positionInside(index: number): SourceLocation['start'] {
     const start = this.source?.start;
     if (!start) return { line: 1, column: index + 1, offset: index };
-    return { line: start.line, column: start.column + index, offset: start.offset + index };
+    const inputString = sourceInputText(this);
+    if (!inputString) {
+      return {
+        line: start.line,
+        column: start.column + index,
+        offset: (start.offset ?? 0) + index,
+      };
+    }
+    let column = start.column;
+    let line = start.line;
+    const offset = sourceOffset(inputString, start);
+    const end = offset + index;
+    for (let i = offset; i < end; i++) {
+      if (inputString[i] === '\n') {
+        column = 1;
+        line += 1;
+      } else {
+        column += 1;
+      }
+    }
+    return { column, line, offset: end };
   }
 
   positionBy(options: { index?: number; word?: string } = {}): SourceLocation['start'] {
-    if (options.index !== undefined) return this.positionInside(options.index);
-    if (options.word && this.source) {
-      const text = this.toText();
-      const index = text.indexOf(options.word);
-      if (index >= 0) return this.positionInside(index);
+    let pos = this.source?.start ?? this.positionInside(0);
+    if (options.index) {
+      pos = this.positionInside(options.index);
+    } else if (options.word && this.source) {
+      const inputString = sourceInputText(this);
+      if (inputString && this.source.end) {
+        const representation = inputString.slice(
+          sourceOffset(inputString, this.source.start),
+          sourceOffset(inputString, this.source.end),
+        );
+        const index = representation.indexOf(options.word);
+        if (index !== -1) pos = this.positionInside(index);
+      } else {
+        const index = this.toText().indexOf(options.word);
+        if (index >= 0) pos = this.positionInside(index);
+      }
     }
-    return this.source?.start ?? this.positionInside(0);
+    return pos;
   }
 
   rangeBy(
@@ -319,20 +382,71 @@ export class Node {
       end?: SourceLocation['end'];
     } = {},
   ): { start: SourceLocation['start']; end: SourceLocation['end'] } {
-    const start = options.start ?? this.positionBy(options);
-    let end = options.end ?? this.source?.end ?? this.positionInside(1);
-    if (options.endIndex !== undefined) end = this.positionInside(options.endIndex);
-    if (options.word) {
-      const index = this.toText().indexOf(options.word);
-      if (index >= 0) {
-        return {
-          start: this.positionInside(index),
-          end: this.positionInside(index + options.word.length),
+    const inputString = sourceInputText(this) ?? '';
+    let start: SourceLocation['start'] = this.source?.start
+      ? {
+          column: this.source.start.column,
+          line: this.source.start.line,
+          offset: sourceOffset(inputString, this.source.start),
+        }
+      : this.positionInside(0);
+    let end: SourceLocation['end'] = this.source?.end
+      ? {
+          column: this.source.end.column + 1,
+          line: this.source.end.line,
+          offset:
+            typeof this.source.end.offset === 'number'
+              ? this.source.end.offset
+              : sourceOffset(inputString, this.source.end) + 1,
+        }
+      : {
+          column: start.column + 1,
+          line: start.line,
+          offset: (start.offset ?? 0) + 1,
         };
+
+    if (options.word) {
+      const representation = this.source?.end
+        ? inputString.slice(
+            sourceOffset(inputString, this.source.start),
+            sourceOffset(inputString, this.source.end),
+          )
+        : this.toText();
+      const index = representation.indexOf(options.word);
+      if (index !== -1) {
+        start = this.positionInside(index);
+        end = this.positionInside(index + options.word.length);
+      }
+    } else {
+      if (options.start) {
+        start = {
+          column: options.start.column,
+          line: options.start.line,
+          offset: sourceOffset(inputString, options.start),
+        };
+      } else if (options.index) {
+        start = this.positionInside(options.index);
+      }
+
+      if (options.end) {
+        end = {
+          column: options.end.column,
+          line: options.end.line,
+          offset: sourceOffset(inputString, options.end),
+        };
+      } else if (typeof options.endIndex === 'number') {
+        end = this.positionInside(options.endIndex);
+      } else if (options.index) {
+        end = this.positionInside(options.index + 1);
       }
     }
+
     if (end.line < start.line || (end.line === start.line && end.column <= start.column)) {
-      end = this.positionInside(Math.max(1, (options.index ?? 0) + 1));
+      end = {
+        column: start.column + 1,
+        line: start.line,
+        offset: (start.offset ?? 0) + 1,
+      };
     }
     return { start, end };
   }
@@ -357,8 +471,13 @@ export class Node {
       end?: SourceLocation['end'];
     } = {},
   ): Error {
+    if (!this.source) {
+      const error = new CssSyntaxError(message);
+      error.postcssNode = this;
+      return error;
+    }
     const range = this.rangeBy(options);
-    const input = this.source?.input;
+    const input = this.source.input;
     const error =
       input && typeof input.error === 'function'
         ? input.error(
@@ -372,7 +491,7 @@ export class Node {
             { line: range.start.line, column: range.start.column },
             { line: range.end.line, column: range.end.column },
             typeof input?.css === 'string' ? input.css : undefined,
-            this.source?.file,
+            this.source.file,
             options.plugin,
           );
     error.postcssNode = this;
@@ -456,7 +575,7 @@ export class Node {
         meta.source = { ...this.source };
       }
     }
-    if (this.rawsProvided || Object.keys(this.raws).length > 0) meta.raws = cloneRaws(this.raws);
+    meta.raws = cloneRaws(this.raws);
     return meta;
   }
 
@@ -475,11 +594,12 @@ export class Node {
 
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): object {
     const sharedInputs = inputs ?? new Map<unknown, number>();
+    const meta = this.jsonMeta(sharedInputs);
     return finishJSON(
       {
+        ...meta,
         ...this.jsonExtras([], sharedInputs),
         type: this.type,
-        ...this.jsonMeta(sharedInputs),
       },
       inputs,
       sharedInputs,
@@ -500,8 +620,15 @@ export class Container<Child extends Node = ChildNode> extends Node {
     super(type, init);
     this.nodes = [];
     for (const child of init.nodes ?? []) {
-      for (const node of this.normalize([child], this.last, 'hydrate')) {
-        this.nodes.push(node as Child);
+      // Match PostCSS construction when adopting live parented nodes: clone so the
+      // source tree stays intact. Detached nodes (fromJSON/bridge hydration) keep
+      // their serialized raws instead of being re-normalized through append().
+      if (child instanceof Node && child.parent) {
+        this.append(child.clone());
+      } else {
+        for (const node of this.normalize([child as NodeChild], this.last, 'hydrate')) {
+          this.nodes.push(node as Child);
+        }
       }
     }
   }
@@ -607,7 +734,9 @@ export class Container<Child extends Node = ChildNode> extends Node {
 
   insertBefore(existing: Node | number, ...children: NodeChild[]): this {
     const initialIndex = this.index(existing);
-    if (initialIndex < 0) throw new Error('Node is not a child of this container');
+    if (typeof existing !== 'number' && initialIndex < 0) {
+      throw new Error('Node is not a child of this container');
+    }
     const sample = this.nodes?.[initialIndex];
     const nodes = this.normalize(children, sample, initialIndex === 0 ? 'prepend' : undefined);
     const index = typeof existing === 'number' ? initialIndex : this.index(existing);
@@ -617,7 +746,9 @@ export class Container<Child extends Node = ChildNode> extends Node {
 
   insertAfter(existing: Node | number, ...children: NodeChild[]): this {
     const initialIndex = this.index(existing);
-    if (initialIndex < 0) throw new Error('Node is not a child of this container');
+    if (typeof existing !== 'number' && initialIndex < 0) {
+      throw new Error('Node is not a child of this container');
+    }
     const sample = this.nodes?.[initialIndex];
     const nodes = this.normalize(children, sample);
     const index = typeof existing === 'number' ? initialIndex : this.index(existing);
@@ -630,7 +761,10 @@ export class Container<Child extends Node = ChildNode> extends Node {
       (node) => node.parent !== this || (this.nodes?.includes(node as Child) ?? false),
     );
     for (const node of detached) {
-      if (node.parent) node.parent.removeChild(node);
+      if (node.parent) {
+        if (node.parent instanceof Root) node.parent.removeChild(node, true);
+        else node.parent.removeChild(node);
+      }
     }
     if (detached.length) this.inheritBefore(detached, sample ?? this.nodes?.[index]);
     for (const node of detached) node.setParent(this);
@@ -644,7 +778,10 @@ export class Container<Child extends Node = ChildNode> extends Node {
   protected normalize(children: readonly NodeChild[], sample?: Node, mode?: InsertMode): Node[] {
     const nodes = this.convert(children);
     for (const node of nodes) {
-      if (node.parent) node.parent.removeChild(node);
+      if (node.parent) {
+        if (node.parent instanceof Root) node.parent.removeChild(node, true);
+        else node.parent.removeChild(node);
+      }
     }
     this.inheritBefore(nodes, sample, mode);
     for (const node of nodes) node.setParent(this);
@@ -656,7 +793,8 @@ export class Container<Child extends Node = ChildNode> extends Node {
     for (const child of children) {
       if (child === undefined) continue;
       if (Array.isArray(child)) {
-        nodes.push(...this.convert(child));
+        // Copy first so moving live `parent.nodes` during construction does not skip siblings.
+        nodes.push(...this.convert([...child]));
         continue;
       }
       if (typeof child === 'string') {
@@ -672,7 +810,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
       }
       const node = asNode(child as NodeInput);
       if (this.type !== 'document' && node.type === 'root') {
-        nodes.push(...((node as Root).nodes ?? []));
+        nodes.push(...[...((node as Root).nodes ?? [])]);
       } else {
         nodes.push(node);
       }
@@ -848,12 +986,13 @@ export class Container<Child extends Node = ChildNode> extends Node {
 
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): object {
     const sharedInputs = inputs ?? new Map<unknown, number>();
+    const meta = this.jsonMeta(sharedInputs);
     return finishJSON(
       {
+        ...meta,
         ...this.jsonExtras([], sharedInputs),
         type: this.type,
         nodes: (this.nodes ?? []).map((node) => node.toJSON(null, sharedInputs)),
-        ...this.jsonMeta(sharedInputs),
       },
       inputs,
       sharedInputs,
@@ -906,12 +1045,13 @@ export class Root extends Container<ChildNode> {
   }
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): RootDTO {
     const sharedInputs = inputs ?? new Map<unknown, number>();
+    const meta = this.jsonMeta(sharedInputs);
     return finishJSON(
       {
+        ...meta,
         ...this.jsonExtras([], sharedInputs),
         type: 'root',
         nodes: this.nodes.map((node) => node.toJSON(null, sharedInputs) as AstDTO),
-        ...this.jsonMeta(sharedInputs),
       },
       inputs,
       sharedInputs,
@@ -950,24 +1090,27 @@ export class Rule extends Container<ChildNode> {
   selector: string;
   constructor(init: RuleInit = {}) {
     super('rule', init);
-    this.selector = String(init.selector ?? init.selectors?.join(',') ?? '');
+    this.selector = String(init.selector ?? '');
+    if (init.selectors) this.selectors = [...init.selectors];
   }
   get selectors(): string[] {
     return list.comma(this.selector);
   }
   set selectors(values: string[]) {
-    const match = this.selector.match(/,\s*/);
-    this.selector = values.join(match?.[0] ?? ',');
+    const match = this.selector ? this.selector.match(/,\s*/) : null;
+    const sep = match ? match[0] : `,${String(this.raw('between', 'beforeOpen'))}`;
+    this.selector = values.join(sep);
   }
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): RuleDTO {
     const sharedInputs = inputs ?? new Map<unknown, number>();
+    const meta = this.jsonMeta(sharedInputs);
     return finishJSON(
       {
+        ...meta,
         ...this.jsonExtras(['selector'], sharedInputs),
-        type: 'rule',
         selector: this.selector,
+        type: 'rule',
         nodes: this.nodes.map((node) => node.toJSON(null, sharedInputs) as AstDTO),
-        ...this.jsonMeta(sharedInputs),
       },
       inputs,
       sharedInputs,
@@ -1040,14 +1183,15 @@ export class Declaration extends Node {
   }
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): DeclarationDTO {
     const sharedInputs = inputs ?? new Map<unknown, number>();
+    const meta = this.jsonMeta(sharedInputs);
     return finishJSON(
       {
+        ...meta,
         ...this.jsonExtras(['important', 'prop', 'value'], sharedInputs),
-        type: 'decl',
         prop: this.prop,
         value: this.value,
         ...(this.important ? { important: true } : {}),
-        ...this.jsonMeta(sharedInputs),
+        type: 'decl',
       },
       inputs,
       sharedInputs,
@@ -1063,12 +1207,13 @@ export class Comment extends Node {
   }
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): CommentDTO {
     const sharedInputs = inputs ?? new Map<unknown, number>();
+    const meta = this.jsonMeta(sharedInputs);
     return finishJSON(
       {
+        ...meta,
         ...this.jsonExtras(['text'], sharedInputs),
-        type: 'comment',
         text: this.text,
-        ...this.jsonMeta(sharedInputs),
+        type: 'comment',
       },
       inputs,
       sharedInputs,

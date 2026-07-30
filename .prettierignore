@@ -6,3 +6,4 @@ vendor
 benchmark/fixtures
 .tmp/
 coverage/
+test/upstream-ast-contract/
