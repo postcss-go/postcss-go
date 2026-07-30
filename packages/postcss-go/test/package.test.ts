@@ -69,7 +69,7 @@ function npmPackFiles(cwd: string): string[] {
 }
 
 function assertPackageAbsent(cwd: string, name: string): void {
-  let output = '';
+  let output: string;
   let status = 0;
   try {
     output = npm(cwd, ['ls', name, '--all']);

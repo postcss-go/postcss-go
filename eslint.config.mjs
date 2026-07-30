@@ -13,6 +13,7 @@ export default tseslint.config(
       'pnpm-lock.yaml',
       'vendor/**',
       'benchmark/fixtures/**',
+      'packages/postcss-go/test/upstream-ast-contract/**',
     ],
   },
   js.configs.recommended,

@@ -1,8 +1,8 @@
-import { Document, asProcessRoot, Node, Root, toAst, type ProcessRoot } from './ast.js';
+import { Document, asProcessRoot, Node, Root, toAst } from './ast.js';
 import { createDefaultAsyncService } from './native.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions, ProcessResult, RootNode } from './types.js';
-import { hydrateResultMap, Result, type ResultMap } from './result.js';
+import { hydrateResultMap, Result } from './result.js';
 import {
   dispatchNoWork,
   dispatchParse,

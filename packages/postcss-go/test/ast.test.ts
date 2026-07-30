@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 
+import { defaultRaw, stringify, stringifyNode } from '../src/ast-stringifier.ts';
 import {
+  AtRule,
   Comment,
   Container,
   Declaration,
@@ -624,4 +626,234 @@ test('shares the top-level JSON input table with nodes in custom properties', ()
   expect(json.inputs).toHaveLength(1);
   expect(json.related.inputs).toBeUndefined();
   expect(json.related.source.inputId).toBe(0);
+});
+
+test('raw() returns the raw object form and position helpers cover source-less nodes', () => {
+  const decl = new Declaration({
+    prop: 'color',
+    value: 'red',
+    raws: { between: { raw: ':  ', value: ':' } as never },
+    source: { start: { line: 2, column: 3, offset: 4 } },
+  });
+
+  expect(decl.raw('between')).toBe(':  ');
+  expect(decl.positionInside(2)).toEqual({ line: 2, column: 5, offset: 6 });
+  expect(decl.positionBy({ word: 'red' })).toEqual({ line: 2, column: 3, offset: 4 });
+  expect(decl.rangeBy({ word: 'red' })).toEqual({
+    start: { line: 2, column: 3, offset: 4 },
+    end: { line: 2, column: 6, offset: 7 },
+  });
+
+  const orphan = new Rule({ selector: 'a' });
+  expect(orphan.rangeBy()).toEqual({
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 2, offset: 1 },
+  });
+  expect(orphan.rangeBy({ end: { line: 1, column: 1 }, start: { line: 1, column: 3 } })).toEqual({
+    start: { line: 1, column: 3, offset: 0 },
+    end: { line: 1, column: 4, offset: 1 },
+  });
+});
+
+test('position helpers resolve offsets past the input and serialize source without an input', () => {
+  const decl = new Declaration({
+    prop: 'color',
+    value: 'red',
+    source: {
+      start: { line: 9, column: 9 },
+      end: { line: 9, column: 12 },
+      input: { css: 'a{}' },
+    },
+  });
+
+  // Line/column are past the short input, so sourceOffset clamps to input length.
+  expect(decl.rangeBy({ start: { line: 9, column: 9 }, end: { line: 9, column: 12 } })).toEqual({
+    start: { line: 9, column: 9, offset: 3 },
+    end: { line: 9, column: 12, offset: 3 },
+  });
+
+  const rule = new Rule({
+    selector: 'a',
+    source: { start: { line: 1, column: 1, offset: 0 }, file: 'virtual.css' },
+  });
+  const json = rule.toJSON() as { source?: { file?: string; inputId?: number } };
+  expect(json.source).toMatchObject({ file: 'virtual.css' });
+  expect(json.source).not.toHaveProperty('inputId');
+});
+
+test('replaceWith flattens nested arrays and container proxies wrap walkers', () => {
+  const root = new Root({
+    nodes: [
+      { type: 'comment', text: 'current' },
+      { type: 'rule', selector: 'a', nodes: [] },
+      { type: 'atrule', name: 'media', params: 'screen', nodes: [] },
+    ],
+  });
+  const current = root.first as Comment;
+  current.replaceWith([[{ text: 'nested' }]]);
+
+  expect(root.nodes.map((node) => node.type)).toEqual(['comment', 'rule', 'atrule']);
+  expect((root.first as Comment).text).toBe('nested');
+
+  const proxy = root.toProxy();
+  const walked: string[] = [];
+  proxy.walk((node) => {
+    walked.push(node.type);
+    expect(node).toHaveProperty('proxyOf');
+  });
+  expect(walked).toEqual(['comment', 'rule', 'atrule']);
+  expect(proxy.some((node) => node.type === 'rule')).toBe(true);
+  expect(proxy.every((node) => node.type === 'comment' || node.type === 'rule' || node.type === 'atrule')).toBe(
+    true,
+  );
+  proxy.walkAtRules('media', (atRule) => {
+    expect(atRule).toHaveProperty('proxyOf');
+    expect(atRule.name).toBe('media');
+  });
+  proxy.walkRules('a', (rule) => {
+    expect(rule).toHaveProperty('proxyOf');
+    expect(rule.selector).toBe('a');
+  });
+
+  const ruleProxy = (root.nodes[1] as Rule).toProxy();
+  ruleProxy.markClean();
+  ruleProxy.selector = 'b';
+  expect((root.nodes[1] as Rule).isClean).toBe(false);
+  expect((root.nodes[1] as Rule).selector).toBe('b');
+
+  const atRule = new AtRule({ name: 'media', params: 'screen', nodes: [] });
+  const atProxy = atRule.toProxy();
+  atProxy.markClean();
+  atProxy.params = 'print';
+  expect(atRule.isClean).toBe(false);
+
+  const comment = new Comment({ text: 'note' });
+  const commentProxy = comment.toProxy();
+  commentProxy.markClean();
+  commentProxy.text = 'updated';
+  expect(comment.isClean).toBe(false);
+  expect(comment.text).toBe('updated');
+
+  const decl = new Declaration({ prop: 'color', value: 'red', important: false });
+  const declProxy = decl.toProxy();
+  declProxy.markClean();
+  declProxy.important = true;
+  expect(decl.isClean).toBe(false);
+  expect(decl.important).toBe(true);
+});
+
+test('insertBefore and insertAfter reject nodes that are not children', () => {
+  const root = new Root({ nodes: [{ type: 'rule', selector: 'a', nodes: [] }] });
+  const foreign = new Rule({ selector: 'b', nodes: [] });
+
+  expect(() => root.insertBefore(foreign, { text: 'x' })).toThrow(
+    'Node is not a child of this container',
+  );
+  expect(() => root.insertAfter(foreign, { text: 'x' })).toThrow(
+    'Node is not a child of this container',
+  );
+});
+
+test('moves children between roots while preserving ignored before raws', () => {
+  const source = new Root({
+    nodes: [
+      new Rule({ selector: 'a', nodes: [], raws: { before: '' } }),
+      new Rule({ selector: 'b', nodes: [], raws: { before: '\n' } }),
+    ],
+  });
+  const target = new Root();
+  const [first, second] = source.nodes;
+
+  target.append(first, second);
+
+  expect(source.nodes).toHaveLength(0);
+  expect(target.nodes).toEqual([first, second]);
+  expect(first.raws.before).toBe('');
+});
+
+test('insertBeforeIndex detaches nodes that still belong to another tree', () => {
+  const source = new Root({
+    nodes: [
+      new Rule({ selector: 'a', nodes: [], raws: { before: '' } }),
+      new Rule({ selector: 'b', nodes: [], raws: { before: '\n' } }),
+    ],
+  });
+  const other = new Rule({
+    selector: 'host',
+    nodes: [new Declaration({ prop: 'color', value: 'red' })],
+  });
+  const target = new Root();
+  const fromRoot = source.first as Rule;
+  const fromRule = other.first as Declaration;
+
+  target.insertBeforeIndex(0, [fromRoot, fromRule]);
+
+  expect(source.nodes.map((node) => (node as Rule).selector)).toEqual(['b']);
+  expect(other.nodes).toHaveLength(0);
+  expect(target.nodes).toEqual([fromRoot, fromRule]);
+});
+
+test('stringify helpers cover raw value objects, comment spacing, and unknown nodes', () => {
+  const withRawValue = new Declaration({
+    prop: 'color',
+    value: 'red',
+    raws: { value: { value: 'red', raw: 'RED' } as never, between: ': ' },
+  });
+  expect(stringifyNode(withRawValue)).toBe('color: RED');
+
+  const commentRoot = new Root();
+  commentRoot.append(new Comment({ text: 'a', raws: { before: '\n  ' } }));
+  const spaced = new Comment({ text: 'b' });
+  commentRoot.append(spaced);
+  delete spaced.raws.before;
+  expect(defaultRaw(spaced, null as never, 'beforeComment')).toBe('\n');
+
+  const plainCommentRoot = new Root();
+  plainCommentRoot.append(new Comment({ text: 'a', raws: { before: '  ' } }));
+  const plain = new Comment({ text: 'b' });
+  plainCommentRoot.append(plain);
+  delete plain.raws.before;
+  expect(defaultRaw(plain, null as never, 'beforeComment')).toBe('  ');
+
+  const closeRoot = new Root();
+  closeRoot.append(
+    new Rule({
+      selector: 'a',
+      nodes: [new Declaration({ prop: 'color', value: 'red' })],
+      raws: { after: '  ', between: ' ' },
+    }),
+  );
+  const needsClose = new Rule({
+    selector: 'b',
+    nodes: [new Declaration({ prop: 'color', value: 'blue' })],
+    raws: { between: ' ' },
+  });
+  closeRoot.append(needsClose);
+  delete needsClose.raws.before;
+  expect(closeRoot.toString()).toContain('}');
+
+  const indentRoot = new Root();
+  indentRoot.append(
+    new Rule({
+      selector: 'a',
+      raws: { before: '', between: ' ' },
+      nodes: [
+        new Rule({
+          selector: 'b',
+          raws: { before: '\n    ', between: ' ' },
+          nodes: [],
+        }),
+      ],
+    }),
+  );
+  const needsRuleBefore = new Rule({ selector: 'z', nodes: [] });
+  indentRoot.append(needsRuleBefore);
+  delete needsRuleBefore.raws.before;
+  expect(defaultRaw(needsRuleBefore, null as never, 'beforeRule')).toBe('\n');
+
+  expect(() =>
+    stringify({ type: 'word', raws: {} }, () => {
+      throw new Error('should not emit');
+    }),
+  ).toThrow(/Unknown AST node type word/);
 });
