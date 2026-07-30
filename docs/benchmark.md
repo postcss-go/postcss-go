@@ -49,6 +49,10 @@ Vendored stylesheets from common CSS sources (see `benchmark/fixtures/manifest.j
 | AnimateMin        | [animate.css](https://github.com/animate-css/animate.css) minified   | 72 KB  |
 | Bootstrap         | [Bootstrap 5](https://github.com/twbs/bootstrap) formatted           | 281 KB |
 | BootstrapMin      | Bootstrap 5 minified                                                 | 233 KB |
+| Bulma             | [Bulma](https://github.com/jgthms/bulma)                             | 746 KB |
+| Pure              | [Pure.css](https://github.com/pure-css/pure)                         | 26 KB  |
+| UIkit             | [UIkit](https://github.com/uikit/uikit)                              | 391 KB |
+| Materialize       | [Materialize](https://github.com/Dogfalo/materialize)                | 175 KB |
 
 Refresh fixtures:
 

@@ -33,5 +33,33 @@
     "source": "https://github.com/twbs/bootstrap",
     "version": "5.3.3",
     "license": "MIT"
+  },
+  {
+    "id": "Bulma",
+    "file": "css/bulma.css",
+    "source": "https://github.com/jgthms/bulma",
+    "version": "1.0.4",
+    "license": "MIT"
+  },
+  {
+    "id": "Pure",
+    "file": "css/pure.css",
+    "source": "https://github.com/pure-css/pure",
+    "version": "3.0.0",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "id": "UIkit",
+    "file": "css/uikit.css",
+    "source": "https://github.com/uikit/uikit",
+    "version": "3.25.20",
+    "license": "MIT"
+  },
+  {
+    "id": "Materialize",
+    "file": "css/materialize.css",
+    "source": "https://github.com/Dogfalo/materialize",
+    "version": "1.0.0",
+    "license": "MIT"
   }
 ]
