@@ -4,8 +4,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "emitDeclarationOnly": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "emitDeclarationOnly": true
   }
 }

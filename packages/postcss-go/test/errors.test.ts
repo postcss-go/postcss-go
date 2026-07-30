@@ -1,9 +1,27 @@
 import path from 'path';
 import { expect, test } from 'vitest';
 
+import { SyncBackendUnavailableError, UnsupportedAstNodeError } from '../src/errors.ts';
 import cli from './helpers/cli.ts';
 
 const fixtureDir = path.resolve('test/fixtures/errors');
+
+test('SyncBackendUnavailableError explains the missing N-API backend', () => {
+  const error = new SyncBackendUnavailableError();
+
+  expect(error).toBeInstanceOf(Error);
+  expect(error.name).toBe('SyncBackendUnavailableError');
+  expect(error.message).toContain('Node N-API backend');
+});
+
+test('UnsupportedAstNodeError names the custom AST node type', () => {
+  const error = new UnsupportedAstNodeError('word');
+
+  expect(error).toBeInstanceOf(Error);
+  expect(error.name).toBe('UnsupportedAstNodeError');
+  expect(error.message).toContain('"word"');
+  expect(error.message).toContain('backend boundary');
+});
 
 test('fails when config sets from/to options', async () => {
   const { error, stderr } = await cli(['input.css', '--no-map'], fixtureDir);

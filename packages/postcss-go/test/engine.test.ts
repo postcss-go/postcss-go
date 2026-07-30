@@ -98,7 +98,16 @@ test('createGoEngine always returns the Go engine', async () => {
 test('processWithGoEngine converts buffer input and warning objects', async () => {
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a { color: red; }',
-    messages: [{ type: 'warning', text: 'be careful' }],
+    messages: [
+      { type: 'warning', text: 'be careful' },
+      {
+        type: 'warning',
+        text: 'ignored',
+        toString() {
+          return 'custom warning';
+        },
+      },
+    ],
   });
 
   const result = await processWithGoEngine(
@@ -114,8 +123,33 @@ test('processWithGoEngine converts buffer input and warning objects', async () =
     from: 'buffer.css',
   });
   expect(result.map).toBeUndefined();
-  expect(result.messages).toEqual([{ type: 'warning', text: 'be careful' }]);
+  expect(result.messages).toHaveLength(2);
   expect(result.warnings()[0]?.toString?.()).toBe('be careful');
+  expect(result.warnings()[1]?.toString?.()).toBe('custom warning');
+});
+
+test('processWithGoEngine accepts record-shaped plugin configs', async () => {
+  const processSpy = vi.fn();
+  const stringifyResult = vi.fn(async (ast: Parameters<typeof fromAst>[0]) => ({
+    css: fromAst(ast).toString(),
+  }));
+  const plugin = {
+    postcssPlugin: 'to-green',
+    Declaration(decl) {
+      decl.value = 'green';
+    },
+  } satisfies AcceptedPlugin;
+
+  const result = await processWithGoEngine(
+    mockEngine({ process: processSpy, stringifyResult }),
+    { plugins: { 'to-green': plugin } },
+    '.a { color: red; }',
+    { from: 'a.css', map: false },
+  );
+
+  expect(processSpy).not.toHaveBeenCalled();
+  expect(stringifyResult).toHaveBeenCalled();
+  expect(result.css).toContain('green');
 });
 
 test('processWithGoEngine finalizes plugins via stringifyResult without a second process', async () => {

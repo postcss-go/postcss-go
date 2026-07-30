@@ -32,7 +32,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node ../../scripts/build-wasm.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm --filter @postcss-go/core build && pnpm run build && vitest run",
-    "test:coverage": "pnpm --filter @postcss-go/core build && pnpm run build && vitest run --coverage"
+    "test": "pnpm --filter @postcss-go/core... build && pnpm run build && vitest run",
+    "test:coverage": "pnpm --filter @postcss-go/core... build && pnpm run build && vitest run --coverage"
   }
 }

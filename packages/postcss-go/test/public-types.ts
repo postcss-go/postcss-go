@@ -1,11 +1,19 @@
 import postcss, {
+  AtRule,
+  Comment,
+  Container,
+  Declaration,
+  Document,
+  Node,
   PreviousMap,
   Processor,
+  Root,
+  Rule,
+  fromJSON,
   isSyncPostcssGoService,
+  type AnyNode,
   type PluginHelpers,
   type PostcssGoService,
-  type Declaration,
-  type Rule,
 } from '../src/index.js';
 
 const processor = postcss({
@@ -51,3 +59,28 @@ if (isSyncPostcssGoService(service)) {
   service.noWorkSync('.a{}');
   void synchronous;
 }
+
+// Node/Container public surface used by plugins and AST tooling.
+const root: Root = postcss.parse('.a, .b { color: red } /* c */');
+const rule: Rule = root.first as Rule;
+const decl: Declaration = rule.first as Declaration;
+const comment: Comment = root.last as Comment;
+const nodes: AnyNode[] = [root, rule, decl, comment];
+
+rule.selectors = ['em', 'strong'];
+decl.assign({ value: 'blue' }).cloneBefore({ value: 'green' });
+root.walkDecls(/color/, (node, index) => {
+  node.cloneAfter({ prop: 'opacity', value: String(index) });
+});
+root.each((child) => {
+  if (child instanceof Rule) child.append({ text: 'x' });
+});
+
+const cloned = root.clone();
+const json = cloned.toJSON();
+const hydrated: Root | Document | Node | Node[] = fromJSON(json);
+const container: Container = new Container({ type: 'custom', nodes: [] });
+const atRule: AtRule = new AtRule({ name: 'media', params: 'screen', nodes: [] });
+const document: Document = new Document({ nodes: [root.clone()] });
+
+void [nodes, hydrated, container, atRule, document, rule.toProxy(), decl.rangeBy({ word: 'blue' })];
