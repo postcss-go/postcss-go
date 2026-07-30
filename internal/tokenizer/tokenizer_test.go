@@ -199,6 +199,34 @@ func TestTokenizerIgnoreErrors(t *testing.T) {
 	}
 }
 
+// hasBadParenContent replaces the `.[\r\n"'(/\\]` regexp; keep the byte scan
+// pinned to that pattern's semantics, notably that `.` does not match `\n`.
+func TestHasBadParenContent(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{input: "", want: false},
+		{input: "(a)", want: false},
+		{input: "(", want: false},
+		{input: "((", want: true},
+		{input: "(a/b)", want: true},
+		{input: `(a"b)`, want: true},
+		{input: "(a'b)", want: true},
+		{input: `(a\b)`, want: true},
+		{input: "(a\rb)", want: true},
+		{input: "(a\nb)", want: true},
+		{input: "\n/", want: false},
+		{input: "\n\n", want: false},
+		{input: "中/", want: true},
+	}
+	for _, tt := range tests {
+		if got := hasBadParenContent(tt.input); got != tt.want {
+			t.Fatalf("hasBadParenContent(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestTokenizerErrorsUseUTF16Columns(t *testing.T) {
 	tok := New("中🔥\"", Options{})
 	if _, err := tok.Next(NextOptions{}); err != nil {
