@@ -49,6 +49,14 @@ Vendored stylesheets from common CSS sources (see `benchmark/fixtures/manifest.j
 | AnimateMin        | [animate.css](https://github.com/animate-css/animate.css) minified   | 72 KB  |
 | Bootstrap         | [Bootstrap 5](https://github.com/twbs/bootstrap) formatted           | 281 KB |
 | BootstrapMin      | Bootstrap 5 minified                                                 | 233 KB |
+| Bulma             | [Bulma](https://github.com/jgthms/bulma)                             | 746 KB |
+| Pure              | [Pure.css](https://github.com/pure-css/pure)                         | 26 KB  |
+| UIkit             | [UIkit](https://github.com/uikit/uikit)                              | 391 KB |
+| Materialize       | [Materialize](https://github.com/Dogfalo/materialize)                | 175 KB |
+
+Bulma / Pure / UIkit / Materialize are included in the local Go suite and the JS
+cross-engine table; their Go `Benchmark*Real_*` cases live in
+`extended_real_bench_test.go` and are compiled out of CodSpeed CI (see below).
 
 Refresh fixtures:
 
@@ -152,11 +160,15 @@ CodSpeed measures them with the
 [walltime instrument](https://codspeed.io/docs/instruments/walltime) — the only
 instrument supported for Go — and reports per-benchmark differences against the
 pull request base. CI builds with `-tags=codspeed`, which excludes
-`benchmark/small_bench_test.go` (`*_Small` / `*_small`). Those finish in tens of
-microseconds on shared runners and false-trip the default ~10% threshold with no
-Go engine change; the CodSpeed Go runner discovers `Benchmark*` from source, so
-a `-bench` regex alone is not enough to drop them. Local
-`go test -bench=. ./benchmark/` (no `codspeed` tag) still runs the full suite.
+`benchmark/small_bench_test.go` (`*_Small` / `*_small`) and
+`benchmark/extended_real_bench_test.go` (Bulma / Pure / UIkit / Materialize).
+Small cases finish in tens of microseconds and false-trip the default ~10%
+threshold with no Go engine change; the extended real-world set adds ~1.4 MB of
+CSS and interleaves with existing Bootstrap benches in one walltime process,
+which similarly false-trips baselines. The CodSpeed Go runner discovers
+`Benchmark*` from source, so a `-bench` regex alone is not enough to drop them.
+Local `go test -bench=. ./benchmark/` (no `codspeed` tag) still runs the full
+suite.
 Only the Go engine suite is tracked in CI. The cross-engine comparison table
 (`pnpm bench`) and the boundary suite stay local / opt-in.
 

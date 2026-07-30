@@ -1,7 +1,6 @@
 package tokenizer
 
 import (
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -32,10 +31,14 @@ func (token Token) Text(input string) string {
 }
 
 type Tokenizer struct {
-	input        string
-	back         []Token
-	pos          int
-	buffer       []Token
+	input string
+	back  []Token
+	pos   int
+	// lastWord keeps the most recent word token, the only entry the parenthesis
+	// lookbehind ever reads. Keeping a single token instead of a growing slice
+	// avoids reallocating one entry per word on large stylesheets.
+	lastWord     Token
+	hasLastWord  bool
 	lastBadParen int
 	ignore       bool
 	source       *sourcemap.Input
@@ -72,7 +75,7 @@ func (t *Tokenizer) Next(opts NextOptions) (Token, error) {
 		}
 		token = Token{Kind: "space", Start: start, End: end - 1}
 	case isControl(code):
-		token = Token{Kind: string(code), Start: start, End: start}
+		token = Token{Kind: controlKind(code), Start: start, End: start}
 	case code == '(':
 		var err error
 		token, err = t.parenthesis(start, opts.IgnoreUnclosed)
@@ -111,7 +114,8 @@ func (t *Tokenizer) Next(opts NextOptions) (Token, error) {
 		} else {
 			end := findWordEnd(t.input, start+runeSize(t.input, start))
 			token = Token{Kind: "word", Start: start, End: end - 1}
-			t.buffer = append(t.buffer, token)
+			t.lastWord = token
+			t.hasLastWord = true
 		}
 	}
 
@@ -127,8 +131,8 @@ func (t *Tokenizer) EOF() bool { return len(t.back) == 0 && t.pos >= len(t.input
 
 func (t *Tokenizer) parenthesis(start int, ignoreUnclosed bool) (Token, error) {
 	prev := ""
-	if len(t.buffer) > 0 {
-		prev = t.buffer[len(t.buffer)-1].Text(t.input)
+	if t.hasLastWord {
+		prev = t.lastWord.Text(t.input)
 	}
 	next := runeAt(t.input, start+1)
 	if prev == "url" && !isQuoteOrSpace(next) {
@@ -150,7 +154,7 @@ func (t *Tokenizer) parenthesis(start int, ignoreUnclosed bool) (Token, error) {
 		return Token{Kind: "(", Start: start, End: start}, nil
 	}
 	content := t.input[start : end+1]
-	if badParenContent.MatchString(content) {
+	if hasBadParenContent(content) {
 		t.lastBadParen = end
 		return Token{Kind: "(", Start: start, End: start}, nil
 	}
@@ -195,15 +199,52 @@ func (t *Tokenizer) unclosed(what string, offset int) error {
 	return t.source.ErrorAtOffset("Unclosed "+what, offset, "")
 }
 
-var badParenContent = regexp.MustCompile(`.[\r\n"'(/\\]`)
+// hasBadParenContent reports whether content contains one of `\r`, `\n`, `"`,
+// `'`, `(`, `/` or `\` preceded by any rune other than a newline. It replaces
+// the equivalent `.[\r\n"'(/\\]` regexp: every character of the class is ASCII,
+// so a byte scan is enough and skips regexp backtracking on every bracket.
+func hasBadParenContent(content string) bool {
+	for index := 1; index < len(content); index++ {
+		// `.` in the original pattern matches any rune except `\n`; the rune
+		// preceding an ASCII byte always ends on the previous byte.
+		if badParenBytes[content[index]] && content[index-1] != '\n' {
+			return true
+		}
+	}
+	return false
+}
+
+var badParenBytes = func() (table [256]bool) {
+	for _, c := range []byte{'\r', '\n', '"', '\'', '(', '/', '\\'} {
+		table[c] = true
+	}
+	return table
+}()
+
+var wordEndBytes = func() (table [256]bool) {
+	for _, c := range []byte{
+		'\t', '\n', '\f', '\r', ' ', '!', '"', '#', '\'',
+		'(', ')', ':', ';', '@', '[', '\\', ']', '{', '}',
+	} {
+		table[c] = true
+	}
+	return table
+}()
 
 func findWordEnd(css string, start int) int {
-	for index := start; index < len(css); {
-		r, size := utf8.DecodeRuneInString(css[index:])
-		if isWordEnd(r) || (r == '/' && runeAt(css, index+size) == '*') {
+	for index := start; index < len(css); index++ {
+		c := css[index]
+		// Every word terminator is ASCII, so bytes of multi-byte runes (and
+		// invalid bytes, decoded as utf8.RuneError) can be skipped directly.
+		if c >= utf8.RuneSelf {
+			continue
+		}
+		if wordEndBytes[c] {
 			return index
 		}
-		index += size
+		if c == '/' && index+1 < len(css) && css[index+1] == '*' {
+			return index
+		}
 	}
 	return len(css)
 }
@@ -253,6 +294,29 @@ func isControl(r rune) bool {
 	}
 }
 
+// controlKind returns the interned kind of a control token, avoiding the
+// allocation of string(rune) on every `{`, `}`, `:`, `;`, `[`, `]` and `)`.
+func controlKind(r rune) string {
+	switch r {
+	case '{':
+		return "{"
+	case '}':
+		return "}"
+	case ':':
+		return ":"
+	case ';':
+		return ";"
+	case '[':
+		return "["
+	case ']':
+		return "]"
+	case ')':
+		return ")"
+	default:
+		return string(r)
+	}
+}
+
 func isWordEnd(r rune) bool {
 	switch r {
 	case '\t', '\n', '\f', '\r', ' ', '!', '"', '#', '\'', '(', ')', ':', ';', '@', '[', '\\', ']', '{', '}':
@@ -274,12 +338,18 @@ func runeAt(s string, index int) rune {
 	if index < 0 || index >= len(s) {
 		return 0
 	}
+	if c := s[index]; c < utf8.RuneSelf {
+		return rune(c)
+	}
 	r, _ := utf8.DecodeRuneInString(s[index:])
 	return r
 }
 
 func runeSize(s string, index int) int {
 	if index < 0 || index >= len(s) {
+		return 1
+	}
+	if s[index] < utf8.RuneSelf {
 		return 1
 	}
 	_, size := utf8.DecodeRuneInString(s[index:])
