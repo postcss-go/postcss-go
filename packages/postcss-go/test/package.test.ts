@@ -189,10 +189,15 @@ test('Windows links the system libraries required by a Go c-archive', () => {
 
 test('companion-library packages keep their runtime library beside the addon', () => {
   const binding = readFileSync(resolve(packageRoot, 'native/binding.gyp'), 'utf8');
-  const windowsArmPackage = JSON.parse(
-    readFileSync(resolve(repoRoot, 'npm/postcss-go/win32-arm64-msvc/package.json'), 'utf8'),
-  ) as { files: string[] };
-  expect(windowsArmPackage.files).toEqual(['postcss-go.win32-arm64-msvc.node', 'libpostcssgo.dll']);
+  for (const arch of ['arm64', 'x64']) {
+    const windowsPackage = JSON.parse(
+      readFileSync(resolve(repoRoot, `npm/postcss-go/win32-${arch}-msvc/package.json`), 'utf8'),
+    ) as { files: string[] };
+    expect(windowsPackage.files).toEqual([
+      `postcss-go.win32-${arch}-msvc.node`,
+      'libpostcssgo.dll',
+    ]);
+  }
   expect(binding).toContain('POSTCSS_GO_DYNAMIC_LIBRARY=1');
 
   const workflow = readFileSync(resolve(repoRoot, '.github/workflows/native.yml'), 'utf8');
@@ -257,7 +262,7 @@ test('host platform package contains the native addon', () => {
 
   const packedFiles = npmPackFiles(platformPkgRoot);
   expect(packedFiles).toContain(addonName);
-  if (tuple === 'win32-arm64-msvc') expect(packedFiles).toContain('libpostcssgo.dll');
+  if (tuple.startsWith('win32-')) expect(packedFiles).toContain('libpostcssgo.dll');
 
   if (process.platform === 'darwin') {
     const symbols = execFileSync('nm', ['-gU', addonPath], { encoding: 'utf8' })

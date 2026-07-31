@@ -1,8 +1,9 @@
 /**
  * Builds the Go library and the Node-API addon, then places the host native
  * files into the matching `@postcss-go/native-<tuple>` package so the runtime
- * loader resolves the same path in development and production. Windows ARM64
- * uses c-shared because MSVC cannot consume Go's clang-produced GNU archive.
+ * loader resolves the same path in development and production. Windows uses
+ * c-shared because MSVC cannot consume Go's GNU archive and the shared Go
+ * runtime remains usable across multiple Node Worker environments.
  *
  *   node packages/postcss-go/native/build.mjs
  *
@@ -107,9 +108,9 @@ const tuple = hostTuple();
 mkdirSync(outDir, { recursive: true });
 writeCompileFlags();
 
-const windowsArm64 = process.platform === 'win32' && process.arch === 'arm64';
-const shared = windowsArm64;
-const goLibraryName = windowsArm64 ? 'libpostcssgo.dll' : 'libpostcssgo.a';
+const windowsDynamic = process.platform === 'win32';
+const shared = windowsDynamic;
+const goLibraryName = windowsDynamic ? 'libpostcssgo.dll' : 'libpostcssgo.a';
 const goLibrary = resolve(outDir, goLibraryName);
 
 const archive = run(
@@ -145,7 +146,7 @@ const addon = run(process.execPath, [nodeGyp, 'rebuild'], {
     ...process.env,
     ...deploymentEnv,
     GYP_DEFINES:
-      `${process.env.GYP_DEFINES ?? ''} postcss_go_dynamic=${windowsArm64 ? 1 : 0}`.trim(),
+      `${process.env.GYP_DEFINES ?? ''} postcss_go_dynamic=${windowsDynamic ? 1 : 0}`.trim(),
   },
 });
 if (addon.status !== 0) {
@@ -166,6 +167,6 @@ mkdirSync(platformPkgDir, { recursive: true });
 rmSync(placedAddon, { force: true });
 rmSync(placedDynamicLibrary, { force: true });
 copyFileSync(builtAddon, placedAddon);
-if (windowsArm64) copyFileSync(goLibrary, placedDynamicLibrary);
+if (windowsDynamic) copyFileSync(goLibrary, placedDynamicLibrary);
 console.log(`postcss-go: placed native addon at ${placedAddon}`);
-if (windowsArm64) console.log(`postcss-go: placed native companion at ${placedDynamicLibrary}`);
+if (windowsDynamic) console.log(`postcss-go: placed native companion at ${placedDynamicLibrary}`);

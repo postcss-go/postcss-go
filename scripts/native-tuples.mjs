@@ -9,6 +9,6 @@ export const NATIVE_TUPLES = Object.freeze([
 
 export function nativeArtifactNames(tuple) {
   const files = [`postcss-go.${tuple}.node`];
-  if (tuple === 'win32-arm64-msvc') files.push('libpostcssgo.dll');
+  if (tuple.startsWith('win32-')) files.push('libpostcssgo.dll');
   return files;
 }
