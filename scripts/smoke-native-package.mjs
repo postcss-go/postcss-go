@@ -7,14 +7,48 @@
  * local build directory.
  */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { Worker } from 'node:worker_threads';
 
 const packageName = process.argv[2] ?? '@postcss-go/core';
 const api = await import(packageName);
 
-assert.equal(api.isNativeBridgeAvailable(), true);
-assert.equal(api.getBackendCapabilities().synchronous?.backend, 'native');
-assert.equal(api.getBackendCapabilities().asynchronous?.backend, 'native');
+function nativeTuple() {
+  if (process.platform === 'linux') {
+    const report = process.report?.getReport();
+    const libc = report?.header?.glibcVersionRuntime ? 'gnu' : 'musl';
+    return `linux-${process.arch}-${libc}`;
+  }
+  if (process.platform === 'win32') return `win32-${process.arch}-msvc`;
+  return `${process.platform}-${process.arch}`;
+}
+
+const expectedNativePackage = `@postcss-go/native-${nativeTuple()}`;
+const installedRequire = createRequire(resolve(process.cwd(), 'package.json'));
+try {
+  installedRequire(expectedNativePackage);
+} catch (error) {
+  throw new Error(
+    `postcss-go: failed to load ${expectedNativePackage}: ${error instanceof Error ? error.stack : String(error)}`,
+  );
+}
+
+assert.equal(
+  api.isNativeBridgeAvailable(),
+  true,
+  'native bridge must load from the packed package',
+);
+assert.equal(
+  api.getBackendCapabilities().synchronous?.backend,
+  'native',
+  'packed sync backend must be native',
+);
+assert.equal(
+  api.getBackendCapabilities().asynchronous?.backend,
+  'native',
+  'packed async backend must be native',
+);
 
 const syncRoot = api.parseSync('a{color:red}', { from: 'sync.css' });
 assert.equal(syncRoot.type, 'root');
