@@ -4,6 +4,7 @@ import {
   createDefaultAsyncService,
   getDefaultAsyncBackendCapabilities,
   isNativeAsyncBridgeAvailable,
+  NativePostcssGoService,
 } from '../src/native.ts';
 import { AsyncBackendUnavailableError } from '../src/errors.ts';
 
@@ -33,4 +34,15 @@ test('missing async native reports the required backend as unavailable', () => {
 
   expect(() => createDefaultAsyncService()).toThrow(AsyncBackendUnavailableError);
   expect(getDefaultAsyncBackendCapabilities()).toBeNull();
+});
+
+test('non-syntax native failures do not trigger parser error reconstruction', () => {
+  const nativeError = new Error('source map could not be loaded');
+  const service = new NativePostcssGoService({
+    process() {
+      throw nativeError;
+    },
+  } as never);
+
+  expect(() => service.processSync('.invalid {')).toThrow(nativeError);
 });

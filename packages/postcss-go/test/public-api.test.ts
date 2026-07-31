@@ -279,6 +279,61 @@ test('async processing awaits map annotations while sync processing rejects then
   ).toThrow(AsyncPluginError);
 });
 
+test('no-plugin annotation mutates and receives the process result root', async () => {
+  let asyncRoot: Root | undefined;
+  const asyncResult = await postcss().process('.a{}', {
+    from: 'input.css',
+    to: 'output.css',
+    map: {
+      inline: false,
+      annotation(_file, root) {
+        asyncRoot = root as Root;
+        root.append({ prop: 'color', value: 'blue' });
+        return 'async.css.map';
+      },
+    },
+  });
+  expect(asyncResult.root).toBe(asyncRoot);
+  expect(asyncResult.css).toContain('color: blue');
+
+  let syncRoot: Root | undefined;
+  const syncResult = postcss().processSync('.b{}', {
+    from: 'input.css',
+    to: 'output.css',
+    map: {
+      inline: false,
+      annotation(_file, root) {
+        syncRoot = root as Root;
+        root.append({ prop: 'display', value: 'block' });
+        return 'sync.css.map';
+      },
+    },
+  });
+  expect(syncResult.root).toBe(syncRoot);
+  expect(syncResult.css).toContain('display: block');
+});
+
+test('no-work annotation does not force a temporary parse', async () => {
+  const roots: unknown[] = [];
+  const options = {
+    from: 'input.css',
+    to: 'output.css',
+    map: {
+      inline: false,
+      annotation(_file: string | undefined, root: unknown) {
+        roots.push(root);
+        return 'output.css.map';
+      },
+    },
+  };
+
+  expect(noWorkSync('.a{}', options).css).toContain('sourceMappingURL=output.css.map');
+  await expect(noWork('.b{}', options)).resolves.toMatchObject({
+    css: expect.stringContaining('sourceMappingURL=output.css.map'),
+  });
+  expect(roots).toEqual([undefined, undefined]);
+});
+
 test('plugin helpers expose both flattened API members and helpers.postcss', async () => {
   await postcss({
     postcssPlugin: 'helpers-contract',

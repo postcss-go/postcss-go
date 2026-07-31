@@ -40,13 +40,17 @@ type NativeAddon = {
   parseAsync(css: string, from?: string): Promise<Buffer>;
   stringify(ast: Buffer, optionsJson?: string): string;
   stringifyAsync(ast: Buffer, optionsJson?: string): Promise<string>;
-  process(css: string, optionsJson?: string): string;
-  processAsync(css: string, optionsJson?: string): Promise<string>;
+  process(css: string, optionsJson?: string): Buffer;
+  processAsync(css: string, optionsJson?: string): Promise<Buffer>;
   noWork(css: string, optionsJson?: string): string;
   noWorkAsync(css: string, optionsJson?: string): Promise<string>;
 };
 
 export type LiveParseResult = { root: Root };
+
+const PROCESS_FRAME_MAGIC = 'PCGP';
+const PROCESS_FRAME_HEADER_SIZE = 8;
+const CSS_SYNTAX_ERROR_PREFIX = 'postcss-go:css-syntax:';
 
 let cachedAddon: NativeAddon | null | undefined;
 
@@ -169,65 +173,47 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
     options = materializePreviousMap(options);
-    const effective = await this.resolveAnnotation(css, options);
+    if (hasAnnotationCallback(options)) {
+      const root = (await this.parseLive(css, { from: options.from })).root;
+      attachInputMetadata(root, css, options);
+      const effective = await this.resolveStringifyAnnotationLive(root, options);
+      const stringified = await this.stringifyResultLive(root, effective);
+      return { ...stringified, root, messages: [] };
+    }
     const normalized = normalizeProcessOptions(
-      effective as NormalizeProcessOptionsInput,
+      options as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    let payload: {
-      css: string;
-      map?: string;
-      mapFile?: string;
-      messages?: ResultMessage[];
-      rootBin: string;
-    };
     try {
-      payload = JSON.parse(
-        await this.addon.processAsync(css, JSON.stringify(normalized)),
-      ) as typeof payload;
+      return decodeProcessFrame(await this.addon.processAsync(css, JSON.stringify(normalized)));
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
-    return {
-      css: payload.css,
-      map: payload.map,
-      mapFile: payload.mapFile,
-      root: decodeAst(Buffer.from(payload.rootBin, 'base64')) as ProcessResult['root'],
-      messages: payload.messages ?? [],
-    };
   }
 
   processSync(css: string, options: ProcessOptions = {}): ProcessResult {
     options = materializePreviousMap(options);
-    const effective = this.resolveAnnotationSync(css, options);
+    if (hasAnnotationCallback(options)) {
+      const root = this.parseSync(css, { from: options.from }).root;
+      attachInputMetadata(root, css, options);
+      const effective = this.resolveStringifyAnnotationSync(root, options);
+      const stringified = this.stringifyResultSync(root, effective);
+      return { ...stringified, root, messages: [] };
+    }
     const normalized = normalizeProcessOptions(
-      effective as NormalizeProcessOptionsInput,
+      options as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    let payload: {
-      css: string;
-      map?: string;
-      mapFile?: string;
-      messages?: ResultMessage[];
-      rootBin: string;
-    };
     try {
-      payload = JSON.parse(this.addon.process(css, JSON.stringify(normalized))) as typeof payload;
+      return decodeProcessFrame(this.addon.process(css, JSON.stringify(normalized)));
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
-    return {
-      css: payload.css,
-      map: payload.map,
-      mapFile: payload.mapFile,
-      root: decodeAst(Buffer.from(payload.rootBin, 'base64')) as ProcessResult['root'],
-      messages: payload.messages ?? [],
-    };
   }
 
   async noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
     options = materializePreviousMap(options);
-    const effective = await this.resolveAnnotation(css, options);
+    const effective = await this.resolveNoWorkAnnotation(options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
@@ -239,7 +225,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   noWorkSync(css: string, options: ProcessOptions = {}): NoWorkResult {
     options = materializePreviousMap(options);
-    const effective = this.resolveAnnotationSync(css, options);
+    const effective = this.resolveNoWorkAnnotationSync(options);
     const normalized = normalizeProcessOptions(
       effective as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
@@ -319,25 +305,17 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     return this.stringifyResultSync(ast, options).css;
   }
 
-  private resolveAnnotationSync(css: string, options: ProcessOptions): ProcessOptions {
-    if (
-      !options.map ||
-      typeof options.map !== 'object' ||
-      typeof options.map.annotation !== 'function'
-    ) {
-      return options;
-    }
-    const root = this.parseSync(css, { from: options.from }).root;
-    attachInputMetadata(root, css, options);
-    const annotation = options.map.annotation(options.to, root as never);
+  private resolveNoWorkAnnotationSync(options: ProcessOptions): ProcessOptions {
+    const map = options.map;
+    if (!map || typeof map !== 'object' || typeof map.annotation !== 'function') return options;
+    const annotation = (
+      map.annotation as (file?: string, root?: unknown) => string | Promise<string>
+    )(options.to, undefined);
     if (isThenable(annotation)) {
       observeThenable(annotation);
       throw new AsyncPluginError('map.annotation');
     }
-    return {
-      ...options,
-      map: { ...options.map, annotation },
-    };
+    return { ...options, map: { ...map, annotation } };
   }
 
   private resolveStringifyAnnotationSync(
@@ -392,20 +370,49 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     return { ...options, map: { ...options.map, annotation } };
   }
 
-  private async resolveAnnotation(css: string, options: ProcessOptions): Promise<ProcessOptions> {
-    if (
-      !options.map ||
-      typeof options.map !== 'object' ||
-      typeof options.map.annotation !== 'function'
-    ) {
-      return options;
-    }
-    const parsed = await this.parse(css, { from: options.from });
-    const root = asProcessRoot(fromAst(parsed.root));
-    attachInputMetadata(root, css, options);
-    const annotation = await options.map.annotation(options.to, root as never);
-    return { ...options, map: { ...options.map, annotation } };
+  private async resolveNoWorkAnnotation(options: ProcessOptions): Promise<ProcessOptions> {
+    const map = options.map;
+    if (!map || typeof map !== 'object' || typeof map.annotation !== 'function') return options;
+    const annotation = await (
+      map.annotation as (file?: string, root?: unknown) => string | Promise<string>
+    )(options.to, undefined);
+    return { ...options, map: { ...map, annotation } };
   }
+}
+
+function hasAnnotationCallback(options: ProcessOptions): boolean {
+  return (
+    !!options.map && typeof options.map === 'object' && typeof options.map.annotation === 'function'
+  );
+}
+
+function decodeProcessFrame(frame: Buffer): ProcessResult {
+  if (
+    frame.length < PROCESS_FRAME_HEADER_SIZE ||
+    frame.subarray(0, 4).toString('ascii') !== PROCESS_FRAME_MAGIC
+  ) {
+    throw new Error('postcss-go native process response has an invalid frame');
+  }
+  const metadataLength = frame.readUInt32LE(4);
+  const rootOffset = PROCESS_FRAME_HEADER_SIZE + metadataLength;
+  if (rootOffset > frame.length) {
+    throw new Error('postcss-go native process response has invalid metadata length');
+  }
+  const metadata = JSON.parse(
+    frame.subarray(PROCESS_FRAME_HEADER_SIZE, rootOffset).toString('utf8'),
+  ) as {
+    css: string;
+    map?: string;
+    mapFile?: string;
+    messages?: ResultMessage[];
+  };
+  return {
+    css: metadata.css,
+    map: metadata.map,
+    mapFile: metadata.mapFile,
+    root: hydrateAst(frame.subarray(rootOffset)),
+    messages: metadata.messages ?? [],
+  };
 }
 
 function throwStructuredSyntaxError(
@@ -413,6 +420,9 @@ function throwStructuredSyntaxError(
   options: ProcessOptions,
   nativeError: unknown,
 ): never {
+  if (!(nativeError instanceof Error) || !nativeError.message.startsWith(CSS_SYNTAX_ERROR_PREFIX)) {
+    throw nativeError;
+  }
   // Re-run only the owned parser's error path to recover structured source
   // metadata that Node-API's string-only error slot cannot transport.
   const structuredError = captureParserError(css, options);

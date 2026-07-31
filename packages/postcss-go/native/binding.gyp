@@ -30,6 +30,12 @@
               "-Wl,--version-script=<(module_root_dir)/exports.elf"
             ]
           }
+        ],
+        [
+          "OS=='win'",
+          {
+            "libraries+": ["-lntdll", "-lws2_32", "-lwinmm"]
+          }
         ]
       ]
     }

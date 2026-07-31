@@ -147,7 +147,7 @@ export function dispatchStringifySync(
 ): string {
   options = prepareDispatchOptions(options);
   const effectiveOptions = prepareStringifyOptions(node, options);
-  return service.stringifySync(toAst(node), effectiveOptions);
+  return service.stringifySync(node, effectiveOptions);
 }
 
 export async function dispatchStringifyResult(

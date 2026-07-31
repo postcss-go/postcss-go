@@ -10,10 +10,15 @@ package main
 import "C"
 
 import (
+	"errors"
 	"fmt"
-	"postcss-go/internal/nativebridge"
 	"unsafe"
+
+	"postcss-go/internal/csserrors"
+	"postcss-go/internal/nativebridge"
 )
+
+const cssSyntaxErrorPrefix = "postcss-go:css-syntax:"
 
 func main() {}
 
@@ -40,13 +45,21 @@ func fitPayload(out []byte, payload []byte) int {
 }
 
 func writeError(buf *C.char, capacity C.int, err error) C.int {
-	message := err.Error()
+	message := nativeErrorMessage(err)
 	if capacity <= 0 || buf == nil {
 		return C.int(len(message))
 	}
 	out := unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(capacity))
 	n := copy(out, message)
 	return C.int(n)
+}
+
+func nativeErrorMessage(err error) string {
+	var syntaxError *csserrors.SyntaxError
+	if errors.As(err, &syntaxError) {
+		return cssSyntaxErrorPrefix + err.Error()
+	}
+	return err.Error()
 }
 
 //export pcgoCall

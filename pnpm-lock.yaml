@@ -130,9 +130,6 @@ importers:
 
   packages/postcss-go:
     dependencies:
-      '@postcss-go/shared':
-        specifier: workspace:*
-        version: link:../shared
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
@@ -183,6 +180,9 @@ importers:
         specifier: workspace:*
         version: link:../../npm/postcss-go/win32-x64-msvc
     devDependencies:
+      '@postcss-go/shared':
+        specifier: workspace:*
+        version: link:../shared
       node-api-headers:
         specifier: ^1.9.0
         version: 1.9.0

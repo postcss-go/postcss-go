@@ -1,0 +1,102 @@
+name: Native packages
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke (${{ matrix.tuple }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tuple: darwin-arm64
+            os: macos-15
+            musl: false
+          - tuple: darwin-x64
+            os: macos-15-intel
+            musl: false
+          - tuple: linux-arm64-gnu
+            os: ubuntu-24.04-arm
+            musl: false
+          - tuple: linux-arm64-musl
+            os: ubuntu-24.04-arm
+            musl: true
+          - tuple: linux-x64-gnu
+            os: ubuntu-24.04
+            musl: false
+          - tuple: linux-x64-musl
+            os: ubuntu-24.04
+            musl: true
+          - tuple: win32-arm64-msvc
+            os: windows-11-arm
+            musl: false
+          - tuple: win32-x64-msvc
+            os: windows-2025
+            musl: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        if: ${{ !matrix.musl }}
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        if: ${{ !matrix.musl }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        if: ${{ !matrix.musl }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        if: ${{ !matrix.musl }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native package
+        if: ${{ !matrix.musl }}
+        run: pnpm --filter @postcss-go/core build
+
+      - name: Pack, install, and smoke native package
+        if: ${{ !matrix.musl }}
+        run: node ./scripts/pack-smoke-native.mjs
+
+      - name: Build and smoke in musl
+        if: ${{ matrix.musl }}
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            golang:1.25-alpine \
+            sh -euxc '
+              apk add --no-cache nodejs npm python3 make g++ git
+              corepack enable
+              corepack prepare pnpm@9.12.3 --activate
+              pnpm install --frozen-lockfile
+              pnpm --filter @postcss-go/core build
+              node ./scripts/pack-smoke-native.mjs
+            '
+
+      - name: Upload validated addon
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.tuple }}
+          path: npm/postcss-go/${{ matrix.tuple }}/postcss-go.${{ matrix.tuple }}.node
+          if-no-files-found: error
+          retention-days: 7

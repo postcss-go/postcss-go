@@ -17,7 +17,7 @@
 #include <string.h>
 #include "go-out/libpostcssgo.h"
 #define ERROR_CAPACITY 4096
-#define INITIAL_OUTPUT_CAPACITY (1 << 20)
+#define MINIMUM_OUTPUT_CAPACITY (1 << 12)
 typedef enum { OP_PARSE, OP_STRINGIFY, OP_PROCESS, OP_NO_WORK } operation;
 typedef struct {
   const char* name;
@@ -49,8 +49,8 @@ static const binding bindings[] = {
     {"parseAsync", "parseAsync(css, from?)", "postcss-go:parse", OP_PARSE, false, false, true},
     {"stringify", "stringify(astBuffer, optionsJson?)", NULL, OP_STRINGIFY, true, true, false},
     {"stringifyAsync", "stringifyAsync(astBuffer, optionsJson?)", "postcss-go:stringify", OP_STRINGIFY, true, true, true},
-    {"process", "process(css, optionsJson?)", NULL, OP_PROCESS, false, true, false},
-    {"processAsync", "processAsync(css, optionsJson?)", "postcss-go:process", OP_PROCESS, false, true, true},
+    {"process", "process(css, optionsJson?)", NULL, OP_PROCESS, false, false, false},
+    {"processAsync", "processAsync(css, optionsJson?)", "postcss-go:process", OP_PROCESS, false, false, true},
     {"noWork", "noWork(css, optionsJson?)", NULL, OP_NO_WORK, false, true, false},
     {"noWorkAsync", "noWorkAsync(css, optionsJson?)", "postcss-go:noWork", OP_NO_WORK, false, true, true},
 };
@@ -124,7 +124,17 @@ static int read_optional(
 static int call_go(
     operation op, const input* first, const input* second,
     char** result, size_t* result_length, char* error) {
-  int capacity = INITIAL_OUTPUT_CAPACITY;
+  size_t input_length = first->length;
+  if (second->length > (size_t)INT_MAX - input_length) {
+    input_length = INT_MAX;
+  } else {
+    input_length += second->length;
+  }
+  size_t estimated = input_length > (size_t)INT_MAX / 2
+      ? (size_t)INT_MAX
+      : input_length * 2;
+  int capacity = (int)(estimated < MINIMUM_OUTPUT_CAPACITY
+      ? MINIMUM_OUTPUT_CAPACITY : estimated);
   char* buffer = NULL;
 
   for (;;) {
@@ -238,7 +248,7 @@ static napi_value dispatch(napi_env env, napi_callback_info info) {
     napi_value value = make_output(
         env, spec->output_is_string, result, result_length);
     free(result);
-    return value;
+    return value ? value : throw_error(env, "failed to create postcss-go native result");
   }
 
   async_task* task = (async_task*)calloc(1, sizeof(*task));

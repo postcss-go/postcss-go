@@ -79,7 +79,12 @@ pnpm changeset:version
 pnpm release
 ```
 
+`pnpm release` requires all eight validated native addons to be installed in
+their platform packages. It snapshots them before the JavaScript/WASM build
+and verifies that they are unchanged before publishing.
+
 Publishing requires the repository `NPM_TOKEN` secret. The compatibility
-harness package remains private and is not published.
+harness and shared helper packages remain private; the shared runtime and
+declarations are bundled into `@postcss-go/core`.
 
 GitHub Actions runs the same validation across Ubuntu, macOS, and Windows. A scheduled workflow keeps the vendored PostCSS tests in sync.

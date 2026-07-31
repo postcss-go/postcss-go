@@ -54,10 +54,14 @@ TypeScript service → Node-API addon → internal/nativeaddon → internal/nati
 ```
 
 Four core operations—`parse`, `process`, `noWork`, and `stringify`—share one
-private Go/C dispatcher. ASTs use the compact binary codec; result metadata uses
-small JSON payloads. Promise operations run as Node-API async work, while the
-explicit sync API calls the same Go operations on the Node thread. The old
-production stdio child-process backend is not shipped.
+private Go/C dispatcher. ASTs use the compact binary codec. Process responses
+use a length-prefixed frame containing small JSON metadata followed by the raw
+binary AST, avoiding base64 conversion. Promise operations run as Node-API
+async work, while the explicit sync API calls the same Go operations on the
+Node thread. The old production stdio child-process backend is not shipped.
+
+Worker ownership, async-work cleanup, shutdown, and error translation are
+specified in the [Node native lifecycle contract](native-lifecycle.md).
 
 ## Node.js integration
 
@@ -76,10 +80,10 @@ sequenceDiagram
 ```
 
 - **service** — shared async contract
-- **native** — addon loading, async-work and sync surfaces; map-option normalization via `@postcss-go/shared`
+- **native** — addon loading, async-work and sync surfaces; map-option normalization via the private shared helpers bundled into core
 - **browser** — Worker-backed service; `@postcss-go/wasm` ships the WASM assets
 - **cli** — config, JS plugins, message combining, writing Go-generated CSS and maps
-- **shared** — dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; used by core and vendored compat overrides
+- **shared** — private dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; bundled into core and used directly by vendored compat overrides
 
 JavaScript stays responsible for ecosystem-facing behavior and synchronous JavaScript plugin callbacks. Go handles parse, the canonical AST implementation, process, no-work map handling, and all pipeline/plugin-result stringify and source-map generation. The TypeScript AST stringifier is only the synchronous compatibility fallback required by `Node#toString()`.
 
@@ -89,7 +93,7 @@ Ownership is split so PostCSS-shaped options stay in JavaScript while map genera
 
 | Layer                   | Owns                                                                                                                                                                               |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@postcss-go/shared`    | Materialize JavaScript `map.prev` and `map.annotation` callbacks once, then normalize PostCSS-shaped options into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …) |
+| Private shared helpers  | Materialize JavaScript `map.prev` and `map.annotation` callbacks once, then normalize PostCSS-shaped options into flat bridge flags (`mapInline`, `mapAuto`, `previousMapPath`, …) |
 | Node / browser / compat | Supply live PostCSS roots to callbacks, expose `PreviousMap` / `ResultMap` facades, surface Go's resolved `mapFile` on results, and write the final files reported by Go           |
 | Go `processor`          | Load previous maps, compose or build maps, select inline/external output, emit `sourceMappingURL`, and report the resolved external `mapFile` for process, no-work, and stringify  |
 | Go `stringifier`        | AST stringify with optional source-map annotation stripping; raw-CSS `ClearSourceMapAnnotations` for the no-work path                                                              |

@@ -15,6 +15,10 @@ permissions:
   contents: read
 
 jobs:
+  native-packages:
+    name: Native package matrix
+    uses: ./.github/workflows/native.yml
+
   upstream-sync:
     name: Upstream PostCSS Test Snapshot
     runs-on: ubuntu-latest
