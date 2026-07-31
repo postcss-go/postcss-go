@@ -1,12 +1,23 @@
 {
+  "variables": {
+    "postcss_go_shared%": 0
+  },
   "targets": [
     {
       "target_name": "postcss_go",
       "sources": ["addon.c"],
       "include_dirs": ["."],
-      "libraries": ["<(module_root_dir)/go-out/libpostcssgo.a"],
       "cflags": ["-O2", "-fvisibility=hidden"],
       "conditions": [
+        [
+          "postcss_go_shared==1",
+          {
+            "libraries": ["<(module_root_dir)/go-out/libpostcssgo.so"]
+          },
+          {
+            "libraries": ["<(module_root_dir)/go-out/libpostcssgo.a"]
+          }
+        ],
         [
           "OS=='mac'",
           {
@@ -29,6 +40,12 @@
             "ldflags": [
               "-Wl,--version-script=<(module_root_dir)/exports.elf"
             ]
+          }
+        ],
+        [
+          "OS=='linux' and postcss_go_shared==1",
+          {
+            "ldflags+": ["-Wl,-rpath,'$$ORIGIN'"]
           }
         ],
         [

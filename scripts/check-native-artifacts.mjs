@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { NATIVE_TUPLES } from './native-tuples.mjs';
+import { NATIVE_TUPLES, nativeArtifactNames } from './native-tuples.mjs';
 
 const mode = process.argv[2];
 const manifestPath = resolve(process.argv[3] ?? 'native-artifacts.json');
@@ -12,16 +12,21 @@ const packageRoot = resolve(process.argv[4] ?? 'npm/postcss-go');
 function collect() {
   return Object.fromEntries(
     NATIVE_TUPLES.map((tuple) => {
-      const addonPath = resolve(packageRoot, tuple, `postcss-go.${tuple}.node`);
-      if (!existsSync(addonPath)) {
-        throw new Error(`native artifact is missing: ${addonPath}`);
-      }
-      const stat = statSync(addonPath);
-      if (!stat.isFile() || stat.size === 0) {
-        throw new Error(`native artifact is missing or empty: ${addonPath}`);
-      }
-      const digest = createHash('sha256').update(readFileSync(addonPath)).digest('hex');
-      return [tuple, { bytes: stat.size, sha256: digest }];
+      const files = Object.fromEntries(
+        nativeArtifactNames(tuple).map((name) => {
+          const artifactPath = resolve(packageRoot, tuple, name);
+          if (!existsSync(artifactPath)) {
+            throw new Error(`native artifact is missing: ${artifactPath}`);
+          }
+          const stat = statSync(artifactPath);
+          if (!stat.isFile() || stat.size === 0) {
+            throw new Error(`native artifact is missing or empty: ${artifactPath}`);
+          }
+          const digest = createHash('sha256').update(readFileSync(artifactPath)).digest('hex');
+          return [name, { bytes: stat.size, sha256: digest }];
+        }),
+      );
+      return [tuple, files];
     }),
   );
 }

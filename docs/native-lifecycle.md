@@ -52,4 +52,6 @@ macOS arm64/x64, Linux glibc arm64/x64, Linux musl arm64/x64, and Windows MSVC
 arm64/x64. On every runner it packs the platform package and
 `@postcss-go/core`, installs both tarballs into a clean project, exercises all
 four synchronous and asynchronous operations, and repeats native work inside a
-Worker Thread. Publication consumes only those validated artifacts.
+Worker Thread. Linux musl packages include the validated Go shared-library
+companion required by musl's dynamic loader. Publication consumes only those
+validated artifact sets.

@@ -31,6 +31,7 @@ try {
 } catch (error) {
   throw new Error(
     `postcss-go: failed to load ${expectedNativePackage}: ${error instanceof Error ? error.stack : String(error)}`,
+    { cause: error },
   );
 }
 

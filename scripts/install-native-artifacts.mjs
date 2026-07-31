@@ -4,15 +4,15 @@
  * Places native addons downloaded from the build matrix into their platform
  * package directories before Changesets packs and publishes the workspace.
  */
-import { copyFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
-import { NATIVE_TUPLES } from './native-tuples.mjs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
+import { NATIVE_TUPLES, nativeArtifactNames } from './native-tuples.mjs';
 
 const source = resolve(process.argv[2] ?? 'native-artifacts');
 const destination = resolve(process.argv[3] ?? 'npm/postcss-go');
 const pattern = /^postcss-go\.(.+)\.node$/;
 const expectedTuples = new Set(NATIVE_TUPLES);
-const installedTuples = new Set();
+const addonDirectories = new Map();
 
 function visit(directory) {
   for (const entry of readdirSync(directory)) {
@@ -27,19 +27,28 @@ function visit(directory) {
     if (!expectedTuples.has(tuple)) {
       throw new Error(`unexpected native artifact tuple ${tuple}: ${path}`);
     }
-    if (installedTuples.has(tuple)) {
+    if (addonDirectories.has(tuple)) {
       throw new Error(`duplicate native artifact tuple ${tuple}: ${path}`);
     }
-    const packageDirectory = resolve(destination, tuple);
-    mkdirSync(packageDirectory, { recursive: true });
-    copyFileSync(path, resolve(packageDirectory, basename(path)));
-    installedTuples.add(tuple);
+    addonDirectories.set(tuple, dirname(path));
   }
 }
 
 visit(source);
-const missing = [...expectedTuples].filter((tuple) => !installedTuples.has(tuple));
+const missing = [...expectedTuples].filter((tuple) => !addonDirectories.has(tuple));
 if (missing.length > 0) {
   throw new Error(`missing native artifact tuples from ${source}: ${missing.join(', ')}`);
 }
-console.log(`postcss-go: installed ${installedTuples.size} native artifacts`);
+for (const [tuple, artifactDirectory] of addonDirectories) {
+  const packageDirectory = resolve(destination, tuple);
+  mkdirSync(packageDirectory, { recursive: true });
+  for (const name of nativeArtifactNames(tuple)) {
+    const artifactPath = resolve(artifactDirectory, name);
+    const stat = existsSync(artifactPath) ? statSync(artifactPath) : undefined;
+    if (!stat?.isFile() || stat.size === 0) {
+      throw new Error(`native artifact is missing: ${artifactPath}`);
+    }
+    copyFileSync(artifactPath, resolve(packageDirectory, name));
+  }
+}
+console.log(`postcss-go: installed ${addonDirectories.size} native artifact sets`);

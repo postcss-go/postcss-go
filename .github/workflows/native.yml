@@ -86,11 +86,17 @@ jobs:
           pnpm --filter @postcss-go/core build 2>&1 | Tee-Object -FilePath native-build.log
           if ($LASTEXITCODE -ne 0) {
             $lines = @(
-              Select-String native-build.log -Pattern 'error|err!|fatal|LNK|undefined|cannot|failed' |
-                Select-Object -Last 30 |
+              Select-String native-build.log -Pattern ': error |fatal error|LNK[0-9]{4}|unresolved external|undefined reference|cannot open|cannot find|no such file|not recognized' |
+                Select-Object -First 20 |
                 ForEach-Object { $_.Line }
             )
-            [array]::Reverse($lines)
+            if ($lines.Count -eq 0) {
+              $lines = @(
+                Select-String native-build.log -Pattern 'error|err!|fatal|LNK|undefined|cannot|failed' |
+                  Select-Object -First 20 |
+                  ForEach-Object { $_.Line }
+              )
+            }
             $lines | ForEach-Object {
               Write-Output "::error title=Native build log::$_"
             }
@@ -130,6 +136,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.tuple }}
-          path: npm/postcss-go/${{ matrix.tuple }}/postcss-go.${{ matrix.tuple }}.node
+          path: |
+            npm/postcss-go/${{ matrix.tuple }}/postcss-go.${{ matrix.tuple }}.node
+            npm/postcss-go/${{ matrix.tuple }}/libpostcssgo.so
           if-no-files-found: error
           retention-days: 7

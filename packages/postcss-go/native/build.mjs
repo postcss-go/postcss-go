@@ -1,7 +1,9 @@
 /**
- * Builds the Go c-archive and the Node-API addon, then places the host
- * `.node` into the matching `@postcss-go/native-<tuple>` package so the
- * runtime loader resolves the same path in development and production.
+ * Builds the Go library and the Node-API addon, then places the host native
+ * files into the matching `@postcss-go/native-<tuple>` package so the runtime
+ * loader resolves the same path in development and production. musl uses a
+ * Go c-shared companion because its loader rejects Go c-archives embedded in
+ * a dlopen'ed `.node` due to initial-exec TLS relocations.
  *
  *   node packages/postcss-go/native/build.mjs
  *
@@ -99,14 +101,18 @@ function writeCompileFlags() {
 
 writeCompileFlags();
 
+const musl = isMusl();
+const goLibraryName = musl ? 'libpostcssgo.so' : 'libpostcssgo.a';
+const goLibrary = resolve(outDir, goLibraryName);
+
 const archive = run(
   'go',
   [
     'build',
     '-buildvcs=false',
-    '-buildmode=c-archive',
+    `-buildmode=${musl ? 'c-shared' : 'c-archive'}`,
     '-o',
-    resolve(outDir, 'libpostcssgo.a'),
+    goLibrary,
     './internal/nativeaddon',
   ],
   {
@@ -121,14 +127,18 @@ const archive = run(
 );
 
 if (archive.status !== 0) {
-  console.error('postcss-go: native c-archive build failed');
+  console.error(`postcss-go: native ${musl ? 'c-shared' : 'c-archive'} build failed`);
   process.exit(archive.status ?? 1);
 }
 
 const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js');
 const addon = run(process.execPath, [nodeGyp, 'rebuild'], {
   cwd: here,
-  env: { ...process.env, ...deploymentEnv },
+  env: {
+    ...process.env,
+    ...deploymentEnv,
+    GYP_DEFINES: `${process.env.GYP_DEFINES ?? ''} postcss_go_shared=${musl ? 1 : 0}`.trim(),
+  },
 });
 if (addon.status !== 0) {
   console.error('postcss-go: native addon build failed');
@@ -144,7 +154,11 @@ if (!existsSync(builtAddon)) {
 const tuple = hostTuple();
 const platformPkgDir = resolve(repoRoot, 'npm/postcss-go', tuple);
 const placedAddon = resolve(platformPkgDir, `postcss-go.${tuple}.node`);
+const placedSharedLibrary = resolve(platformPkgDir, 'libpostcssgo.so');
 mkdirSync(platformPkgDir, { recursive: true });
 rmSync(placedAddon, { force: true });
+rmSync(placedSharedLibrary, { force: true });
 copyFileSync(builtAddon, placedAddon);
+if (musl) copyFileSync(goLibrary, placedSharedLibrary);
 console.log(`postcss-go: placed native addon at ${placedAddon}`);
+if (musl) console.log(`postcss-go: placed native companion at ${placedSharedLibrary}`);

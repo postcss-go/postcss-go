@@ -187,6 +187,23 @@ test('Windows links the system libraries required by a Go c-archive', () => {
   expect(binding).not.toMatch(/"-l(?:ntdll|ws2_32|winmm)"/);
 });
 
+test('musl packages load Go through a colocated shared-library companion', () => {
+  const binding = readFileSync(resolve(packageRoot, 'native/binding.gyp'), 'utf8');
+  expect(binding).toContain('postcss_go_shared==1');
+  expect(binding).toContain('go-out/libpostcssgo.so');
+  expect(binding).toContain("-Wl,-rpath,'$$ORIGIN'");
+
+  for (const tuple of ['linux-arm64-musl', 'linux-x64-musl']) {
+    const pkg = JSON.parse(
+      readFileSync(resolve(repoRoot, 'npm/postcss-go', tuple, 'package.json'), 'utf8'),
+    ) as { files: string[] };
+    expect(pkg.files).toEqual([`postcss-go.${tuple}.node`, 'libpostcssgo.so']);
+  }
+
+  const workflow = readFileSync(resolve(repoRoot, '.github/workflows/native.yml'), 'utf8');
+  expect(workflow).toContain('npm/postcss-go/${{ matrix.tuple }}/libpostcssgo.so');
+});
+
 test('@postcss-go/core has no production PostCSS dependency', () => {
   const pkg = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
     dependencies?: Record<string, string>;
@@ -243,7 +260,9 @@ test('host platform package contains the native addon', () => {
     expect.fail(`native addon missing at ${addonPath}; expected on ${tuple}`);
   }
 
-  expect(npmPackFiles(platformPkgRoot)).toContain(addonName);
+  const packedFiles = npmPackFiles(platformPkgRoot);
+  expect(packedFiles).toContain(addonName);
+  if (tuple.endsWith('-musl')) expect(packedFiles).toContain('libpostcssgo.so');
 
   if (process.platform === 'darwin') {
     const symbols = execFileSync('nm', ['-gU', addonPath], { encoding: 'utf8' })

@@ -13,7 +13,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "postcss-go.linux-x64-musl.node"
+    "postcss-go.linux-x64-musl.node",
+    "libpostcssgo.so"
   ],
   "publishConfig": {
     "access": "public"
