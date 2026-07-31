@@ -34,7 +34,14 @@
         [
           "OS=='win'",
           {
-            "libraries+": ["-lntdll", "-lws2_32", "-lwinmm"]
+            "libraries+": [
+              "ntdll.lib",
+              "ws2_32.lib",
+              "winmm.lib",
+              "userenv.lib",
+              "bcrypt.lib",
+              "advapi32.lib"
+            ]
           }
         ]
       ]

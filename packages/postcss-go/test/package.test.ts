@@ -140,21 +140,14 @@ test('@postcss-go/shared stays private and is bundled into core', () => {
   expect(sharedPackage.name).toBe('@postcss-go/shared');
   expect(sharedPackage.private).toBe(true);
 
-  const corePackage = JSON.parse(
-    readFileSync(resolve(packageRoot, 'package.json'), 'utf8'),
-  ) as {
+  const corePackage = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
     scripts?: Record<string, string>;
   };
   expect(corePackage.dependencies).not.toHaveProperty('@postcss-go/shared');
-  expect(corePackage.devDependencies).toHaveProperty(
-    '@postcss-go/shared',
-    'workspace:*',
-  );
-  expect(corePackage.scripts?.['build:js']).toContain(
-    'pnpm --filter @postcss-go/shared build',
-  );
+  expect(corePackage.devDependencies).toHaveProperty('@postcss-go/shared', 'workspace:*');
+  expect(corePackage.scripts?.['build:js']).toContain('pnpm --filter @postcss-go/shared build');
 
   const changesets = JSON.parse(
     readFileSync(resolve(repoRoot, '.changeset/config.json'), 'utf8'),
@@ -181,9 +174,17 @@ test('@postcss-go/shared stays private and is bundled into core', () => {
 test('Windows links the system libraries required by a Go c-archive', () => {
   const binding = readFileSync(resolve(packageRoot, 'native/binding.gyp'), 'utf8');
   expect(binding).toContain(`"OS=='win'"`);
-  expect(binding).toContain('"-lntdll"');
-  expect(binding).toContain('"-lws2_32"');
-  expect(binding).toContain('"-lwinmm"');
+  for (const library of [
+    'ntdll.lib',
+    'ws2_32.lib',
+    'winmm.lib',
+    'userenv.lib',
+    'bcrypt.lib',
+    'advapi32.lib',
+  ]) {
+    expect(binding).toContain(`"${library}"`);
+  }
+  expect(binding).not.toMatch(/"-l(?:ntdll|ws2_32|winmm)"/);
 });
 
 test('@postcss-go/core has no production PostCSS dependency', () => {
@@ -261,9 +262,7 @@ test('host platform package contains the native addon', () => {
   }
 });
 
-test(
-  'clean packed installation has no PostCSS packages in the dependency tree',
-  () => {
+test('clean packed installation has no PostCSS packages in the dependency tree', () => {
   expect(existsSync(resolve(sharedRoot, 'dist/index.js'))).toBe(true);
   expect(existsSync(resolve(packageRoot, 'dist/index.js'))).toBe(true);
 
@@ -352,6 +351,4 @@ test(
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
-},
-  60_000,
-);
+}, 60_000);

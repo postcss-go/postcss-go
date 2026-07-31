@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and smoke (${{ matrix.tuple }})
+    name: ci-${{ matrix.tuple }}-build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -86,8 +86,7 @@ jobs:
             golang:1.25-alpine \
             sh -euxc '
               apk add --no-cache nodejs npm python3 make g++ git
-              corepack enable
-              corepack prepare pnpm@9.12.3 --activate
+              npm install --global pnpm@9.12.3
               pnpm install --frozen-lockfile
               pnpm --filter @postcss-go/core build
               node ./scripts/pack-smoke-native.mjs

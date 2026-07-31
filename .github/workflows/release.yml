@@ -16,7 +16,6 @@ permissions:
 
 jobs:
   native-packages:
-    name: Build native package matrix
     uses: ./.github/workflows/native.yml
 
   release:

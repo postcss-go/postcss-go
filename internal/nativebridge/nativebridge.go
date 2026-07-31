@@ -109,15 +109,14 @@ func process(css string, optionsJSON []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := json.Marshal(processResult{
+	// processResult contains only JSON-safe scalar values and warning slices,
+	// so marshaling cannot fail for this closed metadata shape.
+	metadata, _ := json.Marshal(processResult{
 		CSS:      processed.CSS,
 		Map:      processed.Map,
 		MapFile:  processed.MapFile,
 		Messages: warnings(processed.Messages),
 	})
-	if err != nil {
-		return nil, err
-	}
 	return encodeProcessFrame(metadata, encoded), nil
 }
 

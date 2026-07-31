@@ -16,7 +16,6 @@ permissions:
 
 jobs:
   native-packages:
-    name: Native package matrix
     uses: ./.github/workflows/native.yml
 
   upstream-sync:

@@ -46,3 +46,19 @@ test('non-syntax native failures do not trigger parser error reconstruction', ()
 
   expect(() => service.processSync('.invalid {')).toThrow(nativeError);
 });
+
+test.each([
+  ['missing process frame header', Buffer.from('invalid')],
+  [
+    'metadata length beyond process frame',
+    Buffer.from([0x50, 0x43, 0x47, 0x50, 0xff, 0xff, 0xff, 0x7f]),
+  ],
+])('rejects %s', (_name, frame) => {
+  const service = new NativePostcssGoService({
+    process() {
+      return frame;
+    },
+  } as never);
+
+  expect(() => service.processSync('.a{}')).toThrow(/native process response/);
+});
