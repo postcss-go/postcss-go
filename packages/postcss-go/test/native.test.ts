@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import {
   createDefaultAsyncService,
@@ -34,6 +34,25 @@ test('missing async native reports the required backend as unavailable', () => {
 
   expect(() => createDefaultAsyncService()).toThrow(AsyncBackendUnavailableError);
   expect(getDefaultAsyncBackendCapabilities()).toBeNull();
+});
+
+test('musl does not probe glibc or local native addons', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  if (!platform) throw new Error('process.platform descriptor is unavailable');
+
+  const getReport = vi.spyOn(process.report, 'getReport').mockReturnValue({ header: {} } as never);
+  Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
+
+  try {
+    vi.resetModules();
+    const native = await import('../src/native.ts');
+
+    expect(native.isNativeAsyncBridgeAvailable()).toBe(false);
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+    getReport.mockRestore();
+    vi.resetModules();
+  }
 });
 
 test('non-syntax native failures do not trigger parser error reconstruction', () => {

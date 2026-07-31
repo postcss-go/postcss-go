@@ -48,3 +48,12 @@ func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
 		t.Fatalf("plain error was changed: %q", message)
 	}
 }
+
+func TestWriteErrorReportsRequiredCapacity(t *testing.T) {
+	err := errors.New("source map could not be loaded")
+	want := len(err.Error())
+
+	if got := int(writeError(nil, 0, err)); got != want {
+		t.Fatalf("want required capacity %d, got %d", want, got)
+	}
+}
