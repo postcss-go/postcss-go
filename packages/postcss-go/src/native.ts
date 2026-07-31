@@ -57,7 +57,12 @@ let cachedAddon: NativeAddon | null | undefined;
 /** Platform package tuples to try, matching `@postcss-go/native-<tuple>`. */
 function hostTuples(): string[] {
   const { platform, arch } = process;
-  if (platform === 'linux') return [`linux-${arch}-gnu`, `linux-${arch}-musl`];
+  if (platform === 'linux') {
+    const report = process.report?.getReport() as
+      | { header?: { glibcVersionRuntime?: string } }
+      | undefined;
+    return report?.header?.glibcVersionRuntime ? [`linux-${arch}-gnu`] : [];
+  }
   if (platform === 'win32') return [`win32-${arch}-msvc`];
   return [`${platform}-${arch}`];
 }
@@ -71,13 +76,21 @@ function loadAddon(): NativeAddon | null {
 
     // Prefer the published / workspace platform package (same path in
     // development after `native/build.mjs` and in production after install).
-    for (const tuple of hostTuples()) {
+    const tuples = hostTuples();
+    for (const tuple of tuples) {
       try {
         cachedAddon = require(`@postcss-go/native-${tuple}`) as NativeAddon;
         return cachedAddon;
       } catch {
         // try next tuple or local fallback
       }
+    }
+
+    // Stock Go cannot put its initial-exec TLS runtime in a dlopen'ed musl
+    // addon (golang/go#54805), so do not probe a glibc or local binary there.
+    if (process.platform === 'linux' && tuples.length === 0) {
+      cachedAddon = null;
+      return null;
     }
 
     // Local node-gyp output before the place step finishes.

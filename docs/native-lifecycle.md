@@ -48,10 +48,16 @@ source location and input metadata.
 ## Release validation
 
 The native build workflow produces one package for each declared tuple:
-macOS arm64/x64, Linux glibc arm64/x64, Linux musl arm64/x64, and Windows MSVC
-arm64/x64. On every runner it packs the platform package and
+macOS arm64/x64, Linux glibc arm64/x64, and Windows MSVC arm64/x64. On every
+runner it packs the platform package and
 `@postcss-go/core`, installs both tarballs into a clean project, exercises all
 four synchronous and asynchronous operations, and repeats native work inside a
-Worker Thread. Linux musl packages include the validated Go shared-library
-companion required by musl's dynamic loader. Publication consumes only those
-validated artifact sets.
+Worker Thread. Platforms that cannot link the Go archive directly include a
+validated shared-library companion beside the addon. Publication consumes only
+those validated artifact sets.
+
+Linux musl is not declared as a native target. Stock Go currently emits an
+initial-exec TLS runtime for c-archive and c-shared builds, which musl cannot
+load through Node's `dlopen` path. The upstream blocker is
+`golang/go#54805`; the loader reports the backend as unavailable instead of
+publishing packages that cannot load.

@@ -13,11 +13,97 @@
 #endif
 #include <limits.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
+#if defined(POSTCSS_GO_DYNAMIC_LIBRARY)
+#  include <windows.h>
+#endif
 #include "go-out/libpostcssgo.h"
 #define ERROR_CAPACITY 4096
 #define MINIMUM_OUTPUT_CAPACITY (1 << 12)
+
+#if defined(POSTCSS_GO_DYNAMIC_LIBRARY)
+typedef int (*pcgo_call_function)(
+    unsigned char, char*, int, char*, int, char*, int, char*, int);
+static INIT_ONCE go_bridge_once = INIT_ONCE_STATIC_INIT;
+static HMODULE go_bridge_library = NULL;
+static pcgo_call_function go_bridge_call = NULL;
+static char go_bridge_error[ERROR_CAPACITY] = {0};
+extern IMAGE_DOS_HEADER __ImageBase;
+
+static BOOL CALLBACK load_go_bridge(
+    PINIT_ONCE once, PVOID parameter, PVOID* context) {
+  (void)once;
+  (void)parameter;
+  (void)context;
+  wchar_t module_path[32768];
+  DWORD length = GetModuleFileNameW(
+      (HMODULE)&__ImageBase, module_path,
+      (DWORD)(sizeof(module_path) / sizeof(module_path[0])));
+  wchar_t* separator = length ? wcsrchr(module_path, L'\\') : NULL;
+  const wchar_t companion[] = L"libpostcssgo.dll";
+  size_t remaining = separator
+      ? (sizeof(module_path) / sizeof(module_path[0])) -
+          (size_t)(separator + 1 - module_path)
+      : 0;
+  if (!separator || length == 0 || length >= sizeof(module_path) / sizeof(module_path[0]) ||
+      wcslen(companion) + 1 > remaining) {
+    strcpy(go_bridge_error, "failed to resolve postcss-go native companion path");
+    return TRUE;
+  }
+  wcscpy_s(separator + 1, remaining, companion);
+
+  go_bridge_library = LoadLibraryW(module_path);
+  if (!go_bridge_library) {
+    snprintf(go_bridge_error, sizeof(go_bridge_error),
+        "failed to load postcss-go native companion (Windows error %lu)",
+        (unsigned long)GetLastError());
+    return TRUE;
+  }
+  go_bridge_call = (pcgo_call_function)GetProcAddress(go_bridge_library, "pcgoCall");
+  if (!go_bridge_call) {
+    snprintf(go_bridge_error, sizeof(go_bridge_error),
+        "postcss-go native companion is missing pcgoCall (Windows error %lu)",
+        (unsigned long)GetLastError());
+  }
+  return TRUE;
+}
+
+static int initialize_go_bridge(char* error) {
+  if (!InitOnceExecuteOnce(&go_bridge_once, load_go_bridge, NULL, NULL) ||
+      !go_bridge_call) {
+    strncpy(error, go_bridge_error[0] ? go_bridge_error :
+        "failed to initialize postcss-go native companion", ERROR_CAPACITY - 1);
+    error[ERROR_CAPACITY - 1] = '\0';
+    return -1;
+  }
+  return 0;
+}
+
+static int call_go_bridge(
+    unsigned char operation, char* first, int first_len,
+    char* second, int second_len, char* output, int output_capacity,
+    char* error, int error_capacity) {
+  return go_bridge_call(operation, first, first_len, second, second_len,
+      output, output_capacity, error, error_capacity);
+}
+#else
+static int initialize_go_bridge(char* error) {
+  (void)error;
+  return 0;
+}
+
+static int call_go_bridge(
+    unsigned char operation, char* first, int first_len,
+    char* second, int second_len, char* output, int output_capacity,
+    char* error, int error_capacity) {
+  return pcgoCall(operation, first, first_len, second, second_len,
+      output, output_capacity, error, error_capacity);
+}
+#endif
+
 typedef enum { OP_PARSE, OP_STRINGIFY, OP_PROCESS, OP_NO_WORK } operation;
 typedef struct {
   const char* name;
@@ -146,7 +232,7 @@ static int call_go(
     }
     buffer = next;
     error[0] = '\0';
-    int written = pcgoCall(
+    int written = call_go_bridge(
         (unsigned char)op,
         first->data, (int)first->length,
         second->data, (int)second->length,
@@ -285,6 +371,10 @@ static napi_value dispatch(napi_env env, napi_callback_info info) {
 }
 
 NAPI_MODULE_INIT() {
+  char bridge_error[ERROR_CAPACITY] = {0};
+  if (initialize_go_bridge(bridge_error) != 0) {
+    return throw_error(env, bridge_error);
+  }
   for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); i++) {
     napi_value fn;
     if (napi_create_function(

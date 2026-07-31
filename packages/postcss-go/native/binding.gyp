@@ -1,6 +1,6 @@
 {
   "variables": {
-    "postcss_go_shared%": 0
+    "postcss_go_dynamic%": 0
   },
   "targets": [
     {
@@ -10,12 +10,15 @@
       "cflags": ["-O2", "-fvisibility=hidden"],
       "conditions": [
         [
-          "postcss_go_shared==1",
-          {
-            "libraries": ["<(module_root_dir)/go-out/libpostcssgo.so"]
-          },
+          "postcss_go_dynamic==0",
           {
             "libraries": ["<(module_root_dir)/go-out/libpostcssgo.a"]
+          }
+        ],
+        [
+          "postcss_go_dynamic==1",
+          {
+            "defines": ["POSTCSS_GO_DYNAMIC_LIBRARY=1"]
           }
         ],
         [
@@ -40,12 +43,6 @@
             "ldflags": [
               "-Wl,--version-script=<(module_root_dir)/exports.elf"
             ]
-          }
-        ],
-        [
-          "OS=='linux' and postcss_go_shared==1",
-          {
-            "ldflags+": ["-Wl,-rpath,'$$ORIGIN'"]
           }
         ],
         [

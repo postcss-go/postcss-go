@@ -1,9 +1,8 @@
 /**
  * Builds the Go library and the Node-API addon, then places the host native
  * files into the matching `@postcss-go/native-<tuple>` package so the runtime
- * loader resolves the same path in development and production. musl uses a
- * Go c-shared companion because its loader rejects Go c-archives embedded in
- * a dlopen'ed `.node` due to initial-exec TLS relocations.
+ * loader resolves the same path in development and production. Windows ARM64
+ * uses c-shared because MSVC cannot consume Go's clang-produced GNU archive.
  *
  *   node packages/postcss-go/native/build.mjs
  *
@@ -32,8 +31,6 @@ const deploymentEnv =
       }
     : {};
 
-mkdirSync(outDir, { recursive: true });
-
 function run(command, args, options = {}) {
   return spawnSync(command, args, { stdio: 'inherit', ...options });
 }
@@ -57,7 +54,14 @@ function hostTuple() {
   const { platform, arch } = process;
   if (platform === 'darwin') return `darwin-${arch}`;
   if (platform === 'win32') return `win32-${arch}-msvc`;
-  if (platform === 'linux') return `linux-${arch}-${isMusl() ? 'musl' : 'gnu'}`;
+  if (platform === 'linux') {
+    if (isMusl()) {
+      throw new Error(
+        'postcss-go: native Node addons are unavailable on musl until Go fixes golang/go#54805',
+      );
+    }
+    return `linux-${arch}-gnu`;
+  }
   throw new Error(`unsupported host platform ${platform}-${arch}`);
 }
 
@@ -99,10 +103,13 @@ function writeCompileFlags() {
   );
 }
 
+const tuple = hostTuple();
+mkdirSync(outDir, { recursive: true });
 writeCompileFlags();
 
-const musl = isMusl();
-const goLibraryName = musl ? 'libpostcssgo.so' : 'libpostcssgo.a';
+const windowsArm64 = process.platform === 'win32' && process.arch === 'arm64';
+const shared = windowsArm64;
+const goLibraryName = windowsArm64 ? 'libpostcssgo.dll' : 'libpostcssgo.a';
 const goLibrary = resolve(outDir, goLibraryName);
 
 const archive = run(
@@ -110,7 +117,7 @@ const archive = run(
   [
     'build',
     '-buildvcs=false',
-    `-buildmode=${musl ? 'c-shared' : 'c-archive'}`,
+    `-buildmode=${shared ? 'c-shared' : 'c-archive'}`,
     '-o',
     goLibrary,
     './internal/nativeaddon',
@@ -127,7 +134,7 @@ const archive = run(
 );
 
 if (archive.status !== 0) {
-  console.error(`postcss-go: native ${musl ? 'c-shared' : 'c-archive'} build failed`);
+  console.error(`postcss-go: native ${shared ? 'c-shared' : 'c-archive'} build failed`);
   process.exit(archive.status ?? 1);
 }
 
@@ -137,7 +144,8 @@ const addon = run(process.execPath, [nodeGyp, 'rebuild'], {
   env: {
     ...process.env,
     ...deploymentEnv,
-    GYP_DEFINES: `${process.env.GYP_DEFINES ?? ''} postcss_go_shared=${musl ? 1 : 0}`.trim(),
+    GYP_DEFINES:
+      `${process.env.GYP_DEFINES ?? ''} postcss_go_dynamic=${windowsArm64 ? 1 : 0}`.trim(),
   },
 });
 if (addon.status !== 0) {
@@ -151,14 +159,13 @@ if (!existsSync(builtAddon)) {
   process.exit(1);
 }
 
-const tuple = hostTuple();
 const platformPkgDir = resolve(repoRoot, 'npm/postcss-go', tuple);
 const placedAddon = resolve(platformPkgDir, `postcss-go.${tuple}.node`);
-const placedSharedLibrary = resolve(platformPkgDir, 'libpostcssgo.so');
+const placedDynamicLibrary = resolve(platformPkgDir, 'libpostcssgo.dll');
 mkdirSync(platformPkgDir, { recursive: true });
 rmSync(placedAddon, { force: true });
-rmSync(placedSharedLibrary, { force: true });
+rmSync(placedDynamicLibrary, { force: true });
 copyFileSync(builtAddon, placedAddon);
-if (musl) copyFileSync(goLibrary, placedSharedLibrary);
+if (windowsArm64) copyFileSync(goLibrary, placedDynamicLibrary);
 console.log(`postcss-go: placed native addon at ${placedAddon}`);
-if (musl) console.log(`postcss-go: placed native companion at ${placedSharedLibrary}`);
+if (windowsArm64) console.log(`postcss-go: placed native companion at ${placedDynamicLibrary}`);

@@ -88,7 +88,8 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Keep `process()` asynchronous and able to run both synchronous and asynchronous plugins on every supported async backend.
 - [x] Document that synchronous processing blocks the Node.js event loop and recommend async or Worker Thread execution for server workloads.
 - [x] Define Worker Thread ownership, native cleanup, panic/error translation, and process shutdown behavior.
-- [x] Add the build, package, and smoke-test matrix for supported macOS, Linux glibc, Linux musl, and Windows targets.
+- [x] Add the build, package, and smoke-test matrix for supported macOS, Linux glibc, and Windows targets.
+- [ ] Add Linux musl native packages after Go supports loading c-archive/c-shared runtimes through `dlopen` (`golang/go#54805`).
 - [ ] Verify that the native matrix succeeds on every declared target.
 - [x] Make missing native runtime artifacts fatal; Node has no transport fallback.
 - [ ] Pack, install, load, and smoke-test every platform package before publication.

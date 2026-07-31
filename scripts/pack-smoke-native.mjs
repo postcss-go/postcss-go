@@ -39,7 +39,12 @@ function tuple() {
   if (process.platform === 'darwin') return `darwin-${process.arch}`;
   if (process.platform === 'win32') return `win32-${process.arch}-msvc`;
   if (process.platform === 'linux') {
-    return `linux-${process.arch}-${isMusl() ? 'musl' : 'gnu'}`;
+    if (isMusl()) {
+      throw new Error(
+        'postcss-go: native Node addons are unavailable on musl until Go fixes golang/go#54805',
+      );
+    }
+    return `linux-${process.arch}-gnu`;
   }
   throw new Error(`unsupported native platform ${process.platform}-${process.arch}`);
 }

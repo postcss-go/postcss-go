@@ -53,9 +53,7 @@
     "@postcss-go/native-darwin-arm64": "workspace:*",
     "@postcss-go/native-darwin-x64": "workspace:*",
     "@postcss-go/native-linux-arm64-gnu": "workspace:*",
-    "@postcss-go/native-linux-arm64-musl": "workspace:*",
     "@postcss-go/native-linux-x64-gnu": "workspace:*",
-    "@postcss-go/native-linux-x64-musl": "workspace:*",
     "@postcss-go/native-win32-arm64-msvc": "workspace:*",
     "@postcss-go/native-win32-x64-msvc": "workspace:*"
   },

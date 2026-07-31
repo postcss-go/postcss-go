@@ -171,7 +171,7 @@ GOFLAGS='-tags=codspeed' codspeed run --mode walltime --skip-upload -- go test .
 
 Lives in `benchmark/boundary/`. Production plugin runs use one Go↔JS boundary:
 
-1. **Native async + binary codec (default and required)** — `packages/postcss-go/native` links Go into a Node-API addon. Most targets embed a c-archive; Linux musl loads a colocated c-shared companion because musl rejects the Go archive's initial-exec TLS relocations when the addon is opened dynamically. Promise operations run through `napi_async_work`, while explicit `*Sync` APIs use the synchronous exports. Parse returns a compact binary AST (`internal/codec`); after plugins run, binary encoding feeds stringify. A missing compatible async addon is reported instead of silently changing transports.
+1. **Native async + binary codec (default and required)** — `packages/postcss-go/native` links Go into a Node-API addon. Most targets embed a c-archive. Companion-library targets keep the same private ABI while loading Go beside the addon; Windows ARM64 needs this because MSVC cannot consume Go's clang-produced GNU archive. Promise operations run through `napi_async_work`, while explicit `*Sync` APIs use the synchronous exports. Parse returns a compact binary AST (`internal/codec`); after plugins run, binary encoding feeds stringify. A missing compatible async addon is reported instead of silently changing transports.
 
 The boundary benchmark suite compares this with a synthetic JSON DTO baseline,
 without retaining a production stdio transport, so the serialization design can
