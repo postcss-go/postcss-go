@@ -103,6 +103,7 @@ const archive = run(
   'go',
   [
     'build',
+    '-buildvcs=false',
     '-buildmode=c-archive',
     '-o',
     resolve(outDir, 'libpostcssgo.a'),

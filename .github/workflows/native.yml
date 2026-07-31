@@ -37,7 +37,7 @@ jobs:
             os: windows-11-arm
             musl: false
           - tuple: win32-x64-msvc
-            os: windows-2025
+            os: windows-2022
             musl: false
 
     steps:
@@ -68,6 +68,13 @@ jobs:
         if: ${{ !matrix.musl }}
         run: pnpm install --frozen-lockfile
 
+      - name: Select the native ARM64 C toolchain
+        if: ${{ matrix.tuple == 'win32-arm64-msvc' }}
+        shell: pwsh
+        run: |
+          "CC=clang" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CXX=clang++" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Build native package
         if: ${{ !matrix.musl && !startsWith(matrix.tuple, 'win32-') }}
         run: pnpm --filter @postcss-go/core build
@@ -78,7 +85,11 @@ jobs:
         run: |
           pnpm --filter @postcss-go/core build 2>&1 | Tee-Object -FilePath native-build.log
           if ($LASTEXITCODE -ne 0) {
-            $lines = @(Get-Content native-build.log -Tail 30)
+            $lines = @(
+              Select-String native-build.log -Pattern 'error|err!|fatal|LNK|undefined|cannot|failed' |
+                Select-Object -Last 30 |
+                ForEach-Object { $_.Line }
+            )
             [array]::Reverse($lines)
             $lines | ForEach-Object {
               Write-Output "::error title=Native build log::$_"
@@ -111,7 +122,7 @@ jobs:
           if [ "$status" -ne 0 ]; then
             while IFS= read -r line; do
               echo "::error title=Musl build log::$line"
-            done < <(tail -n 30 musl-build.log | tac)
+            done < <(grep -Ei 'error|err!|fatal|undefined|cannot|failed' musl-build.log | tail -n 30 | tac)
             exit "$status"
           fi
 
