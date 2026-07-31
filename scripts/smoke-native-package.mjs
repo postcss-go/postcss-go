@@ -64,6 +64,7 @@ assert.equal((await api.process('b{color:blue}')).css, 'b{color:blue}');
 assert.equal((await api.noWork('b{color:blue}')).css, 'b{color:blue}');
 
 await new Promise((resolve, reject) => {
+  let received = false;
   const worker = new Worker(
     `
       const { parentPort, workerData } = require('node:worker_threads');
@@ -75,6 +76,7 @@ await new Promise((resolve, reject) => {
         }
         const result = await api.process('w{display:block}');
         parentPort.postMessage(result.css);
+        parentPort.close();
       })().catch((error) => { throw error; });
     `,
     {
@@ -86,6 +88,15 @@ await new Promise((resolve, reject) => {
   worker.once('message', (css) => {
     try {
       assert.equal(css, 'w{display:block}');
+      received = true;
+    } catch (error) {
+      reject(error);
+    }
+  });
+  worker.once('exit', (code) => {
+    try {
+      assert.equal(code, 0, 'Worker native smoke must exit cleanly');
+      assert.equal(received, true, 'Worker native smoke must return a result before exiting');
       resolve();
     } catch (error) {
       reject(error);
