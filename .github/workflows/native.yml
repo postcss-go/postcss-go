@@ -78,7 +78,9 @@ jobs:
         run: |
           pnpm --filter @postcss-go/core build 2>&1 | Tee-Object -FilePath native-build.log
           if ($LASTEXITCODE -ne 0) {
-            Get-Content native-build.log -Tail 30 | ForEach-Object {
+            $lines = @(Get-Content native-build.log -Tail 30)
+            [array]::Reverse($lines)
+            $lines | ForEach-Object {
               Write-Output "::error title=Native build log::$_"
             }
             exit $LASTEXITCODE
@@ -109,7 +111,7 @@ jobs:
           if [ "$status" -ne 0 ]; then
             while IFS= read -r line; do
               echo "::error title=Musl build log::$line"
-            done < <(tail -n 30 musl-build.log)
+            done < <(tail -n 30 musl-build.log | tac)
             exit "$status"
           fi
 
