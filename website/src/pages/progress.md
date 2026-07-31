@@ -90,9 +90,9 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Define Worker Thread ownership, native cleanup, panic/error translation, and process shutdown behavior.
 - [x] Add the build, package, and smoke-test matrix for supported macOS, Linux glibc, and Windows targets.
 - [ ] Add Linux musl native packages after Go supports loading c-archive/c-shared runtimes through `dlopen` (`golang/go#54805`).
-- [ ] Verify that the native matrix succeeds on every declared target.
+- [x] Verify that the native matrix succeeds on every declared target.
 - [x] Make missing native runtime artifacts fatal; Node has no transport fallback.
-- [ ] Pack, install, load, and smoke-test every platform package before publication.
+- [x] Pack, install, load, and smoke-test every platform package before publication.
 
 ### Core CSS pipeline
 
