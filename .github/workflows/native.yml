@@ -69,8 +69,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build native package
-        if: ${{ !matrix.musl }}
+        if: ${{ !matrix.musl && !startsWith(matrix.tuple, 'win32-') }}
         run: pnpm --filter @postcss-go/core build
+
+      - name: Build native package on Windows
+        if: ${{ startsWith(matrix.tuple, 'win32-') }}
+        shell: pwsh
+        run: |
+          pnpm --filter @postcss-go/core build 2>&1 | Tee-Object -FilePath native-build.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content native-build.log -Tail 30 | ForEach-Object {
+              Write-Output "::error title=Native build log::$_"
+            }
+            exit $LASTEXITCODE
+          }
 
       - name: Pack, install, and smoke native package
         if: ${{ !matrix.musl }}
@@ -80,6 +92,7 @@ jobs:
         if: ${{ matrix.musl }}
         shell: bash
         run: |
+          set +e
           docker run --rm \
             -v "$PWD:/workspace" \
             -w /workspace \
@@ -90,7 +103,15 @@ jobs:
               pnpm install --frozen-lockfile
               pnpm --filter @postcss-go/core build
               node ./scripts/pack-smoke-native.mjs
-            '
+            ' 2>&1 | tee musl-build.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              echo "::error title=Musl build log::$line"
+            done < <(tail -n 30 musl-build.log)
+            exit "$status"
+          fi
 
       - name: Upload validated addon
         uses: actions/upload-artifact@v7
