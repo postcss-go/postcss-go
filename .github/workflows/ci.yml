@@ -71,6 +71,9 @@ jobs:
       - name: Generate JS coverage
         run: pnpm test:coverage:js
 
+      - name: Prepare JS lcov for Codecov
+        run: node ./scripts/prepare-js-lcov-for-codecov.mjs
+
       - name: Upload Go coverage artifacts
         uses: actions/upload-artifact@v7
         with:

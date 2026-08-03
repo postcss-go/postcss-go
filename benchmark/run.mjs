@@ -255,7 +255,7 @@ printParserSection(
 );
 
 console.log(
-  'Fixtures: modern-normalize, Tailwind preflight, animate.css, Bootstrap (formatted + minified)',
+  'Fixtures: modern-normalize, Tailwind preflight, animate.css, Bootstrap, Bulma, Pure.css, UIkit, Materialize',
 );
 console.log('Go:            go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5');
 console.log('PostCSS:       node benchmark/postcss.bench.mjs');

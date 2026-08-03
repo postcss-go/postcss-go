@@ -21,6 +21,13 @@ const fixtures = [
   ['animate.min.css', 'https://cdn.jsdelivr.net/npm/animate.css@4.1.1/animate.min.css'],
   ['bootstrap.css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.css'],
   ['bootstrap.min.css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css'],
+  ['bulma.css', 'https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.css'],
+  ['pure.css', 'https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure.css'],
+  ['uikit.css', 'https://cdn.jsdelivr.net/npm/uikit@3.25.20/dist/css/uikit.css'],
+  [
+    'materialize.css',
+    'https://cdn.jsdelivr.net/npm/materialize-css@1.0.0/dist/css/materialize.css',
+  ],
 ];
 
 fs.mkdirSync(dir, { recursive: true });

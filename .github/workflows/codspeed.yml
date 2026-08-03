@@ -28,9 +28,11 @@ jobs:
     # ~10% swings without Go engine changes should be treated as CI noise.
     runs-on: ubuntu-latest
     env:
-      # `codspeed` excludes benchmark/small_bench_test.go (*_Small / *_small).
+      # `codspeed` excludes:
+      # - benchmark/small_bench_test.go (*_Small / *_small)
+      # - benchmark/extended_real_bench_test.go (Bulma / Pure / UIkit / Materialize)
       # The CodSpeed Go runner discovers Benchmark* from source; -bench filters
-      # alone are not reliable for dropping flaky microbenches.
+      # alone are not reliable for dropping flaky or suite-polluting benches.
       GOFLAGS: -mod=mod -tags=codspeed
 
     steps:
