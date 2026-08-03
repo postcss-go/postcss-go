@@ -24,8 +24,11 @@ jobs:
     # Go CodSpeed currently supports walltime only. Personal GitHub accounts
     # cannot use `codspeed-macro`; switch to that runner once the repo is under
     # an organization with CodSpeed Macro Runners enabled. Until then, walltime
-    # on ubuntu-latest is noisy ("Different runtime environments detected") and
-    # ~10% swings without Go engine changes should be treated as CI noise.
+    # on ubuntu-latest is noisy ("Different runtime environments detected"):
+    # GitHub hands out different CPU generations (EPYC 7763 / 9V74 / 9V45 have
+    # all been observed), and the same benchmark binary can differ by more than
+    # 1.5x between them. See docs/benchmark.md ("Reading a walltime report") for
+    # how to tell such a report apart from a real regression.
     runs-on: ubuntu-latest
     env:
       # `codspeed` excludes:
