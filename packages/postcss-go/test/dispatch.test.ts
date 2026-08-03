@@ -7,12 +7,22 @@ import {
   dispatchProcess,
   dispatchProcessDto,
   dispatchProcessSync,
+  dispatchStringifySync,
 } from '../src/dispatch.ts';
 import type { ProcessResult } from '../src/types.ts';
 
 function rootDto(): ProcessResult['root'] {
   return { type: 'root', nodes: [] };
 }
+
+test('dispatchStringifySync passes the live node to native-capable services', () => {
+  const root = new Root();
+  const stringifySync = vi.fn(() => '');
+
+  dispatchStringifySync({ stringifySync }, root);
+
+  expect(stringifySync).toHaveBeenCalledWith(root, { map: false });
+});
 
 test('dispatchProcess keeps an explicit processor on the Result', async () => {
   const processor = { plugins: [] };

@@ -13,7 +13,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "postcss-go.win32-arm64-msvc.node"
+    "postcss-go.win32-arm64-msvc.node",
+    "libpostcssgo.dll"
   ],
   "publishConfig": {
     "access": "public"

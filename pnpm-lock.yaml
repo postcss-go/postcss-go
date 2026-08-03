@@ -69,11 +69,7 @@ importers:
 
   npm/postcss-go/linux-arm64-gnu: {}
 
-  npm/postcss-go/linux-arm64-musl: {}
-
   npm/postcss-go/linux-x64-gnu: {}
-
-  npm/postcss-go/linux-x64-musl: {}
 
   npm/postcss-go/win32-arm64-msvc: {}
 
@@ -130,9 +126,6 @@ importers:
 
   packages/postcss-go:
     dependencies:
-      '@postcss-go/shared':
-        specifier: workspace:*
-        version: link:../shared
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
@@ -167,15 +160,9 @@ importers:
       '@postcss-go/native-linux-arm64-gnu':
         specifier: workspace:*
         version: link:../../npm/postcss-go/linux-arm64-gnu
-      '@postcss-go/native-linux-arm64-musl':
-        specifier: workspace:*
-        version: link:../../npm/postcss-go/linux-arm64-musl
       '@postcss-go/native-linux-x64-gnu':
         specifier: workspace:*
         version: link:../../npm/postcss-go/linux-x64-gnu
-      '@postcss-go/native-linux-x64-musl':
-        specifier: workspace:*
-        version: link:../../npm/postcss-go/linux-x64-musl
       '@postcss-go/native-win32-arm64-msvc':
         specifier: workspace:*
         version: link:../../npm/postcss-go/win32-arm64-msvc
@@ -183,6 +170,9 @@ importers:
         specifier: workspace:*
         version: link:../../npm/postcss-go/win32-x64-msvc
     devDependencies:
+      '@postcss-go/shared':
+        specifier: workspace:*
+        version: link:../shared
       node-api-headers:
         specifier: ^1.9.0
         version: 1.9.0

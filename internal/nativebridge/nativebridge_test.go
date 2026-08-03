@@ -2,6 +2,7 @@ package nativebridge
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -68,19 +69,26 @@ func TestProcessEmbedsBinaryRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	var result struct {
-		CSS     string          `json:"css"`
-		RootBin json.RawMessage `json:"rootBin"`
+	if !bytes.HasPrefix(payload, processFrameMagic[:]) {
+		t.Fatalf("process frame missing magic: %q", payload[:min(4, len(payload))])
 	}
-	if err := json.Unmarshal(payload, &result); err != nil {
-		t.Fatalf("decode process json: %v", err)
+	if len(payload) < 8 {
+		t.Fatalf("process frame too short: %d", len(payload))
 	}
-	var rootBin []byte
-	if err := json.Unmarshal(result.RootBin, &rootBin); err != nil {
-		t.Fatalf("decode rootBin: %v", err)
+	metadataLength := int(binary.LittleEndian.Uint32(payload[4:8]))
+	if metadataLength > len(payload)-8 {
+		t.Fatalf("metadata length %d exceeds frame size %d", metadataLength, len(payload))
 	}
+	var result processResult
+	if err := json.Unmarshal(payload[8:8+metadataLength], &result); err != nil {
+		t.Fatalf("decode process metadata: %v", err)
+	}
+	rootBin := payload[8+metadataLength:]
 	if !bytes.HasPrefix(rootBin, []byte("PCGW")) {
 		t.Fatalf("rootBin missing magic: %q", rootBin[:min(4, len(rootBin))])
+	}
+	if result.CSS != "a { color: blue; }" {
+		t.Fatalf("unexpected process css: %q", result.CSS)
 	}
 }
 

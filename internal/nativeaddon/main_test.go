@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"strings"
 	"testing"
+
+	"postcss-go/internal/csserrors"
 )
 
 func TestFitPayload(t *testing.T) {
@@ -31,4 +35,25 @@ func TestFitPayload(t *testing.T) {
 func TestMainIsCallable(t *testing.T) {
 	// main is intentionally empty for the c-archive entrypoint.
 	main()
+}
+
+func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
+	syntaxError := csserrors.New("Unknown word", 1, 2, "a{?", "input.css", "")
+	if message := nativeErrorMessage(syntaxError); !strings.HasPrefix(message, cssSyntaxErrorPrefix) {
+		t.Fatalf("syntax error missing marker: %q", message)
+	}
+
+	plain := errors.New("source map could not be loaded")
+	if message := nativeErrorMessage(plain); message != plain.Error() {
+		t.Fatalf("plain error was changed: %q", message)
+	}
+}
+
+func TestWriteErrorReportsRequiredCapacity(t *testing.T) {
+	err := errors.New("source map could not be loaded")
+	want := len(err.Error())
+
+	if got := int(writeError(nil, 0, err)); got != want {
+		t.Fatalf("want required capacity %d, got %d", want, got)
+	}
 }

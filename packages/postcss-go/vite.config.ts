@@ -1,5 +1,6 @@
+import { copyFileSync, mkdirSync } from 'node:fs';
 import { builtinModules } from 'node:module';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dts from 'unplugin-dts/vite';
 import { defineConfig } from 'vite';
@@ -7,16 +8,15 @@ import { defineConfig } from 'vite';
 import pkg from './package.json' with { type: 'json' };
 
 const root = dirname(fileURLToPath(import.meta.url));
+const sharedDist = resolve(root, '../shared/dist');
+const bundledSharedDist = resolve(root, 'dist/shared/dist');
 
 const dependencyNames = new Set([
   ...Object.keys(pkg.dependencies ?? {}),
   ...Object.keys(pkg.optionalDependencies ?? {}),
 ]);
 
-const nodeBuiltins = new Set([
-  ...builtinModules,
-  ...builtinModules.map((name) => `node:${name}`),
-]);
+const nodeBuiltins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
 
 function isExternal(id: string): boolean {
   if (nodeBuiltins.has(id) || id.startsWith('node:')) return true;
@@ -26,12 +26,50 @@ function isExternal(id: string): boolean {
   return false;
 }
 
+function bundledSharedSpecifier(filePath: string, moduleName: string): string {
+  const target = resolve(bundledSharedDist, moduleName);
+  let specifier = relative(dirname(resolve(filePath)), target).replaceAll('\\', '/');
+  if (!specifier.startsWith('.')) specifier = `./${specifier}`;
+  return `${specifier}.js`;
+}
+
+function copySharedDeclarations() {
+  return {
+    name: 'copy-shared-declarations',
+    closeBundle() {
+      mkdirSync(bundledSharedDist, { recursive: true });
+      for (const moduleName of ['map-options', 'map-path']) {
+        for (const extension of ['d.ts', 'd.ts.map']) {
+          copyFileSync(
+            resolve(sharedDist, `${moduleName}.${extension}`),
+            resolve(bundledSharedDist, `${moduleName}.${extension}`),
+          );
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     dts({
       include: ['src'],
       tsconfigPath: './tsconfig.json',
+      beforeWriteFile(filePath, content) {
+        return {
+          content: content
+            .replaceAll(
+              '@postcss-go/shared/map-options',
+              bundledSharedSpecifier(filePath, 'map-options'),
+            )
+            .replaceAll(
+              '@postcss-go/shared/map-path',
+              bundledSharedSpecifier(filePath, 'map-path'),
+            ),
+        };
+      },
     }),
+    copySharedDeclarations(),
   ],
   build: {
     emptyOutDir: true,

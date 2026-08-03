@@ -42,6 +42,24 @@ describe('binary codec + native bridge', () => {
     },
   );
 
+  it.skipIf(!isNativeBridgeAvailable())(
+    'returns a live root from the framed synchronous process operation',
+    async () => {
+      const service = createNativeService();
+      const rules = 50_000;
+      const largeCss = Array.from(
+        { length: rules },
+        (_, index) => `.rule-${index}{z-index:${index}}`,
+      ).join('');
+
+      const processed = service.processSync(largeCss, { from: 'large.css' });
+      expect(processed.css).toBe(largeCss);
+      expect(processed.root).toBeInstanceOf(Root);
+      expect(processed.root.nodes).toHaveLength(rules);
+      await service.close();
+    },
+  );
+
   it.skipIf(!isNativeAsyncBridgeAvailable())(
     'runs every Promise operation through the native async-work surface',
     async () => {

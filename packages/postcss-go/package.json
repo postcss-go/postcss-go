@@ -33,14 +33,13 @@
   ],
   "scripts": {
     "build": "pnpm run build:js && pnpm run build:native",
-    "build:js": "vite build",
+    "build:js": "pnpm --filter @postcss-go/shared build && vite build",
     "build:native": "node ./native/build.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.types.json",
-    "test": "pnpm --filter @postcss-go/shared build && pnpm run build && vitest run",
-    "test:coverage": "pnpm --filter @postcss-go/shared build && pnpm run build && vitest run --coverage"
+    "test": "pnpm run build && vitest run",
+    "test:coverage": "pnpm run build && vitest run --coverage"
   },
   "dependencies": {
-    "@postcss-go/shared": "workspace:*",
     "chokidar": "^3.6.0",
     "dependency-graph": "^1.0.0",
     "picocolors": "^1.1.1",
@@ -54,13 +53,12 @@
     "@postcss-go/native-darwin-arm64": "workspace:*",
     "@postcss-go/native-darwin-x64": "workspace:*",
     "@postcss-go/native-linux-arm64-gnu": "workspace:*",
-    "@postcss-go/native-linux-arm64-musl": "workspace:*",
     "@postcss-go/native-linux-x64-gnu": "workspace:*",
-    "@postcss-go/native-linux-x64-musl": "workspace:*",
     "@postcss-go/native-win32-arm64-msvc": "workspace:*",
     "@postcss-go/native-win32-x64-msvc": "workspace:*"
   },
   "devDependencies": {
+    "@postcss-go/shared": "workspace:*",
     "node-api-headers": "^1.9.0",
     "node-gyp": "11.4.2",
     "postcss": "^8.5.15",

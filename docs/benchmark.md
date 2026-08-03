@@ -179,11 +179,44 @@ curl -fsSL https://codspeed.io/install.sh | sh
 GOFLAGS='-tags=codspeed' codspeed run --mode walltime --skip-upload -- go test ./benchmark/ -bench=.
 ```
 
+#### Reading a walltime report
+
+Walltime is the only instrument available for Go, and this repository runs it on
+`ubuntu-latest` (`codspeed-macro` runners require an organization account). Base
+and head therefore land on whichever CPU GitHub allocates — EPYC 7763, 9V74 and
+9V45 have all been observed — and the *same* benchmark binary can be more than
+1.5x slower on the older generation. A report where every benchmark moves by a
+similar large amount, together with CodSpeed's "Different runtime environments
+detected" warning, is that situation and not a code change.
+
+Two checks separate the two cases before touching any code:
+
+```bash
+# 1. Does the branch even change benchmarked code?
+go list -deps -test -tags=codspeed ./benchmark/ | grep postcss-go
+
+# 2. Compare the compiled suite against the base branch. `-trimpath` removes
+#    the checkout path, so identical inputs give identical hashes.
+git worktree add /tmp/base-tree origin/main
+go test -tags=codspeed -trimpath -c -o /tmp/head.test ./benchmark/
+(cd /tmp/base-tree && go test -tags=codspeed -trimpath -c -o /tmp/base.test ./benchmark/)
+sha256sum /tmp/head.test /tmp/base.test
+```
+
+Identical hashes mean the branch cannot have changed engine performance, and the
+report can be acknowledged in the CodSpeed UI. A stale baseline is worth ruling
+out too: merge `main` into the branch so both sides contain the same engine
+commits, and re-run the CodSpeed workflow on `main` (`workflow_dispatch`) to
+record a fresh baseline. Otherwise, run the affected benchmarks on one machine
+with `-count=6` and compare with
+[benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat) before
+concluding.
+
 ## Boundary cost
 
 Lives in `benchmark/boundary/`. Production plugin runs use one Go↔JS boundary:
 
-1. **Native async + binary codec (default and required)** — `packages/postcss-go/native` links a Go c-archive into a Node-API addon. Promise operations run through `napi_async_work`, while explicit `*Sync` APIs use the synchronous exports. Parse returns a compact binary AST (`internal/codec`); after plugins run, binary encoding feeds stringify. A missing compatible async addon is reported instead of silently changing transports.
+1. **Native async + binary codec (default and required)** — `packages/postcss-go/native` links Go into a Node-API addon. Most targets embed a c-archive. Companion-library targets keep the same private ABI while loading Go beside the addon; Windows ARM64 needs this because MSVC cannot consume Go's clang-produced GNU archive. Promise operations run through `napi_async_work`, while explicit `*Sync` APIs use the synchronous exports. Parse returns a compact binary AST (`internal/codec`); after plugins run, binary encoding feeds stringify. A missing compatible async addon is reported instead of silently changing transports.
 
 The boundary benchmark suite compares this with a synthetic JSON DTO baseline,
 without retaining a production stdio transport, so the serialization design can

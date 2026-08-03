@@ -87,10 +87,12 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Throw a stable `SyncBackendUnavailableError` when a synchronous API is used without the N-API backend.
 - [x] Keep `process()` asynchronous and able to run both synchronous and asynchronous plugins on every supported async backend.
 - [x] Document that synchronous processing blocks the Node.js event loop and recommend async or Worker Thread execution for server workloads.
-- [ ] Define Worker Thread ownership, native cleanup, panic/error translation, and process shutdown behavior.
-- [ ] Build native binaries for supported macOS, Linux glibc, Linux musl, and Windows targets.
+- [x] Define Worker Thread ownership, native cleanup, panic/error translation, and process shutdown behavior.
+- [x] Add the build, package, and smoke-test matrix for supported macOS, Linux glibc, and Windows targets.
+- [ ] Add Linux musl native packages after Go supports loading c-archive/c-shared runtimes through `dlopen` (`golang/go#54805`).
+- [x] Verify that the native matrix succeeds on every declared target.
 - [x] Make missing native runtime artifacts fatal; Node has no transport fallback.
-- [ ] Pack, install, load, and smoke-test every platform package before publication.
+- [x] Pack, install, load, and smoke-test every platform package before publication.
 
 ### Core CSS pipeline
 
@@ -150,8 +152,8 @@ N-API synchronous API.
 - [ ] Install the tarballs in clean projects without workspace links.
 - [ ] Verify the packed dependency tree contains no `postcss`, `postcss-load-config`, or `postcss-reporter`.
 - [ ] Verify async processing with synchronous and asynchronous plugins.
-- [ ] Verify N-API `parseSync`, `processSync`, `stringifySync`, and `noWorkSync`.
-- [ ] Verify `processSync()` rejects every Promise-returning extension point.
+- [x] Verify N-API `parseSync`, `processSync`, `stringifySync`, and `noWorkSync`.
+- [x] Verify `processSync()` rejects every Promise-returning extension point.
 - [x] Verify missing native artifacts produce stable async and sync diagnostics without changing transports.
 - [ ] Verify native artifact presence and loading on every published target.
 - [ ] Publish only after all required completion criteria and release gates pass.

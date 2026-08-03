@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -68,6 +69,13 @@ function npmPackFiles(cwd: string): string[] {
   return files.map((file) => file.path);
 }
 
+function filesBelow(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name);
+    return entry.isDirectory() ? filesBelow(path) : [path];
+  });
+}
+
 function assertPackageAbsent(cwd: string, name: string): void {
   let output: string;
   let status = 0;
@@ -91,13 +99,109 @@ test('@postcss-go/core lists platform packages as optionalDependencies', () => {
     '@postcss-go/native-darwin-arm64': 'workspace:*',
     '@postcss-go/native-darwin-x64': 'workspace:*',
     '@postcss-go/native-linux-arm64-gnu': 'workspace:*',
-    '@postcss-go/native-linux-arm64-musl': 'workspace:*',
     '@postcss-go/native-linux-x64-gnu': 'workspace:*',
-    '@postcss-go/native-linux-x64-musl': 'workspace:*',
     '@postcss-go/native-win32-arm64-msvc': 'workspace:*',
     '@postcss-go/native-win32-x64-msvc': 'workspace:*',
   });
+  expect(pkg.optionalDependencies).not.toHaveProperty('@postcss-go/native-linux-arm64-musl');
+  expect(pkg.optionalDependencies).not.toHaveProperty('@postcss-go/native-linux-x64-musl');
   expect(pkg.files ?? []).not.toContain('native/prebuilds/**/*.node');
+});
+
+test('release builds JavaScript and WASM without rebuilding validated native addons', () => {
+  const rootPackage = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  };
+  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:js');
+  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/wasm build');
+  expect(rootPackage.scripts['build:release']).not.toContain('build:native');
+  expect(rootPackage.scripts.release).toBe('node ./scripts/release.mjs');
+
+  const localRelease = readFileSync(resolve(repoRoot, 'scripts/release.mjs'), 'utf8');
+  expect(localRelease).toContain("'snapshot'");
+  expect(localRelease).toContain("'build:release'");
+  expect(localRelease).toContain("'verify'");
+  expect(localRelease).toContain("'changeset:publish'");
+
+  const workflow = readFileSync(resolve(repoRoot, '.github/workflows/release.yml'), 'utf8');
+  expect(workflow).toContain('uses: actions/setup-go@');
+  expect(workflow).toContain('pnpm build:release');
+  expect(workflow).toContain('check-native-artifacts.mjs snapshot');
+  expect(workflow).toContain('check-native-artifacts.mjs verify');
+  expect(workflow).toContain('publish: pnpm changeset:publish');
+  expect(workflow).not.toContain('publish: pnpm release');
+});
+
+test('@postcss-go/shared stays private and is bundled into core', () => {
+  const sharedPackage = JSON.parse(readFileSync(resolve(sharedRoot, 'package.json'), 'utf8')) as {
+    name: string;
+    private?: boolean;
+  };
+  expect(sharedPackage.name).toBe('@postcss-go/shared');
+  expect(sharedPackage.private).toBe(true);
+
+  const corePackage = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    scripts?: Record<string, string>;
+  };
+  expect(corePackage.dependencies).not.toHaveProperty('@postcss-go/shared');
+  expect(corePackage.devDependencies).toHaveProperty('@postcss-go/shared', 'workspace:*');
+  expect(corePackage.scripts?.['build:js']).toContain('pnpm --filter @postcss-go/shared build');
+
+  const changesets = JSON.parse(
+    readFileSync(resolve(repoRoot, '.changeset/config.json'), 'utf8'),
+  ) as {
+    fixed: string[][];
+  };
+  const coreReleaseGroup = changesets.fixed.find((group) => group.includes('@postcss-go/core'));
+  expect(coreReleaseGroup).not.toContain('@postcss-go/shared');
+
+  expect(npmPackFiles(packageRoot)).toEqual(
+    expect.arrayContaining([
+      'dist/shared/dist/map-options.js',
+      'dist/shared/dist/map-options.d.ts',
+      'dist/shared/dist/map-path.js',
+      'dist/shared/dist/map-path.d.ts',
+    ]),
+  );
+  for (const path of filesBelow(resolve(packageRoot, 'dist'))) {
+    if (!/\.(?:js|d\.ts)$/.test(path)) continue;
+    expect(readFileSync(path, 'utf8'), path).not.toContain('@postcss-go/shared');
+  }
+});
+
+test('Windows links the system libraries required by a Go c-archive', () => {
+  const binding = readFileSync(resolve(packageRoot, 'native/binding.gyp'), 'utf8');
+  expect(binding).toContain(`"OS=='win'"`);
+  for (const library of [
+    'ntdll.lib',
+    'ws2_32.lib',
+    'winmm.lib',
+    'userenv.lib',
+    'bcrypt.lib',
+    'advapi32.lib',
+  ]) {
+    expect(binding).toContain(`"${library}"`);
+  }
+  expect(binding).not.toMatch(/"-l(?:ntdll|ws2_32|winmm)"/);
+});
+
+test('companion-library packages keep their runtime library beside the addon', () => {
+  const binding = readFileSync(resolve(packageRoot, 'native/binding.gyp'), 'utf8');
+  for (const arch of ['arm64', 'x64']) {
+    const windowsPackage = JSON.parse(
+      readFileSync(resolve(repoRoot, `npm/postcss-go/win32-${arch}-msvc/package.json`), 'utf8'),
+    ) as { files: string[] };
+    expect(windowsPackage.files).toEqual([
+      `postcss-go.win32-${arch}-msvc.node`,
+      'libpostcssgo.dll',
+    ]);
+  }
+  expect(binding).toContain('POSTCSS_GO_DYNAMIC_LIBRARY=1');
+
+  const workflow = readFileSync(resolve(repoRoot, '.github/workflows/native.yml'), 'utf8');
+  expect(workflow).toContain('npm/postcss-go/${{ matrix.tuple }}/libpostcssgo.dll');
 });
 
 test('@postcss-go/core has no production PostCSS dependency', () => {
@@ -156,7 +260,9 @@ test('host platform package contains the native addon', () => {
     expect.fail(`native addon missing at ${addonPath}; expected on ${tuple}`);
   }
 
-  expect(npmPackFiles(platformPkgRoot)).toContain(addonName);
+  const packedFiles = npmPackFiles(platformPkgRoot);
+  expect(packedFiles).toContain(addonName);
+  if (tuple.startsWith('win32-')) expect(packedFiles).toContain('libpostcssgo.dll');
 
   if (process.platform === 'darwin') {
     const symbols = execFileSync('nm', ['-gU', addonPath], { encoding: 'utf8' })
@@ -175,20 +281,12 @@ test('host platform package contains the native addon', () => {
   }
 });
 
-test(
-  'clean packed installation has no PostCSS packages in the dependency tree',
-  () => {
+test('clean packed installation has no PostCSS packages in the dependency tree', () => {
   expect(existsSync(resolve(sharedRoot, 'dist/index.js'))).toBe(true);
   expect(existsSync(resolve(packageRoot, 'dist/index.js'))).toBe(true);
 
   const staging = mkdtempSync(resolve(tmpdir(), 'postcss-go-pack-'));
   try {
-    const sharedPackName = npmPackFilename(sharedRoot);
-    const sharedPacked = resolve(sharedRoot, sharedPackName);
-    const sharedTarball = resolve(staging, sharedPackName);
-    cpSync(sharedPacked, sharedTarball);
-    rmSync(sharedPacked, { force: true });
-
     const coreStage = resolve(staging, 'core');
     mkdirSync(coreStage);
     cpSync(resolve(packageRoot, 'dist'), resolve(coreStage, 'dist'), { recursive: true });
@@ -199,10 +297,6 @@ test(
       optionalDependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
       [key: string]: unknown;
-    };
-    corePkg.dependencies = {
-      ...corePkg.dependencies,
-      '@postcss-go/shared': `file:${sharedTarball}`,
     };
     // Workspace optional native packages are published separately; omit them here so the
     // install resolves without workspace protocol and still proves the JS production tree.
@@ -225,6 +319,7 @@ test(
           type: 'module',
           dependencies: {
             '@postcss-go/core': `file:${coreTarball}`,
+            '@types/node': '^22.10.1',
           },
         },
         null,
@@ -239,6 +334,31 @@ test(
     }
 
     writeFileSync(
+      resolve(consumer, 'smoke.ts'),
+      `import type { ProcessFileOptions } from '@postcss-go/core';\n` +
+        `const options: ProcessFileOptions = { from: 'input.css' };\n` +
+        `void options;\n`,
+    );
+    execFileSync(
+      process.execPath,
+      [
+        resolve(repoRoot, 'node_modules/typescript/lib/tsc.js'),
+        '--noEmit',
+        '--strict',
+        '--target',
+        'ES2022',
+        '--module',
+        'NodeNext',
+        '--moduleResolution',
+        'NodeNext',
+        '--types',
+        'node',
+        'smoke.ts',
+      ],
+      { cwd: consumer, encoding: 'utf8' },
+    );
+
+    writeFileSync(
       resolve(consumer, 'smoke.mjs'),
       `import postcss from '@postcss-go/core';\n` +
         `const root = postcss.parse('a{color:red}');\n` +
@@ -250,6 +370,4 @@ test(
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
-},
-  60_000,
-);
+}, 60_000);
