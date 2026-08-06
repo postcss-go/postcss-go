@@ -128,7 +128,7 @@ test('processWithGoEngine converts buffer input and warning objects', async () =
   expect(result.warnings()[1]?.toString?.()).toBe('custom warning');
 });
 
-test('processWithGoEngine accepts record-shaped plugin configs', async () => {
+test('processWithGoEngine accepts an array of instantiated plugins', async () => {
   const processSpy = vi.fn();
   const stringifyResult = vi.fn(async (ast: Parameters<typeof fromAst>[0]) => ({
     css: fromAst(ast).toString(),
@@ -142,7 +142,7 @@ test('processWithGoEngine accepts record-shaped plugin configs', async () => {
 
   const result = await processWithGoEngine(
     mockEngine({ process: processSpy, stringifyResult }),
-    { plugins: { 'to-green': plugin } },
+    { plugins: [plugin] },
     '.a { color: red; }',
     { from: 'a.css', map: false },
   );
@@ -424,17 +424,14 @@ test('processWithGoEngine preserves existing annotations when annotation is fals
 });
 
 test('assertGoCompatibility identifies custom parser flags', () => {
-  expect(assertGoCompatibility({ parser: './parser.js' }, { plugins: {}, options: {} })).toBe(
+  expect(assertGoCompatibility({ parser: './parser.js' }, { plugins: [], options: {} })).toBe(
     false,
   );
 });
 
 test('assertGoCompatibility identifies custom config parser options', () => {
   expect(
-    assertGoCompatibility(
-      {},
-      { plugins: { autoprefixer: {} }, options: { parser: './parser.js' } },
-    ),
+    assertGoCompatibility({}, { plugins: [], options: { parser: './parser.js' } }),
   ).toBe(false);
 });
 

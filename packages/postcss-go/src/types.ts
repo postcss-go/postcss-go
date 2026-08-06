@@ -1,4 +1,5 @@
 import type { PreviousMap } from './previous-map.js';
+import type { BackendKind } from './service.js';
 
 export interface SourcePosition {
   line: number;
@@ -179,6 +180,8 @@ export interface ProcessResult {
    */
   root: RootNode | DocumentNode | import('./ast.js').ProcessRoot;
   messages: ResultMessage[];
+  /** Backend that performed this processing operation. */
+  backend?: BackendKind;
 }
 
 /** A source map value returned by postcss-go. */

@@ -2,19 +2,48 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import type { CliConfig } from './engine.js';
+import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
 import type { AcceptedPlugin } from './plugin-types.js';
 
+/** Per-input metadata supplied to function configuration files. */
+export interface ConfigFileContext {
+  dirname: string;
+  basename: string;
+  extname: string;
+}
+
+/** Stable environment passed to a function configuration export. */
 export interface ConfigContext {
-  env?: string;
-  file?: Record<string, string>;
-  options?: CliConfig['options'];
+  /** Effective environment. Defaults to NODE_ENV, then `development`. */
+  env: string;
+  /** Directory containing the configuration file. */
+  cwd: string;
+  file?: ConfigFileContext;
+  /** CLI-derived options for the current input, before config overrides. */
+  options?: ProcessFileOptions;
   [key: string]: unknown;
 }
 
-export interface LoadedConfig extends CliConfig {
+export type ConfiguredPlugins = AcceptedPlugin[] | Record<string, unknown | false>;
+
+/**
+ * Standalone postcss-go configuration contract.
+ *
+ * Process options may be written at the top level for PostCSS config
+ * familiarity or under `options`. Top-level values win.
+ */
+export interface PostcssGoConfig extends ProcessFileOptions {
+  plugins?: ConfiguredPlugins;
+  options?: ProcessFileOptions;
+}
+
+export type PostcssGoConfigExport =
+  | PostcssGoConfig
+  | ((context: ConfigContext) => PostcssGoConfig | Promise<PostcssGoConfig>);
+
+export interface LoadedConfig {
   file: string;
-  options: NonNullable<CliConfig['options']>;
+  options: ProcessFileOptions;
   plugins: AcceptedPlugin[];
 }
 
@@ -29,7 +58,7 @@ const CONFIG_NAMES = [
 ];
 
 export async function loadConfig(
-  context: ConfigContext = {},
+  context: Partial<ConfigContext> = {},
   searchFrom = process.cwd(),
 ): Promise<LoadedConfig | undefined> {
   const file = await findConfig(searchFrom);
@@ -43,7 +72,12 @@ export async function loadConfig(
     exported = imported.default ?? imported;
   }
   if (typeof exported === 'function') {
-    exported = await exported({ env: process.env.NODE_ENV, ...context });
+    exported = await exported({
+      ...context,
+      // Always own these: cwd is the config directory; env falls back to NODE_ENV.
+      cwd: path.dirname(file),
+      env: context.env ?? process.env.NODE_ENV ?? 'development',
+    });
   }
   if (!exported || typeof exported !== 'object') {
     throw new Error(
@@ -51,11 +85,25 @@ export async function loadConfig(
     );
   }
   const config = exported as Record<string, unknown>;
-  const { plugins: pluginConfig, ...options } = config;
-  delete options.postcss;
+  const {
+    plugins: pluginConfig,
+    options: nestedOptions,
+    postcss: _legacyPostcss,
+    ...topLevelOptions
+  } = config;
+  if (
+    nestedOptions !== undefined &&
+    (!nestedOptions || typeof nestedOptions !== 'object' || Array.isArray(nestedOptions))
+  ) {
+    throw new Error('Config Error: options must be an object');
+  }
   return {
     file,
-    options: { ...(context.options ?? {}), ...options },
+    options: {
+      ...(context.options ?? {}),
+      ...((nestedOptions as ProcessFileOptions | undefined) ?? {}),
+      ...(topLevelOptions as ProcessFileOptions),
+    },
     plugins: await normalizeConfiguredPlugins(pluginConfig, path.dirname(file)),
   };
 }
@@ -64,6 +112,9 @@ async function findConfig(searchFrom: string): Promise<string | undefined> {
   const resolved = path.resolve(searchFrom);
   const info = await fs.stat(resolved).catch(() => undefined);
   if (info?.isFile()) return resolved;
+  // A missing start path must not walk into unrelated ancestor configs
+  // (especially when the caller passed an explicit --config path).
+  if (!info) return undefined;
   let directory = resolved;
   while (true) {
     for (const name of CONFIG_NAMES) {
@@ -94,10 +145,9 @@ async function normalizeConfiguredPlugins(
   const plugins: AcceptedPlugin[] = [];
   for (const [moduleId, pluginOptions] of Object.entries(value as Record<string, unknown>)) {
     if (pluginOptions === false) continue;
-    const specifier =
-      moduleId.startsWith('.') || moduleId.startsWith('/')
-        ? pathToFileURL(path.resolve(directory, moduleId)).href
-        : moduleId;
+    const specifier = isPathSpecifier(moduleId)
+      ? pathToFileURL(path.resolve(directory, moduleId)).href
+      : moduleId;
     const imported = await import(specifier);
     const creator = imported.default ?? imported;
     plugins.push(
@@ -107,4 +157,17 @@ async function normalizeConfiguredPlugins(
     );
   }
   return plugins;
+}
+
+/**
+ * True for relative, POSIX absolute, Windows drive-letter, current-drive
+ * absolute (`\foo`), and UNC (`\\server\share`) paths.
+ */
+export function isPathSpecifier(moduleId: string): boolean {
+  return (
+    moduleId.startsWith('.') ||
+    moduleId.startsWith('/') ||
+    moduleId.startsWith('\\') ||
+    /^[a-zA-Z]:[\\/]/.test(moduleId)
+  );
 }

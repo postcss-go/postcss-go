@@ -191,14 +191,17 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       attachInputMetadata(root, css, options);
       const effective = await this.resolveStringifyAnnotationLive(root, options);
       const stringified = await this.stringifyResultLive(root, effective);
-      return { ...stringified, root, messages: [] };
+      return { ...stringified, root, messages: [], backend: 'native' };
     }
     const normalized = normalizeProcessOptions(
       options as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
     try {
-      return decodeProcessFrame(await this.addon.processAsync(css, JSON.stringify(normalized)));
+      return {
+        ...decodeProcessFrame(await this.addon.processAsync(css, JSON.stringify(normalized))),
+        backend: 'native',
+      };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
@@ -211,14 +214,17 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       attachInputMetadata(root, css, options);
       const effective = this.resolveStringifyAnnotationSync(root, options);
       const stringified = this.stringifyResultSync(root, effective);
-      return { ...stringified, root, messages: [] };
+      return { ...stringified, root, messages: [], backend: 'native' };
     }
     const normalized = normalizeProcessOptions(
       options as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
     try {
-      return decodeProcessFrame(this.addon.process(css, JSON.stringify(normalized)));
+      return {
+        ...decodeProcessFrame(this.addon.process(css, JSON.stringify(normalized))),
+        backend: 'native',
+      };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }

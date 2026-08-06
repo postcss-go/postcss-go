@@ -10,13 +10,15 @@ import type { PluginResult } from './plugin-runtime.js';
 import type { AcceptedPlugin } from './plugin-types.js';
 import { dispatchProcess, prepareDispatchOptions } from './dispatch.js';
 import type { PostcssGoService } from './service.js';
+import type { BackendKind } from './service.js';
 import type { ProcessOptions } from './types.js';
 import { hasUnsupportedSyntax } from './syntax-options.js';
 
 export interface CliConfig {
   options?: ProcessFileOptions;
   map?: boolean | MapOptions;
-  plugins?: AcceptedPlugin[] | Record<string, unknown>;
+  /** Instantiated plugins only. Object module→options maps belong in `loadConfig`. */
+  plugins?: AcceptedPlugin[];
 }
 
 export interface GoEngine {
@@ -26,6 +28,8 @@ export interface GoEngine {
     PostcssGoService,
     'process' | 'noWork' | 'parse' | 'stringify' | 'stringifyResult' | 'close'
   >;
+  /** Backend selected for this reusable engine. */
+  backend: BackendKind;
   close(): Promise<void>;
 }
 
@@ -46,6 +50,8 @@ export interface CliProcessResult {
   map?: string | { toString(): string };
   mapFile?: string;
   messages: CliMessage[];
+  /** Backend that performed this processing operation. */
+  backend: BackendKind;
   warnings(): CliMessage[];
 }
 
@@ -76,6 +82,7 @@ export function createGoEngine(): GoEngine {
     name: 'go',
     queue: Promise.resolve(),
     service,
+    backend: service.capabilities?.backend ?? 'native',
     async close() {
       await this.service.close();
     },
@@ -99,9 +106,13 @@ export async function processWithGoEngine(
         options,
         getPlugins(config),
       );
-      return toCliResult(pluginResult.css, pluginResult.map, pluginResult.mapFile, [
-        ...(pluginResult.messages as CliMessage[]),
-      ]);
+      return toCliResult(
+        pluginResult.css,
+        pluginResult.map,
+        pluginResult.mapFile,
+        [...(pluginResult.messages as CliMessage[])],
+        pluginResult.backend ?? engine.backend,
+      );
     }
 
     options = prepareDispatchOptions(options);
@@ -133,7 +144,7 @@ export async function processWithGoEngine(
     const messages = (
       'messages' in result ? ((result as { messages?: CliMessage[] }).messages ?? []) : []
     ) as CliMessage[];
-    return toCliResult(result.css, result.map, result.mapFile, messages);
+    return toCliResult(result.css, result.map, result.mapFile, messages, engine.backend);
   };
 
   const next = engine.queue.then(run);
@@ -174,12 +185,14 @@ function toCliResult(
   map: string | { toString(): string } | undefined,
   mapFile: string | undefined,
   messages: CliMessage[],
+  backend: BackendKind,
 ): CliProcessResult {
   const outputMap = map ? map : undefined;
   return {
     css,
     map: outputMap,
     mapFile: outputMap ? mapFile : undefined,
+    backend,
     warnings() {
       return messages
         .filter((message) => message.type === 'warning')
@@ -201,13 +214,9 @@ function toCliResult(
 }
 
 function getPlugins(config: CliConfig | undefined): AcceptedPlugin[] {
-  return Array.isArray(config?.plugins)
-    ? config.plugins
-    : ((config?.plugins ? Object.values(config.plugins) : []) as AcceptedPlugin[]);
+  return config?.plugins ?? [];
 }
 
 function hasPlugins(plugins: CliConfig['plugins']): boolean {
-  if (!plugins) return false;
-  if (Array.isArray(plugins)) return plugins.length > 0;
-  return Object.keys(plugins).length > 0;
+  return Array.isArray(plugins) && plugins.length > 0;
 }

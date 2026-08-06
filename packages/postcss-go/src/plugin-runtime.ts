@@ -197,6 +197,7 @@ export async function runPluginsWithBridge(
   attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
+  result.backend = service.capabilities?.backend;
   const activePlugins: RuntimePlugin[] = [];
   for (const plugin of normalized) {
     const prepared = await preparePlugin(plugin, result);
@@ -251,7 +252,8 @@ function hasLiveAsyncPluginBridge(
  * Promise or silently switches execution modes.
  */
 export function runPluginsWithBridgeSync(
-  service: Required<Pick<PluginBridgeService, 'parseSync' | 'stringifyResultSync'>>,
+  service: Required<Pick<PluginBridgeService, 'parseSync' | 'stringifyResultSync'>> &
+    Pick<PluginBridgeService, 'capabilities'>,
   plugins: AcceptedPlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -264,6 +266,7 @@ export function runPluginsWithBridgeSync(
   attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
+  result.backend = service.capabilities?.backend;
   const activePlugins = normalized.map((plugin) => {
     const prepared = preparePluginSync(plugin, result);
     return prepared ? { ...plugin, ...prepared } : plugin;

@@ -101,6 +101,12 @@ whether a synchronous backend is installed. Each service also exposes a stable
 useful when validating missing-native diagnostics or an explicitly selected
 platform-package failure.
 
+Every processing result exposes `result.backend`, identifying the backend that
+actually parsed and stringified that result (`native` in Node and
+`wasm-worker` for the browser service). This is separate from capability
+discovery: availability answers what can run; `result.backend` answers what did
+run.
+
 `processSync()` rejects a Promise or thenable returned by a plugin creator,
 `prepare`, a visitor, `Once`, `OnceExit`, or a map annotation callback with
 `AsyncPluginError`. Use `process()` for asynchronous plugins.
@@ -118,11 +124,10 @@ N-API; the two call forms are explicit and do not select a backend implicitly.
 
 ## Engine and service
 
-`createGoEngine` and `processWithGoEngine` provide the CLI-oriented reusable
-engine. CLI and public Promise-returning APIs use the same worker-backed native
+Public Promise-returning APIs and the CLI share the same worker-backed native
 backend. Node has no transport-selection environment variable. The
 browser-compatible service is exposed through the package's `./browser` entry
-point.
+point (`BrowserPostcssGoService`), not the main Node entry.
 
 ## Compatibility boundary
 

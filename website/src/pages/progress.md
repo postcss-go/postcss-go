@@ -111,12 +111,12 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 ### Node CLI and package boundary
 
 - [x] Replace the previous PostCSS plugin-chain execution in `packages/postcss-go/src/engine.ts` with the postcss-go plugin runtime.
-- [ ] Define a standalone configuration contract for plugins, parser, syntax, stringifier, maps, and environment context.
+- [x] Define a standalone configuration contract for plugins, parser, syntax, stringifier, maps, and environment context.
 - [x] Load `.js`, `.mjs`, and `.cjs` configuration without `postcss-load-config`.
 - [x] Format warnings, errors, and dependency messages without `postcss-reporter`.
 - [x] Remove the `postcss` peer dependency without replacing it with another runtime path to PostCSS.
-- [ ] Report native backend availability and the backend used for processing.
-- [ ] Update package README, type declarations, examples, compatibility tables, and migration documentation.
+- [x] Report native backend availability and the backend used for processing.
+- [x] Update package README, type declarations, examples, compatibility tables, and migration documentation.
 
 ### Browser and WASM
 

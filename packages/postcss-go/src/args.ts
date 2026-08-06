@@ -53,7 +53,7 @@ Options:
       --base <path>         Mirror the directory structure relative to this path in the output directory
       --include-dotfiles    Enable glob to match files/dirs that begin with "."
       --poll [milliseconds] Use polling for file watching; default 100 ms
-      --config <directory>  Set a custom directory to look for a config file
+      --config <path>           Config file path, or directory to search from
   -h, --help                Show this help
 
 If no input files are passed, it reads from stdin. If neither -o, --dir, or --replace is passed, it writes to stdout.
