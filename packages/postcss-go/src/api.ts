@@ -118,6 +118,7 @@ export async function toResult(
     result.css = stringified.css;
     result.map = hydrateResultMap(stringified.map);
     result.mapFile = stringified.mapFile;
+    result.backend = activeService.capabilities?.backend;
     return result;
   } finally {
     if (!service) await activeService.close();

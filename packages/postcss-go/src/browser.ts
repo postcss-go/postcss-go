@@ -76,15 +76,16 @@ export class BrowserPostcssGoService implements PostcssGoService {
     options = materializePreviousMap(options);
     const effectiveOptions = this.resolveAnnotation(css, options);
     if (effectiveOptions instanceof Promise) {
-      return effectiveOptions.then((resolved) =>
-        this.call<ProcessResult>('process', {
+      return effectiveOptions.then(async (resolved) => ({
+        ...(await this.call<ProcessResult>('process', {
           css,
           options: normalizeProcessOptions(
             resolved as NormalizeProcessOptionsInput,
             joinMapAnnotationPath,
           ) as ProcessOptions,
-        }),
-      );
+        })),
+        backend: 'wasm-worker',
+      }));
     }
     return this.call<ProcessResult>('process', {
       css,
@@ -92,7 +93,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
         effectiveOptions as NormalizeProcessOptionsInput,
         joinMapAnnotationPath,
       ) as ProcessOptions,
-    });
+    }).then((result) => ({ ...result, backend: 'wasm-worker' }));
   }
 
   noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {

@@ -43,7 +43,7 @@ test('--ext changes the output extension when using --dir', async () => {
 test('rejects external sourcemaps from config.map when writing to stdout', async () => {
   const fixtureDir = path.resolve('test/fixtures/config-external-map');
 
-  const { error, stderr } = await cli(['input.css', '--no-map'], fixtureDir);
+  const { error, stderr } = await cli(['input.css'], fixtureDir);
 
   expect(error).toBeTruthy();
   expect(stderr).toContain(

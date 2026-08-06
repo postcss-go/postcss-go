@@ -9,9 +9,9 @@ import {
   Input,
   PreviousMap,
   Warning,
-  hydrateInput,
   postcss,
 } from '../src/index.ts';
+import { hydrateInput } from '../src/input.ts';
 
 type RootLike = ReturnType<typeof upstream.parse>;
 
@@ -162,4 +162,45 @@ test('Input loads an external previous source map through the Node entry point',
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('Input resolves URL source roots and file:// original sources', () => {
+  const withRoot = Buffer.from(
+    JSON.stringify({
+      version: 3,
+      sourceRoot: 'https://example.com/css',
+      sources: ['a.scss'],
+      names: [],
+      mappings: 'AAAA',
+      sourcesContent: ['a{}'],
+    }),
+  ).toString('base64');
+  const rooted = new Input(
+    `a{}\n/*# sourceMappingURL=data:application/json;base64,${withRoot} */`,
+    { from: 'a.css' },
+  );
+  expect(rooted.mapResolve('b.css')).toBe('https://example.com/css/b.css');
+
+  const withFile = Buffer.from(
+    JSON.stringify({
+      version: 3,
+      sources: ['file:///tmp/orig.scss'],
+      names: [],
+      mappings: 'AAAA',
+      sourcesContent: ['a{}'],
+    }),
+  ).toString('base64');
+  const filed = new Input(
+    `a{}\n/*# sourceMappingURL=data:application/json;base64,${withFile} */`,
+    { from: 'a.css' },
+  );
+  const origin = filed.origin(1, 1, 1, 2);
+  expect(origin).toMatchObject({
+    file: '/tmp/orig.scss',
+    url: 'file:///tmp/orig.scss',
+    endLine: expect.any(Number),
+  });
+  expect(filed.error('broken', { line: 1, column: 1 }, { line: 1, column: 2 }).file).toBe(
+    '/tmp/orig.scss',
+  );
 });

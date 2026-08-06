@@ -11,10 +11,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: [
         'src/types.ts',
-        'src/cli.ts',
         'src/browser.ts',
-        'src/config.ts',
-        'src/reporter.ts',
         'src/plugin-types.ts',
         'src/shims.d.ts',
       ],

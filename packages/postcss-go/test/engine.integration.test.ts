@@ -179,8 +179,11 @@ test('the Go engine supports explicit map: true in postcss.config.js', async () 
   const fixtureDir = 'test/fixtures/config-map';
   const output = path.resolve(tmp('output.css'));
 
-  const { error, stderr } = await cli(['input.css', '-o', output, '--no-map'], fixtureDir);
-
-  expect(error, stderr).toBeFalsy();
+  const withMap = await cli(['input.css', '-o', output], fixtureDir);
+  expect(withMap.error, withMap.stderr).toBeFalsy();
   expect(await read(output)).toContain('sourceMappingURL=data:application/json;base64,');
+
+  const withoutMap = await cli(['input.css', '-o', output, '--no-map'], fixtureDir);
+  expect(withoutMap.error, withoutMap.stderr).toBeFalsy();
+  expect(await read(output)).not.toContain('sourceMappingURL');
 });

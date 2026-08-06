@@ -223,6 +223,7 @@ test('@postcss-go/core has no production PostCSS dependency', () => {
 
 test('@postcss-go/core package contains only the JavaScript CLI launcher', () => {
   const files = npmPackFiles(packageRoot);
+  expect(files).toContain('README.md');
   expect(files).toContain('bin/postcss-go.js');
   expect(files).not.toContain('bin/postcss-go');
   expect(files).not.toContain('bin/postcss-go.exe');
@@ -245,9 +246,48 @@ test('@postcss-go/core does not expose native implementation internals', () => {
     'getPollInterval',
     'usePolling',
     'createDependencyGraph',
+    // CLI / dispatch / browser internals stay off the main Node entry.
+    'createGoEngine',
+    'processWithGoEngine',
+    'runPluginChain',
+    'getEffectiveMapOption',
+    'dispatchProcess',
+    'dispatchProcessSync',
+    'dispatchProcessDto',
+    'dispatchParse',
+    'dispatchParseSync',
+    'dispatchParseAst',
+    'dispatchStringify',
+    'dispatchStringifySync',
+    'dispatchStringifyResult',
+    'dispatchNoWork',
+    'dispatchNoWorkSync',
+    'prepareDispatchOptions',
+    'BrowserPostcssGoService',
+    'isPathSpecifier',
+    // Map-pipeline and hydration helpers stay off the main Node entry.
+    'hydrateInput',
+    'hydrateResultMessages',
+    'asProcessRoot',
+    'RuntimePlugin',
+    'applyMapAnnotation',
+    'applyMapAnnotationAsync',
+    'isExternalSourceMap',
+    'isSourceMapEnabled',
+    'mapDefersInlineMode',
+    'materializePreviousMap',
+    'normalizeProcessOptions',
+    'getMapfile',
+    'joinMapAnnotationPath',
+    'toSourceMapPath',
   ]) {
     expect(publicApi).not.toHaveProperty(name);
   }
+});
+
+test('@postcss-go/core browser entry exports BrowserPostcssGoService', async () => {
+  const browserApi = await import('../src/browser.ts');
+  expect(browserApi).toHaveProperty('BrowserPostcssGoService');
 });
 
 test('host platform package contains the native addon', () => {

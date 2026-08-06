@@ -31,7 +31,6 @@ export {
   fromAst,
   fromJSON,
   toAst,
-  asProcessRoot,
   type AnyNode,
   type AtRuleInit,
   type Builder,
@@ -53,7 +52,7 @@ export {
   type StringifierSyntax,
   type WalkCallback,
 } from './ast.js';
-export { Input, hydrateInput, type InputFilePosition, type InputJSON } from './input.js';
+export { Input, type InputFilePosition, type InputJSON } from './input.js';
 export {
   AsyncBackendUnavailableError,
   AsyncPluginError,
@@ -65,7 +64,7 @@ export {
   type RangePosition,
 } from './errors.js';
 export { Warning, type WarningOptions } from './warning.js';
-export { Result, ResultMap, hydrateResultMessages, type ResultProcessor } from './result.js';
+export { Result, ResultMap, type ResultProcessor } from './result.js';
 export type { Parser } from './parser.js';
 export {
   noWorkSync,
@@ -95,7 +94,7 @@ export {
 } from './service.js';
 export { PreviousMap, setPreviousMapFileLoader, type PreviousMapOptions } from './previous-map.js';
 export { list } from './list.js';
-export { type PluginHelpers, type PluginResult, type RuntimePlugin } from './plugin-runtime.js';
+export { type PluginHelpers, type PluginResult } from './plugin-runtime.js';
 export type {
   AcceptedPlugin,
   Plugin,
@@ -104,45 +103,20 @@ export type {
   PluginListenerGroup,
   Transformer,
 } from './plugin-types.js';
-export {
-  createGoEngine,
-  getEffectiveMapOption,
-  processWithGoEngine,
-  runPluginChain,
-  type CliConfig,
-  type CliMessage,
-  type CliProcessResult,
-  type GoEngine,
-} from './engine.js';
-export {
-  dispatchNoWork,
-  dispatchNoWorkSync,
-  dispatchParse,
-  dispatchParseAst,
-  dispatchParseSync,
-  dispatchProcess,
-  dispatchProcessDto,
-  dispatchProcessSync,
-  dispatchStringify,
-  dispatchStringifyResult,
-  dispatchStringifySync,
-  prepareDispatchOptions,
-} from './dispatch.js';
-export {
-  applyMapAnnotation,
-  applyMapAnnotationAsync,
-  isExternalSourceMap,
-  isSourceMapEnabled,
-  mapDefersInlineMode,
-  materializePreviousMap,
-  normalizeProcessOptions,
-  type MapOptions,
-  type NormalizeProcessOptionsInput,
-  type ProcessFileOptions,
+export type {
+  MapOptions,
+  ProcessFileOptions,
 } from '@postcss-go/shared/map-options';
-export { getMapfile, joinMapAnnotationPath, toSourceMapPath } from '@postcss-go/shared/map-path';
-export { BrowserPostcssGoService } from './browser.js';
 export { isNativeBridgeAvailable } from './native.js';
+export {
+  loadConfig,
+  type ConfigContext,
+  type ConfigFileContext,
+  type ConfiguredPlugins,
+  type LoadedConfig,
+  type PostcssGoConfig,
+  type PostcssGoConfigExport,
+} from './config.js';
 export type {
   AstNode,
   AstStringifyResult,

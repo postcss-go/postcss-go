@@ -18,7 +18,6 @@ import postcss, {
   list,
   noWork,
   noWorkSync,
-  dispatchProcess,
   parse,
   parseAst,
   parseSync,
@@ -30,6 +29,8 @@ import postcss, {
   stringifySync,
   toResult,
 } from '../src/index.ts';
+import { dispatchProcess } from '../src/dispatch.ts';
+
 afterEach(() => {
   setPreviousMapFileLoader((file) => {
     try {
@@ -61,6 +62,7 @@ test('postcss.plugin creates named plugin creators', async () => {
 
   const result = await postcss([createBlue()]).process('.a{color:red}', { from: 'input.css' });
   expect(result.css).toContain('blue');
+  expect(result.backend).toBe('native');
 });
 
 test('stringifyAst stringifies a live Root without an injected service', async () => {

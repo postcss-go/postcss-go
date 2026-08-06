@@ -105,6 +105,14 @@ test('writes to stdout by default', async () => {
   expect(stdout).toContain('color: red');
 });
 
+test('reports the processing backend in verbose mode', async () => {
+  const { error, stderr } = await cli(['test/fixtures/a.css', '--no-map', '--verbose']);
+
+  expect(error, stderr).toBeFalsy();
+  expect(stderr).toContain('Backend: native (native addon available)');
+  expect(stderr).toMatch(/Backend: native\b/);
+});
+
 test('stdin with -o keeps from and to distinct for plugins', async () => {
   const output = tmp('stdin-output.css');
 
@@ -116,6 +124,22 @@ test('stdin with -o keeps from and to distinct for plugins', async () => {
 
   expect(error, stderr).toBeFalsy();
   expect(await read(output)).toContain('color: red');
+});
+
+test('--use accepts plugins exported as objects', async () => {
+  const output = tmp('teal-output.css');
+
+  const { error, stderr } = await cli([
+    'test/fixtures/a.css',
+    '-o',
+    output,
+    '--no-map',
+    '-u',
+    path.resolve('test/fixtures/plugins/to-teal.mjs'),
+  ]);
+
+  expect(error, stderr).toBeFalsy();
+  expect(await read(output)).toContain('color: teal');
 });
 
 test('rejects parser, syntax, and stringifier delegates instead of ignoring them', async () => {
@@ -181,7 +205,7 @@ test('watch mode recompiles when input changes', async () => {
     await waitForContent(output, 'color: blue');
     expect(await read(output)).not.toContain('color: red');
   } finally {
-    child.kill();
+    child.kill('SIGKILL');
     await Promise.race([
       new Promise((resolve) => child.on('exit', resolve)),
       new Promise((resolve) => setTimeout(resolve, 1000)),
@@ -229,10 +253,113 @@ test('watch mode recompiles when input changes without updating mtime', async ()
     await waitForContent(output, 'color: blue');
     expect(await read(output)).not.toContain('color: red');
   } finally {
-    child.kill();
+    child.kill('SIGKILL');
     await Promise.race([
       new Promise((resolve) => child.on('exit', resolve)),
       new Promise((resolve) => setTimeout(resolve, 1000)),
     ]);
+  }
+}, 15000);
+
+test('watch mode exits cleanly on SIGINT', async () => {
+  const { input, output } = createWatchFixture();
+  await fs.mkdir(path.dirname(input), { recursive: true });
+  await fs.writeFile(input, '.a { color: red; }');
+
+  const child = spawn(
+    'node',
+    [
+      path.join(packageRoot, 'bin/postcss-go.js'),
+      input,
+      '-o',
+      output,
+      '--watch',
+      '--poll',
+      '--verbose',
+      '--no-map',
+    ],
+    {
+      cwd: packageRoot,
+      env: { ...process.env, FORCE_IS_TTY: 'true' },
+    },
+  );
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  try {
+    await waitForContent(output, 'color: red').catch((error) => {
+      throw new Error(`${error.message}\nchild stderr:\n${stderr}`);
+    });
+    await waitForStreamContent(child.stderr, 'Waiting for file changes...', 10000, stderr);
+
+    child.kill('SIGINT');
+    const exit = await Promise.race([
+      new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        child.on('exit', (code, signal) => resolve({ code, signal }));
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+
+    expect(exit, `watch process did not exit after SIGINT\nstderr:\n${stderr}`).not.toBeNull();
+    expect(exit?.signal).toBeNull();
+    expect(exit?.code).toBe(0);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
+  }
+}, 15000);
+
+test('watch mode exits cleanly when stdin ends', async () => {
+  const { input, output } = createWatchFixture();
+  await fs.mkdir(path.dirname(input), { recursive: true });
+  await fs.writeFile(input, '.a { color: red; }');
+
+  const child = spawn(
+    'node',
+    [
+      path.join(packageRoot, 'bin/postcss-go.js'),
+      input,
+      '-o',
+      output,
+      '--watch',
+      '--poll',
+      '--verbose',
+      '--no-map',
+    ],
+    {
+      cwd: packageRoot,
+      env: { ...process.env, FORCE_IS_TTY: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  try {
+    await waitForContent(output, 'color: red').catch((error) => {
+      throw new Error(`${error.message}\nchild stderr:\n${stderr}`);
+    });
+    await waitForStreamContent(child.stderr, 'Waiting for file changes...', 10000, stderr);
+
+    child.stdin?.end();
+    const exit = await Promise.race([
+      new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        child.on('exit', (code, signal) => resolve({ code, signal }));
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+
+    expect(exit, `watch process did not exit after stdin end\nstderr:\n${stderr}`).not.toBeNull();
+    expect(exit?.signal).toBeNull();
+    expect(exit?.code).toBe(0);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
   }
 }, 15000);

@@ -2,11 +2,13 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import {
   createDefaultAsyncService,
+  createNativeService,
   getDefaultAsyncBackendCapabilities,
   isNativeAsyncBridgeAvailable,
   NativePostcssGoService,
 } from '../src/native.ts';
-import { AsyncBackendUnavailableError } from '../src/errors.ts';
+import { encodeAst } from '../src/codec.ts';
+import { AsyncBackendUnavailableError, AsyncPluginError } from '../src/errors.ts';
 
 const originalDisableNative = process.env.POSTCSS_GO_DISABLE_NATIVE;
 
@@ -80,4 +82,134 @@ test.each([
   } as never);
 
   expect(() => service.processSync('.a{}')).toThrow(/native process response/);
+});
+
+test('createNativeService fails when the addon is disabled', () => {
+  process.env.POSTCSS_GO_DISABLE_NATIVE = '1';
+  expect(() => createNativeService()).toThrow(/native addon is unavailable/);
+});
+
+test('syntax-prefixed native errors rebuild structured CssSyntaxError metadata', () => {
+  const service = new NativePostcssGoService({
+    parse() {
+      throw new Error('postcss-go:css-syntax: Unexpected }');
+    },
+    parseAsync() {
+      return Promise.reject(new Error('postcss-go:css-syntax: Unexpected }'));
+    },
+  } as never);
+
+  expect(() => service.parseSync('a {')).toThrow(/Unclosed block/);
+});
+
+test('sync map.annotation thenables are rejected as async plugins', () => {
+  const service = new NativePostcssGoService({
+    stringify() {
+      return JSON.stringify({ css: '.a{}' });
+    },
+  } as never);
+
+  expect(() =>
+    service.stringifyResultSync(
+      { type: 'root', nodes: [] },
+      {
+        map: {
+          annotation: async () => 'out.css.map',
+        },
+      },
+    ),
+  ).toThrow(AsyncPluginError);
+});
+
+test('sync noWork map.annotation thenables are rejected as async plugins', () => {
+  const service = new NativePostcssGoService({
+    noWork() {
+      return JSON.stringify({ css: '.a{}' });
+    },
+  } as never);
+
+  expect(() =>
+    service.noWorkSync('.a{}', {
+      map: {
+        annotation: async () => 'out.css.map',
+      },
+    }),
+  ).toThrow(AsyncPluginError);
+});
+
+test('async stringify annotation callbacks are awaited', async () => {
+  const service = new NativePostcssGoService({
+    async stringifyAsync() {
+      return JSON.stringify({ css: '.a{}' });
+    },
+  } as never);
+
+  const result = await service.stringifyResult(
+    { type: 'root', nodes: [] },
+    {
+      to: 'out.css',
+      map: {
+        annotation: async () => 'generated.css.map',
+      },
+    },
+  );
+  expect(result.css).toBe('.a{}');
+});
+
+test('async noWork annotation callbacks are awaited', async () => {
+  const service = new NativePostcssGoService({
+    async noWorkAsync() {
+      return JSON.stringify({ css: '.a{}' });
+    },
+  } as never);
+
+  const result = await service.noWork('.a{}', {
+    to: 'out.css',
+    map: {
+      annotation: async () => 'generated.css.map',
+    },
+  });
+  expect(result.css).toBe('.a{}');
+});
+
+test('processSync with annotation callbacks stringifies through the live path', () => {
+  const rootBuf = encodeAst({ type: 'root', nodes: [] });
+  const service = new NativePostcssGoService({
+    parse() {
+      return rootBuf;
+    },
+    stringify() {
+      return JSON.stringify({ css: '.annotated{}' });
+    },
+  } as never);
+
+  const result = service.processSync('.a{}', {
+    to: 'out.css',
+    map: {
+      annotation: () => 'out.css.map',
+    },
+  });
+  expect(result.css).toBe('.annotated{}');
+  expect(result.backend).toBe('native');
+});
+
+test('process with annotation callbacks stringifies through the live async path', async () => {
+  const rootBuf = encodeAst({ type: 'root', nodes: [] });
+  const service = new NativePostcssGoService({
+    async parseAsync() {
+      return rootBuf;
+    },
+    async stringifyAsync() {
+      return JSON.stringify({ css: '.annotated{}' });
+    },
+  } as never);
+
+  const result = await service.process('.a{}', {
+    to: 'out.css',
+    map: {
+      annotation: async () => 'out.css.map',
+    },
+  });
+  expect(result.css).toBe('.annotated{}');
+  expect(result.backend).toBe('native');
 });

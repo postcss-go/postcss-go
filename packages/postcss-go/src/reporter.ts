@@ -4,9 +4,16 @@ export function formatWarnings(result: Pick<CliProcessResult, 'messages'>): stri
   return result.messages
     .filter((message) => message.type === 'warning')
     .map((message) => {
-      if (typeof message.toString === 'function') return message.toString();
+      if (
+        typeof message.toString === 'function' &&
+        message.toString !== Object.prototype.toString
+      ) {
+        return message.toString();
+      }
       const location =
-        message.file && message.line && message.column
+        message.file &&
+        typeof message.line === 'number' &&
+        typeof message.column === 'number'
           ? `${message.file}:${message.line}:${message.column}: `
           : '';
       const plugin = message.plugin ? `${String(message.plugin)}: ` : '';

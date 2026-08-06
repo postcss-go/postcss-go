@@ -2,8 +2,14 @@ import postcss, { type AcceptedPlugin } from 'postcss';
 import { SourceMapConsumer } from 'source-map-js';
 import { expect, test, vi } from 'vitest';
 
-import { fromAst } from '../src/ast.ts';
-import { runPluginsWithBridge } from '../src/plugin-runtime.ts';
+import { Document, fromAst, Root } from '../src/ast.ts';
+import { Processor } from '../src/processor.ts';
+import {
+  postcssApi,
+  runPluginsWithBridge,
+  runPluginsWithBridgeSync,
+  setProcessorFactory,
+} from '../src/plugin-runtime.ts';
 import { NATIVE_BACKEND_CAPABILITIES } from '../src/service.ts';
 import type { AstNode, ProcessResult } from '../src/types.ts';
 
@@ -623,4 +629,65 @@ test('hasPreviousMap treats map.prev false as absent', async () => {
   expect(
     (result.root.source as unknown as { input?: { map?: unknown } } | undefined)?.input?.map,
   ).toBeUndefined();
+});
+
+test('helpers expose node constructors used by plugins', async () => {
+  const service = bridge();
+  let seen = false;
+  await runPluginsWithBridge(
+    service,
+    [
+      {
+        postcssPlugin: 'helpers',
+        Once(_root, helpers) {
+          expect(helpers.atRule({ name: 'media' }).type).toBe('atrule');
+          expect(helpers.comment({ text: 'x' }).type).toBe('comment');
+          expect(helpers.document().type).toBe('document');
+          expect(helpers.root().type).toBe('root');
+          expect(helpers.decl({ prop: 'color', value: 'red' }).type).toBe('decl');
+          expect(helpers.rule({ selector: '.a' }).type).toBe('rule');
+          seen = true;
+        },
+      },
+    ],
+    '.a{}',
+    { from: 'input.css', map: false },
+  );
+  expect(seen).toBe(true);
+});
+
+test('sync runtime accepts transformer functions and Document Once listeners', () => {
+  const service = {
+    capabilities: NATIVE_BACKEND_CAPABILITIES,
+    parseSync: () => ({
+      root: new Document({ nodes: [new Root({ nodes: [] })] }),
+    }),
+    stringifyResultSync: () => ({ css: '' }),
+  };
+
+  const events: string[] = [];
+  const result = runPluginsWithBridgeSync(
+    service,
+    [
+      (root, resultObj) => {
+        events.push(`transform:${root.type}`);
+        resultObj.messages.push({ type: 'custom', text: 'ok' });
+      },
+      {
+        postcssPlugin: 'doc-once',
+        Once(root) {
+          events.push(`once:${root.type}`);
+        },
+      },
+    ],
+    '.a{}',
+    { from: 'input.css', map: false },
+  );
+
+  expect(events).toEqual(['transform:root', 'once:root']);
+  expect(result.messages).toEqual([{ type: 'custom', text: 'ok' }]);
+
+  setProcessorFactory(undefined as never);
+  expect(() => postcssApi([])).toThrow(/not been initialized/);
+  setProcessorFactory((plugins) => new Processor(plugins));
 });

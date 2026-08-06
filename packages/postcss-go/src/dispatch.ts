@@ -41,6 +41,7 @@ export type DispatchSyncService = Pick<
   SyncPostcssGoService,
   'parseSync' | 'processSync' | 'stringifySync' | 'stringifyResultSync'
 > & {
+  capabilities?: SyncPostcssGoService['capabilities'];
   noWorkSync?(css: string, options?: ProcessOptions): NoWorkResult;
 };
 
@@ -68,11 +69,13 @@ export async function dispatchProcess(
   if (plugins.length > 0) {
     return runPluginsWithBridge(service, plugins, css, options, processor);
   }
+  const processed = await service.process(css, options as ProcessOptions);
   return hydrateProcessResult(
-    await service.process(css, options as ProcessOptions),
+    processed,
     css,
     options,
     processor ?? { plugins },
+    processed.backend ?? service.capabilities?.backend,
   );
 }
 
@@ -88,11 +91,13 @@ export function dispatchProcessSync(
   if (plugins.length > 0) {
     return runPluginsWithBridgeSync(service, plugins, css, options, processor);
   }
+  const processed = service.processSync(css, options as ProcessOptions);
   return hydrateProcessResult(
-    service.processSync(css, options as ProcessOptions),
+    processed,
     css,
     options,
     processor ?? { plugins },
+    processed.backend ?? service.capabilities?.backend,
   );
 }
 
@@ -180,7 +185,7 @@ export function dispatchNoWorkSync(
 
 /** Async process that returns a bridge DTO with a hydrated live root. */
 export async function dispatchProcessDto(
-  service: Pick<PostcssGoService, 'process'>,
+  service: Pick<PostcssGoService, 'process'> & { capabilities?: PostcssGoService['capabilities'] },
   css: string,
   options: ProcessOptions = {},
 ): Promise<ProcessResult> {
@@ -194,6 +199,7 @@ export async function dispatchProcessDto(
   attachInputMetadata(root, css, options);
   return {
     ...processed,
+    backend: processed.backend ?? service.capabilities?.backend,
     root,
     messages: hydrateResultMessages(processed.messages),
   };
@@ -204,6 +210,7 @@ function hydrateProcessResult(
   css: string,
   options: ProcessFileOptions,
   processor: ResultProcessorFacade,
+  backend?: PostcssGoService['capabilities']['backend'],
 ): PluginResult {
   const root = asProcessRoot(
     processed.root instanceof Node
@@ -215,6 +222,7 @@ function hydrateProcessResult(
   result.css = processed.css;
   result.map = hydrateResultMap(processed.map);
   result.mapFile = processed.mapFile;
+  result.backend = backend;
   result.messages.push(...hydrateResultMessages(processed.messages));
   return result;
 }

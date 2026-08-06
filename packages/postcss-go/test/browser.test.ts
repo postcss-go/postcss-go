@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { BrowserPostcssGoService } from '../src/index.ts';
+import { BrowserPostcssGoService } from '../src/browser.ts';
 
 class FakeBrowserWorker {
   onmessage: ((event: { data: unknown }) => void) | null = null;
