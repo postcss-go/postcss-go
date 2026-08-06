@@ -11,19 +11,21 @@ to parsing, AST mutation, traversal, stringifying, and source maps.
 
 ## Parse and transform
 
-<div class="mb-12 mt-7 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent" data-code-sample><div class="flex items-center justify-between gap-4 border-b border-white/[.08] px-[1.1rem] py-[.7rem]"><span class="font-mono text-[.68rem] tracking-[.08em] text-white/50">main.go</span><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div><pre class="m-0 rounded-none border-0 px-[1.1rem] py-5"><code class="select-text whitespace-pre rounded-none border-0 bg-transparent p-0 text-[.9rem] leading-[inherit] text-inherit">root, err := postcss.Parse(".button { color: red; }")
+```go
+root, err := postcss.Parse(".button { color: red; }")
 if err != nil {
-    return err
+  return err
 }
 
-postcss.WalkDecls(root, func(decl \*postcss.Declaration) error {
-if decl.Prop == "color" {
-decl.Value = "tomato"
-}
-return nil
+postcss.WalkDecls(root, func(decl *postcss.Declaration) error {
+  if decl.Prop == "color" {
+    decl.Value = "tomato"
+  }
+  return nil
 })
 
-output := postcss.Stringify(root)</code></pre></div>
+output := postcss.Stringify(root)
+```
 
 ## Entry points
 
