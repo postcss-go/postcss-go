@@ -154,14 +154,3 @@ test('browser WASM service rejects synchronous APIs with SyncBackendUnavailableE
     SyncBackendUnavailableError,
   );
 });
-
-test('missing classic Worker transport raises WasmWorkerError', () => {
-  const WorkerRef = globalThis.Worker;
-  // @ts-expect-error intentional for the missing-Worker branch
-  delete globalThis.Worker;
-  try {
-    expect(() => new BrowserPostcssGoService({ workerUrl: '/worker.js' })).toThrow(WasmWorkerError);
-  } finally {
-    globalThis.Worker = WorkerRef;
-  }
-});

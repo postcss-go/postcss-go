@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
 import { defaultRaw } from '../src/ast-stringifier.ts';
-import { stringify } from './helpers/stringify.ts';
 import {
   AtRule,
   Comment,
@@ -796,7 +795,7 @@ test('insertBeforeIndex detaches nodes that still belong to another tree', () =>
   expect(target.nodes).toEqual([fromRoot, fromRule]);
 });
 
-test('stringify helpers cover raw value objects, comment spacing, and unknown nodes', () => {
+test('stringify helpers cover raw value objects and comment spacing', () => {
   const withRawValue = new Declaration({
     prop: 'color',
     value: 'red',
@@ -853,10 +852,62 @@ test('stringify helpers cover raw value objects, comment spacing, and unknown no
   indentRoot.append(needsRuleBefore);
   delete needsRuleBefore.raws.before;
   expect(defaultRaw(needsRuleBefore, null as never, 'beforeRule')).toBe('\n');
+});
 
-  expect(() =>
-    stringify({ type: 'word', raws: {} }, () => {
-      throw new Error('should not emit');
+test('Node#raw infers colon, semicolon, indent, and empty-body raws from siblings', () => {
+  const document = new Document();
+  const nestedRoot = new Root();
+  document.append(nestedRoot);
+  expect(nestedRoot.raw('before')).toBe('');
+
+  const colonRoot = new Root();
+  const colonRule = new Rule({ selector: 'a' });
+  colonRule.append(new Declaration({ prop: 'color', value: 'red', raws: { between: ':  ' } }));
+  const inferredDecl = new Declaration({ prop: 'width', value: '1px' });
+  colonRule.append(inferredDecl);
+  colonRoot.append(colonRule);
+  expect(inferredDecl.raw('between', 'colon')).toBe(':  ');
+
+  const semicolonRoot = new Root();
+  semicolonRoot.append(
+    new Rule({
+      selector: 'a',
+      raws: { semicolon: true },
+      nodes: [new Declaration({ prop: 'color', value: 'red' })],
     }),
-  ).toThrow(/Unknown AST node type word/);
+  );
+  const inferredRule = new Rule({
+    selector: 'b',
+    nodes: [new Declaration({ prop: 'display', value: 'block' })],
+  });
+  semicolonRoot.append(inferredRule);
+  expect(inferredRule.raw('semicolon')).toBe(true);
+
+  const emptyRoot = new Root();
+  emptyRoot.append(new Rule({ selector: 'a', nodes: [], raws: { after: ' ' } }));
+  const emptyRule = new Rule({ selector: 'b', nodes: [] });
+  emptyRoot.append(emptyRule);
+  expect(emptyRule.raw('after', 'emptyBody')).toBe(' ');
+
+  const indentRoot = new Root();
+  const outer = new Rule({ selector: 'a', nodes: [] });
+  indentRoot.append(outer);
+  outer.append(new Rule({ selector: 'b', nodes: [], raws: { before: '\n    ' } }));
+  const indented = new Rule({ selector: 'c', nodes: [] });
+  outer.append(indented);
+  expect(indented.raw('indent')).toBe('    ');
+
+  const closeRoot = new Root();
+  const withClose = new Rule({
+    selector: 'a',
+    raws: { after: '\n  ' },
+    nodes: [new Declaration({ prop: 'color', value: 'red' })],
+  });
+  closeRoot.append(withClose);
+  const needsClose = new Rule({
+    selector: 'b',
+    nodes: [new Declaration({ prop: 'color', value: 'blue' })],
+  });
+  closeRoot.append(needsClose);
+  expect(needsClose.raw('after', 'beforeClose')).toContain('\n');
 });

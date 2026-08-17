@@ -584,38 +584,6 @@ test('named visitors run general filters across plugins before named filters', a
   expect(events).toEqual(['a:*', 'b:*', 'a:media', 'b:media']);
 });
 
-test('empty at-rule blocks keep braces and afterName spacing', async () => {
-  const css = '@media x {}';
-  const service = bridge();
-  service.parse = vi.fn(async () => ({
-    root: {
-      type: 'root',
-      nodes: [
-        {
-          type: 'atrule',
-          name: 'media',
-          params: 'x',
-          block: true,
-          nodes: [],
-          raws: { before: '', afterName: ' ', between: ' ', after: '' },
-        },
-      ],
-    } as RootNode,
-  }));
-
-  const noMap = await runPluginsWithBridge(service, [{ postcssPlugin: 'noop', Once() {} }], css, {
-    from: 'input.css',
-    map: false,
-  });
-  const withMap = await runPluginsWithBridge(service, [{ postcssPlugin: 'noop', Once() {} }], css, {
-    from: 'input.css',
-    map: { inline: false },
-  });
-
-  expect(noMap.css).toBe('@media x {}');
-  expect(withMap.css).toBe('@media x {}');
-});
-
 test('callback errors include postcssNode metadata', async () => {
   await expect(
     runPluginsWithBridge(

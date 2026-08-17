@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -102,6 +103,53 @@ func TestStringifyNodeIndexUsesSiblingRaws(t *testing.T) {
 	}
 	if result.CSS != "@page 1{}" {
 		t.Fatalf("expected compact at-rule from sibling between, got %q", result.CSS)
+	}
+}
+
+func TestStringifyBuilderNodeIndexAndOutOfRange(t *testing.T) {
+	encoded, err := Call(Parse, []byte(".a { color: red; }"), nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root, err := codec.DecodeAST(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	ruleIndex := 0
+	for index, node := range indexAST(root) {
+		if _, ok := node.(*ast.Rule); ok {
+			ruleIndex = index + 1
+			break
+		}
+	}
+	if ruleIndex == 0 {
+		t.Fatal("expected a rule in the parsed tree")
+	}
+
+	payload, err := Call(StringifyBuilder, encoded, []byte(`{"nodeIndex":`+strconv.Itoa(ruleIndex)+`}`))
+	if err != nil {
+		t.Fatalf("stringifyBuilder nodeIndex: %v", err)
+	}
+	var parts []stringifier.BuilderPart
+	if err := json.Unmarshal(payload, &parts); err != nil {
+		t.Fatalf("decode builder parts: %v", err)
+	}
+	var css strings.Builder
+	for _, part := range parts {
+		css.WriteString(part.CSS)
+	}
+	if got := css.String(); !strings.Contains(got, ".a") || !strings.Contains(got, "color: red") {
+		t.Fatalf("unexpected builder nodeIndex css: %q", got)
+	}
+
+	if _, err := Call(Stringify, encoded, []byte(`{"nodeIndex":99}`)); err == nil {
+		t.Fatal("expected out of range stringify nodeIndex")
+	}
+	if _, err := Call(StringifyBuilder, encoded, []byte(`{"nodeIndex":99}`)); err == nil {
+		t.Fatal("expected out of range stringifyBuilder nodeIndex")
+	}
+	if _, err := Call(StringifyBuilder, encoded, []byte(`{`)); err == nil {
+		t.Fatal("expected bad stringifyBuilder options error")
 	}
 }
 

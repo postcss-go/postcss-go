@@ -8,7 +8,14 @@ import {
   isNativeAsyncBridgeAvailable,
   NativePostcssGoService,
 } from '../src/native.ts';
-import { parseCssSync, Root, setSyncCssRuntime, stringifyCssSync } from '../src/ast.ts';
+import {
+  AtRule,
+  parseCssSync,
+  Root,
+  Rule,
+  setSyncCssRuntime,
+  stringifyCssSync,
+} from '../src/ast.ts';
 import { encodeAst } from '../src/codec.ts';
 import {
   AsyncBackendUnavailableError,
@@ -270,18 +277,37 @@ test('parseCssSync and stringifyCssSync throw without an installed N-API runtime
   }
 });
 
+test('installNativeSyncCssRuntime clears helpers when native is disabled', () => {
+  process.env.POSTCSS_GO_DISABLE_NATIVE = '1';
+  try {
+    installNativeSyncCssRuntime();
+    expect(() => parseCssSync('.a{}')).toThrow(SyncBackendUnavailableError);
+  } finally {
+    if (originalDisableNative === undefined) delete process.env.POSTCSS_GO_DISABLE_NATIVE;
+    else process.env.POSTCSS_GO_DISABLE_NATIVE = originalDisableNative;
+    installNativeSyncCssRuntime();
+  }
+});
+
 test.runIf(isNativeAsyncBridgeAvailable())(
   'parseCssSync and Node#toString use the Go N-API stringifier',
   () => {
     installNativeSyncCssRuntime();
-    const root = parseCssSync('.a { color: red }');
+    const root = parseCssSync({ toString: () => '.a { color: red }' });
     expect(root.toString()).toContain('color: red');
 
-    const chunks: Array<{ css: string; type?: string }> = [];
-    stringifyCssSync(root, (css, _node, type) => {
-      chunks.push({ css, type });
+    const rule = root.first as Rule;
+    const chunks: Array<{ css: string; node?: unknown; type?: string }> = [];
+    stringifyCssSync(root, (css, node, type) => {
+      chunks.push({ css, node, type });
     });
     expect(chunks.map((part) => part.css).join('')).toContain('color: red');
-    expect(chunks.some((part) => part.type === 'start')).toBe(true);
+    expect(chunks.some((part) => part.type === 'start' && part.node === rule)).toBe(true);
+
+    const nested = parseCssSync('@page{}a{}');
+    const page = new AtRule({ name: 'page', params: '1', nodes: [] });
+    nested.append(page);
+    expect(page.toString()).toBe('@page 1{}');
+    expect(rule.toString()).toContain('color: red');
   },
 );

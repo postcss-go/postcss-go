@@ -29,7 +29,7 @@ export function stringifyNode(node: StringifiableNode): string {
   return css;
 }
 
-export function stringify(node: StringifiableNode, builder: ChunkBuilder): void {
+function stringify(node: StringifiableNode, builder: ChunkBuilder): void {
   const raw = (target: StringifiableNode, own: string | null, detect = own ?? '') =>
     defaultRaw(target, own ?? detect, detect);
   const body = (container: StringifiableNode): void => {
