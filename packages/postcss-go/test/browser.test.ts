@@ -4,9 +4,9 @@ import {
   BrowserPostcssGoService,
   createBrowserProcessor,
   rejectBrowserSyncApi,
-  SyncBackendUnavailableError,
-  WasmWorkerError,
 } from '../src/wasm/browser.ts';
+import { SyncBackendUnavailableError } from '../src/errors.ts';
+import { WasmWorkerError } from '../src/wasm/errors.ts';
 
 class FakeBrowserWorker {
   onmessage: ((event: { data: unknown }) => void) | null = null;

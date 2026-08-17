@@ -2,12 +2,9 @@ export {
   BrowserPostcssGoService,
   createBrowserProcessor,
   rejectBrowserSyncApi,
-  SyncBackendUnavailableError,
-  WasmWorkerError,
-  CssSyntaxError,
-  errorFromWasmDto,
   type BrowserPostcssGoServiceOptions,
   type BrowserProcessor,
   type BrowserWorkerLike,
-  type WasmErrorDTO,
 } from './browser.js';
+export { SyncBackendUnavailableError, CssSyntaxError } from '../errors.js';
+export { WasmWorkerError, errorFromWasmDto, type WasmErrorDTO } from './errors.js';

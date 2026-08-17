@@ -4,13 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { Node, Root, Document } from '../src/ast.ts';
-import {
-  assertSupportedAst,
-  decodeAst,
-  encodeAst,
-  hydrateAst,
-  serializeAst,
-} from '../src/codec.ts';
+import { assertSupportedAst } from '../src/ast-utils.ts';
+import { decodeAst, encodeAst, hydrateAst, serializeAst } from '../src/codec.ts';
 import { UnsupportedAstNodeError } from '../src/errors.ts';
 import {
   createNativeService,

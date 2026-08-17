@@ -27,9 +27,6 @@ import type {
   RootNode,
 } from '../types.js';
 
-export { SyncBackendUnavailableError, CssSyntaxError } from '../errors.js';
-export { WasmWorkerError, errorFromWasmDto, type WasmErrorDTO } from './errors.js';
-
 export interface BrowserWorkerLike {
   onmessage: ((event: { data: unknown }) => void) | null;
   onerror: ((event: { error?: unknown; message?: string }) => void) | null;

@@ -10,8 +10,6 @@ import { AtRule, Comment, Declaration, Document, Node, Root, Rule, type ChildNod
 import { UnsupportedAstNodeError } from './errors.js';
 import type { AstNode, Raws, SourceLocation } from './types.js';
 
-export { assertSupportedAst } from './ast-utils.js';
-
 const MAGIC = Buffer.from('PCGW');
 const VERSION = 1;
 
