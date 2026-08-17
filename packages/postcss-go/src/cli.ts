@@ -428,9 +428,7 @@ export async function runCLI(argvInput: string[] = process.argv.slice(2)): Promi
           .dependantsOf(file)
           .concat(getAncestorDirs(file).flatMap((dirName) => depGraph.dependantsOf(dirName)));
 
-        recompile = recompile.concat(
-          dependants.filter((entry) => inputKeys.has(watchKey(entry))),
-        );
+        recompile = recompile.concat(dependants.filter((entry) => inputKeys.has(watchKey(entry))));
 
         if (!recompile.length) recompile = input;
 

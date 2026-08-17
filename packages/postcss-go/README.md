@@ -80,6 +80,24 @@ const result = await postcss().process('a { color: red }');
 console.log(result.backend); // backend used for this operation: "native"
 ```
 
+## Browser / WASM
+
+For browsers, use the `@postcss-go/core/wasm` entry. It re-exports the browser
+API and ships the classic Worker plus WASM assets:
+
+```ts
+import { createBrowserProcessor } from '@postcss-go/core/wasm';
+
+const processor = createBrowserProcessor([], {
+  // Copy these three package assets to your application's public directory.
+  workerUrl: '/postcss-go/worker.js',
+  wasmUrl: '/postcss-go/postcss-go.wasm',
+  wasmExecUrl: '/postcss-go/wasm_exec.js',
+});
+```
+
+See the website guide page `guide/browser-wasm` for CSP and asset-loading details.
+
 `isNativeBridgeAvailable()` is the boolean discovery shortcut. The CLI prints
 `Backend: native (native addon available)` with `--verbose`. There is no silent
 child-process, WASM, or PostCSS fallback in Node.

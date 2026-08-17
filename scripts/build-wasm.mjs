@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
-const packageDir = path.join(repoRoot, 'packages', 'postcss-go-wasm');
-const distDir = path.join(packageDir, 'dist');
-const nestedDir = path.join(distDir, 'postcss-go-wasm', 'src');
+const distDir = path.join(repoRoot, 'packages', 'postcss-go', 'dist', 'wasm');
 
 fs.mkdirSync(distDir, { recursive: true });
 
@@ -28,7 +26,4 @@ fs.copyFileSync(
   path.join(distDir, 'wasm_exec.js'),
 );
 
-for (const name of ['index.js', 'index.d.ts', 'index.d.ts.map', 'worker.js']) {
-  const source = path.join(nestedDir, name);
-  if (fs.existsSync(source)) fs.copyFileSync(source, path.join(distDir, name));
-}
+console.log(`Wrote WASM assets to ${distDir}`);

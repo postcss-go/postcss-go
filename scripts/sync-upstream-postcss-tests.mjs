@@ -28,8 +28,30 @@ function run(command, args, options = {}) {
   return result;
 }
 
+async function fetchWithRetry(url, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url);
+      if (
+        response.ok ||
+        (response.status < 500 && response.status !== 408 && response.status !== 429)
+      ) {
+        return response;
+      }
+      lastError = new Error(`${response.status} ${response.statusText}`);
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 async function download(url, dest) {
-  const response = await fetch(url);
+  const response = await fetchWithRetry(url);
   if (!response.ok) {
     throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
   }
@@ -76,19 +98,23 @@ let repoPath = upstreamRepo.replace(/^https:\/\/github\.com\//, '');
 repoPath = repoPath.replace(/\.git$/, '');
 
 let commitSha;
-try {
-  const commitResponse = await fetch(
-    `https://api.github.com/repos/${repoPath}/commits/${upstreamRef}`,
-  );
-  if (!commitResponse.ok) {
-    throw new Error(
-      `Failed to fetch commit for ${upstreamRepo}@${upstreamRef}: ${commitResponse.status}`,
+if (/^[0-9a-f]{40}$/i.test(upstreamRef)) {
+  commitSha = upstreamRef;
+} else {
+  try {
+    const commitResponse = await fetchWithRetry(
+      `https://api.github.com/repos/${repoPath}/commits/${upstreamRef}`,
     );
+    if (!commitResponse.ok) {
+      throw new Error(
+        `Failed to fetch commit for ${upstreamRepo}@${upstreamRef}: ${commitResponse.status}`,
+      );
+    }
+    commitSha = (await commitResponse.json()).sha;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
   }
-  commitSha = (await commitResponse.json()).sha;
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
 }
 
 fs.writeFileSync(

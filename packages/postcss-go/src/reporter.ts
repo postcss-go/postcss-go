@@ -11,9 +11,7 @@ export function formatWarnings(result: Pick<CliProcessResult, 'messages'>): stri
         return message.toString();
       }
       const location =
-        message.file &&
-        typeof message.line === 'number' &&
-        typeof message.column === 'number'
+        message.file && typeof message.line === 'number' && typeof message.column === 'number'
           ? `${message.file}:${message.line}:${message.column}: `
           : '';
       const plugin = message.plugin ? `${String(message.plugin)}: ` : '';

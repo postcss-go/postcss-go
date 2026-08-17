@@ -63,6 +63,7 @@ export {
   type CssSyntaxErrorOptions,
   type RangePosition,
 } from './errors.js';
+export { WasmWorkerError, errorFromWasmDto, type WasmErrorDTO } from './wasm/errors.js';
 export { Warning, type WarningOptions } from './warning.js';
 export { Result, ResultMap, type ResultProcessor } from './result.js';
 export type { Parser } from './parser.js';
@@ -103,10 +104,7 @@ export type {
   PluginListenerGroup,
   Transformer,
 } from './plugin-types.js';
-export type {
-  MapOptions,
-  ProcessFileOptions,
-} from '@postcss-go/shared/map-options';
+export type { MapOptions, ProcessFileOptions } from '@postcss-go/shared/map-options';
 export { isNativeBridgeAvailable } from './native.js';
 export {
   loadConfig,

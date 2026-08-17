@@ -1,4 +1,8 @@
+import type { Node } from './ast.js';
+import { UnsupportedAstNodeError } from './errors.js';
 import type { AstNode, RawField, Raws, SourceLocation } from './types.js';
+
+const BUILTIN_NODE_TYPES = new Set(['root', 'document', 'rule', 'atrule', 'decl', 'comment']);
 
 export const INTERNAL_NODE_PROPERTIES = new Set([
   'clean',
@@ -8,6 +12,13 @@ export const INTERNAL_NODE_PROPERTIES = new Set([
   'proxyCache',
   'rawsProvided',
 ]);
+
+/** Validate a tree before JSON, binary, native, or WASM transport. */
+export function assertSupportedAst(node: AstNode | Node): void {
+  if (!BUILTIN_NODE_TYPES.has(node.type)) throw new UnsupportedAstNodeError(node.type);
+  const children = (node as AstNode & { nodes?: AstNode[] }).nodes;
+  for (const child of children ?? []) assertSupportedAst(child);
+}
 
 function cloneRaw(value: RawField | undefined): RawField | undefined {
   if (Array.isArray(value)) return value.map((item) => cloneRaw(item)) as RawField[];

@@ -89,7 +89,6 @@ jobs:
           path: |
             packages/postcss-go/coverage/lcov.info
             packages/postcss-compat/coverage/lcov.info
-            packages/postcss-go-wasm/coverage/lcov.info
 
       - name: Upload Go coverage to Codecov
         if: env.CODECOV_TOKEN != ''
@@ -107,7 +106,7 @@ jobs:
         if: env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v7
         with:
-          files: ./packages/postcss-go/coverage/lcov.info,./packages/postcss-compat/coverage/lcov.info,./packages/postcss-go-wasm/coverage/lcov.info
+          files: ./packages/postcss-go/coverage/lcov.info,./packages/postcss-compat/coverage/lcov.info
           flags: js
           name: codecov-js
           disable_search: true
@@ -206,6 +205,42 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  browser-wasm:
+    name: Browser WASM Smoke
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Test browser WASM
+        run: pnpm --filter @postcss-go/core test:browser-wasm
 
   upstream-tests:
     name: Upstream PostCSS Test Suite

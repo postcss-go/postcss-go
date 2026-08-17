@@ -26,10 +26,6 @@ const reports = [
     file: 'packages/postcss-compat/coverage/lcov.info',
     prefix: 'packages/postcss-compat/',
   },
-  {
-    file: 'packages/postcss-go-wasm/coverage/lcov.info',
-    prefix: 'packages/postcss-go-wasm/',
-  },
 ];
 
 let rewritten = 0;

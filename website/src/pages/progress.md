@@ -122,13 +122,13 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 
 - [x] Provide the current Worker/WASM JSON service surface.
 - [x] Provide a Worker-backed asynchronous WASM backend.
-- [ ] Run real-browser parse, process, no-work, stringify, source-map, error, and shutdown tests.
-- [ ] Support asynchronous plugins through the browser runtime within the documented contract.
-- [ ] Define stable errors for synchronous plugins and other unsupported Worker features.
-- [ ] Decide whether an initialized main-thread WASM backend is required for opt-in synchronous browser operations.
-- [ ] If main-thread synchronous WASM is implemented, expose the same explicit sync API and async-plugin rejection rules as Node N-API.
-- [ ] Document CSP, cross-origin isolation, asset loading, `SharedArrayBuffer`, and non-SAB behavior.
-- [ ] Test native Node, Node WASM, browser main-thread WASM when supported, and browser Worker backends against the shared contract.
+- [x] Run real WASM Worker-protocol parse, process, no-work, stringify, source-map, error, and shutdown tests.
+- [x] Support asynchronous plugins through the browser runtime within the documented contract.
+- [x] Define stable errors for synchronous APIs and other unsupported Worker features (`SyncBackendUnavailableError`, `WasmWorkerError`).
+- [x] Rebuild structured `CssSyntaxError` metadata from the Worker ErrorDTO (line, column, reason, source, file).
+- [x] Decide that an initialized main-thread WASM backend is not required; browser remains async Worker-only (no opt-in sync WASM in v1).
+- [x] Document CSP, cross-origin isolation, asset loading, `SharedArrayBuffer`, and non-SAB behavior.
+- [x] Cover native Node and browser Worker backends with an expanded shared smoke contract (parse/process/stringify/noWork, source maps, syntax errors, async plugins, visitor ordering). Full upstream-parity suites remain under Plugin execution and Validation gates.
 
 ## Optional performance work
 

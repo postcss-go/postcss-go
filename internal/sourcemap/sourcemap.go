@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -66,6 +67,15 @@ type sourceMapMetadata struct {
 }
 
 func NewInput(css string, opts Options) (*Input, error) {
+	return newInput(css, opts, runtime.GOOS, filepath.Abs)
+}
+
+func newInput(
+	css string,
+	opts Options,
+	goos string,
+	abs func(string) (string, error),
+) (*Input, error) {
 	if css == "" {
 		css = ""
 	}
@@ -83,11 +93,11 @@ func NewInput(css string, opts Options) (*Input, error) {
 		if isSourceURI(opts.From) || utils.IsAbsoluteSourcePath(opts.From) {
 			input.File = opts.From
 		} else {
-			abs, err := filepath.Abs(opts.From)
+			resolved, err := resolveInputFile(opts.From, goos, abs)
 			if err != nil {
 				return nil, err
 			}
-			input.File = abs
+			input.File = resolved
 		}
 	}
 	if len(opts.SourceMap) > 0 {
@@ -99,6 +109,23 @@ func NewInput(css string, opts Options) (*Input, error) {
 		input.originContent = sourceMapContentAvailability(opts.SourceMap, opts.SourceMapURL, input.File)
 	}
 	return input, nil
+}
+
+func resolveInputFile(
+	from string,
+	goos string,
+	abs func(string) (string, error),
+) (string, error) {
+	resolved, err := abs(from)
+	if err == nil {
+		return resolved, nil
+	}
+	if goos != "js" {
+		return "", err
+	}
+	// Browser js/wasm has no process working directory. Keep a normalized
+	// virtual path instead of failing with "getwd: not implemented".
+	return filepath.Clean(from), nil
 }
 
 func isSourceURI(value string) bool {

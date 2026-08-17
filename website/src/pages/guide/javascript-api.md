@@ -126,8 +126,11 @@ N-API; the two call forms are explicit and do not select a backend implicitly.
 
 Public Promise-returning APIs and the CLI share the same worker-backed native
 backend. Node has no transport-selection environment variable. The
-browser-compatible service is exposed through the package's `./browser` entry
-point (`BrowserPostcssGoService`), not the main Node entry.
+browser-compatible service is exposed through `@postcss-go/core/wasm`
+(`BrowserPostcssGoService`, `createBrowserProcessor`, and the WASM assets), not
+the main Node entry. The lower-level `@postcss-go/core/browser` module is also
+available. See [Browser and WASM](./browser-wasm/) for CSP, asset loading, and
+the async-only contract.
 
 ## Compatibility boundary
 

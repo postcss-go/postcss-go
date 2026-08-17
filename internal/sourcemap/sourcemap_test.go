@@ -1,11 +1,67 @@
 package sourcemap
 
 import (
+	"errors"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestNewInputPathResolution(t *testing.T) {
+	wantErr := errors.New("absolute path unavailable")
+	tests := []struct {
+		name    string
+		from    string
+		goos    string
+		abs     func(string) (string, error)
+		want    string
+		wantErr error
+	}{
+		{
+			name: "absolute path",
+			from: "input.css",
+			goos: "linux",
+			abs: func(string) (string, error) {
+				return "/repo/input.css", nil
+			},
+			want: "/repo/input.css",
+		},
+		{
+			name: "native error",
+			from: "input.css",
+			goos: "linux",
+			abs: func(string) (string, error) {
+				return "", wantErr
+			},
+			wantErr: wantErr,
+		},
+		{
+			name: "wasm virtual path",
+			from: "styles/../input.css",
+			goos: "js",
+			abs: func(string) (string, error) {
+				return "", wantErr
+			},
+			want: "input.css",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input, err := newInput("x", Options{From: test.from}, test.goos, test.abs)
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("expected error %v, got %v", test.wantErr, err)
+			}
+			if test.wantErr != nil {
+				return
+			}
+			if input.File != test.want {
+				t.Fatalf("expected path %q, got %q", test.want, input.File)
+			}
+		})
+	}
+}
 
 func TestNewInputPreservesWindowsDrivePaths(t *testing.T) {
 	input, err := NewInput("x", Options{From: "C:\\repo\\input.css"})
