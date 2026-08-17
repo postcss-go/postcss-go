@@ -14,6 +14,7 @@ on:
       - pnpm-workspace.yaml
       - tsconfig.base.json
       - 'internal/**'
+      - 'pkg/**'
       - 'cmd/**'
       - 'benchmark/fixtures/**'
       - 'packages/postcss-go/**'
@@ -35,6 +36,7 @@ on:
       - pnpm-workspace.yaml
       - tsconfig.base.json
       - 'internal/**'
+      - 'pkg/**'
       - 'cmd/**'
       - 'benchmark/fixtures/**'
       - 'packages/postcss-go/**'

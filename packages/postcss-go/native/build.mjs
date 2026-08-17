@@ -118,10 +118,11 @@ const archive = run(
   [
     'build',
     '-buildvcs=false',
+    '-tags=nativeaddon',
     `-buildmode=${shared ? 'c-shared' : 'c-archive'}`,
     '-o',
     goLibrary,
-    './internal/nativeaddon',
+    './internal/nativeaddon/cabi',
   ],
   {
     cwd: repoRoot,

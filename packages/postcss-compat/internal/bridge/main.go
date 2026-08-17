@@ -82,42 +82,7 @@ func handleSingleRequest(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	var result any
-	var callErr error
-	switch request.Method {
-	case "parse":
-		var params jsbridge.ParseParams
-		callErr = json.Unmarshal(request.Params, &params)
-		if callErr == nil {
-			result, callErr = jsbridge.ParseRPC(context.Background(), params)
-		}
-	case "process":
-		var params jsbridge.ProcessParams
-		callErr = json.Unmarshal(request.Params, &params)
-		if callErr == nil {
-			result, callErr = jsbridge.ProcessRPC(context.Background(), params)
-		}
-	case "noWork":
-		var params jsbridge.NoWorkParams
-		callErr = json.Unmarshal(request.Params, &params)
-		if callErr == nil {
-			result, callErr = jsbridge.NoWorkRPC(context.Background(), params)
-		}
-	case "stringify":
-		var params jsbridge.StringifyParams
-		callErr = json.Unmarshal(request.Params, &params)
-		if callErr == nil {
-			result, callErr = jsbridge.StringifyRPC(context.Background(), params)
-		}
-	case "tokenize":
-		var params jsbridge.TokenizeBatchParams
-		callErr = json.Unmarshal(request.Params, &params)
-		if callErr == nil {
-			result, callErr = jsbridge.TokenizeBatchRPC(context.Background(), params)
-		}
-	default:
-		callErr = fmt.Errorf("unsupported method %q in single-request mode", request.Method)
-	}
+	result, callErr := dispatchSingle(request.Method, request.Params)
 
 	response := singleResponse{JSONRPC: "2.0", ID: request.ID, Result: result}
 	if callErr != nil {
@@ -125,6 +90,46 @@ func handleSingleRequest(data []byte) ([]byte, error) {
 		response.Error = singleErrorFrom(callErr)
 	}
 	return json.Marshal(response)
+}
+
+func dispatchSingle(method string, raw json.RawMessage) (any, error) {
+	switch method {
+	case "parse":
+		return callSingle(raw, jsbridge.ParseRPC)
+	case "process":
+		return callSingle(raw, jsbridge.ProcessRPC)
+	case "noWork":
+		return callSingle(raw, jsbridge.NoWorkRPC)
+	case "stringify":
+		return callSingle(raw, jsbridge.StringifyRPC)
+	case "tokenize":
+		return callSingle(raw, jsbridge.TokenizeBatchRPC)
+	case "tokenize.open":
+		return callSingle(raw, jsbridge.TokenizeOpenRPC)
+	case "tokenize.next":
+		return callSingle(raw, jsbridge.TokenizeNextRPC)
+	case "tokenize.back":
+		return callSingle(raw, jsbridge.TokenizeBackRPC)
+	case "tokenize.position":
+		return callSingle(raw, jsbridge.TokenizePositionRPC)
+	case "tokenize.eof":
+		return callSingle(raw, jsbridge.TokenizeEOFRPC)
+	case "tokenize.close":
+		return callSingle(raw, jsbridge.TokenizeCloseRPC)
+	default:
+		return nil, fmt.Errorf("unsupported method %q in single-request mode", method)
+	}
+}
+
+func callSingle[P any, R any](raw json.RawMessage, fn func(context.Context, P) (R, error)) (any, error) {
+	if len(raw) == 0 {
+		raw = []byte("{}")
+	}
+	var params P
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, err
+	}
+	return fn(context.Background(), params)
 }
 
 func singleErrorFrom(err error) *singleError {

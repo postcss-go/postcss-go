@@ -10,6 +10,8 @@ The Go API, Node pipeline APIs, CLI plugin path, and browser WASM Worker share
 the Go tokenizer, parser, stringifier, and source-map implementation on their
 service-backed paths. Node's synchronous compatibility helpers also use those
 Go implementations; JavaScript hydrates the resulting AST for plugin callbacks.
+The PostCSS-compat tokenizer override is the same Go tokenizer: token kinds,
+UTF-16 offsets, unclosed errors, and `ignoreUnclosed` come from Go.
 
 The default parser produces a `Root`. `Document` is a constructed container
 that the AST, codec, processor, and stringifier accept; it is not parsed from

@@ -150,9 +150,83 @@ func TestNopWriteCloser(t *testing.T) {
 	}
 }
 
+func TestHandleSingleRequestTokenizeSession(t *testing.T) {
+	request := func(id int, method string, params any) []byte {
+		payload, err := json.Marshal(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      id,
+			"method":  method,
+			"params":  params,
+		})
+		if err != nil {
+			t.Fatalf("marshal %s: %v", method, err)
+		}
+		return payload
+	}
+	call := func(id int, method string, params any) json.RawMessage {
+		response, err := handleSingleRequest(request(id, method, params))
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		var message struct {
+			Error  *singleError    `json:"error"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(response, &message); err != nil {
+			t.Fatalf("decode %s: %v", method, err)
+		}
+		if message.Error != nil {
+			t.Fatalf("%s error: %+v", method, message.Error)
+		}
+		return message.Result
+	}
+
+	var opened struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(call(1, "tokenize.open", map[string]any{"css": "a{}"}), &opened); err != nil {
+		t.Fatalf("decode open: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = handleSingleRequest(request(99, "tokenize.close", map[string]any{"id": opened.ID}))
+	})
+
+	var next struct {
+		Token []any `json:"token"`
+	}
+	if err := json.Unmarshal(call(2, "tokenize.next", map[string]any{"id": opened.ID}), &next); err != nil {
+		t.Fatalf("decode next: %v", err)
+	}
+	if len(next.Token) < 2 || next.Token[0] != "word" || next.Token[1] != "a" {
+		t.Fatalf("first token = %#v", next.Token)
+	}
+
+	if _, err := handleSingleRequest(request(3, "tokenize.back", map[string]any{"id": opened.ID, "token": next.Token})); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	var eof struct {
+		Value bool `json:"value"`
+	}
+	if err := json.Unmarshal(call(4, "tokenize.eof", map[string]any{"id": opened.ID}), &eof); err != nil || eof.Value {
+		t.Fatalf("eof after back = %#v err=%v", eof, err)
+	}
+	var position struct {
+		Value int `json:"value"`
+	}
+	if err := json.Unmarshal(call(5, "tokenize.position", map[string]any{"id": opened.ID}), &position); err != nil {
+		t.Fatalf("decode position: %v", err)
+	}
+	if position.Value != 1 {
+		t.Fatalf("position = %d, want 1 after first token", position.Value)
+	}
+}
+
 func TestRPCMethodsMap(t *testing.T) {
 	methods := rpcMethods()
-	for _, name := range []string{"parse", "process", "noWork", "stringify", "tokenize"} {
+	for _, name := range []string{
+		"parse", "process", "noWork", "stringify", "tokenize",
+		"tokenize.open", "tokenize.next", "tokenize.back", "tokenize.position", "tokenize.eof", "tokenize.close",
+	} {
 		if _, ok := methods[name]; !ok {
 			t.Fatalf("missing rpc method %q", name)
 		}

@@ -9,9 +9,9 @@ overrides are applied only for that run and do not rewrite `vendor/postcss/lib/`
 
 ## Current overrides
 
-| File          | What it is today                                               | Go side                                                                      |
-| ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `tokenize.ts` | PostCSS-compatible stateful wrapper around a Go token snapshot | `internal/tokenizer` + `tokenize` single-request RPC via `bridge-client.cjs` |
+| File          | What it is today                                                                                 | Go side                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `tokenize.ts` | PostCSS cursor over a Go UTF-16 token snapshot (`nextToken` / `back` / `position` / `endOfFile`) | `internal/tokenizer` via `tokenize` batch RPC; incremental `tokenize.open/next/...` is also on the same bridge |
 
 `parse.ts` and `stringify.ts` route the public upstream entry points through the
 Go JSON-RPC bridge. Parsed DTOs are hydrated into the vendored PostCSS node
@@ -34,13 +34,13 @@ metadata, which the compatibility layer forwards to the PostCSS callback contrac
 
 ## Related Go surface
 
-| Capability | Status                                                                                                                                                       |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Tokenizer  | Implemented in `internal/tokenizer`; compat `tokenize` batch RPC returns UTF-16 offsets in one pass, and the long-lived API exposes `tokenize.open/next/...` |
-| Parse      | `parse.ts` override calls jsbridge `parse` and hydrates PostCSS classes                                                                                      |
-| Stringify  | `stringify.ts` override calls jsbridge `stringify` with AST DTOs; builder callbacks receive Go-generated chunks and node metadata                            |
-| No-work    | `no-work-result.ts` calls jsbridge `noWork`; map generation and annotation normalization are Go-owned and do not use `map-generator.js`                      |
-| Process    | jsbridge `process` RPC available; async/lazy plugin model not ported                                                                                         |
+| Capability | Status                                                                                                                                                                                                                                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tokenizer  | Implemented in `internal/tokenizer`. Compat `tokenize` batch RPC returns UTF-16 offsets, error index, and ignored-unclosed tokens in one pass; the same bridge also exposes `tokenize.open/next/back/position/eof/close`. JS only walks that snapshot to preserve PostCSS's undisposed tokenizer API. |
+| Parse      | `parse.ts` override calls jsbridge `parse` and hydrates PostCSS classes                                                                                                                                                                                                                               |
+| Stringify  | `stringify.ts` override calls jsbridge `stringify` with AST DTOs; builder callbacks receive Go-generated chunks and node metadata                                                                                                                                                                     |
+| No-work    | `no-work-result.ts` calls jsbridge `noWork`; map generation and annotation normalization are Go-owned and do not use `map-generator.js`                                                                                                                                                               |
+| Process    | jsbridge `process` RPC available; async/lazy plugin model not ported                                                                                                                                                                                                                                  |
 
 ## Validation
 

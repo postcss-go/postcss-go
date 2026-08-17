@@ -18,6 +18,7 @@ coverage:
           - go
         paths:
           - 'internal/'
+          - 'pkg/'
           - 'benchmark/'
           - 'cmd/'
         informational: false
@@ -47,6 +48,7 @@ flags:
   go:
     paths:
       - 'internal/'
+      - 'pkg/'
       - 'benchmark/'
       - 'cmd/'
   js:

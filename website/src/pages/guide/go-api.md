@@ -12,35 +12,35 @@ to parsing, AST mutation, traversal, stringifying, and source maps.
 ## Parse and transform
 
 ```go
-import postcss "postcss-go"
+import "postcss-go/pkg/api"
 
-root, err := postcss.Parse(".button { color: red; }")
+root, err := api.Parse(".button { color: red; }")
 if err != nil {
   return err
 }
 
-postcss.WalkDecls(root, func(decl *postcss.Declaration) error {
+api.WalkDecls(root, func(decl *api.Declaration) error {
   if decl.Prop == "color" {
     decl.Value = "tomato"
   }
   return nil
 })
 
-output := postcss.Stringify(root)
+output := api.Stringify(root)
 ```
 
 ## Entry points
 
-| API                                              | Purpose                                   |
-| ------------------------------------------------ | ----------------------------------------- |
-| `postcss.Parse`                                  | Parse CSS into a position-aware Root AST. |
-| `postcss.ParseWithOptions`                       | Parse with source and source-map options. |
-| `postcss.New(...).Process`                       | Run plugins, then stringify (with maps).  |
-| `postcss.NoWork`                                 | No-plugin map/annotation path; no parse.  |
-| `postcss.Stringify`                              | Serialize AST nodes into CSS.             |
-| `postcss.Walk*`                                  | Walk all nodes or filtered node types.    |
-| `postcss.NewRoot`                                | Construct a root and mutate it directly.  |
-| `postcss.NewRule`, `NewAtRule`, `NewDeclaration` | Construct common AST nodes.               |
+| API                                          | Purpose                                   |
+| -------------------------------------------- | ----------------------------------------- |
+| `api.Parse`                                  | Parse CSS into a position-aware Root AST. |
+| `api.ParseWithOptions`                       | Parse with source and source-map options. |
+| `api.New(...).Process`                       | Run plugins, then stringify (with maps).  |
+| `api.NoWork`                                 | No-plugin map/annotation path; no parse.  |
+| `api.Stringify`                              | Serialize AST nodes into CSS.             |
+| `api.Walk*`                                  | Walk all nodes or filtered node types.    |
+| `api.NewRoot`                                | Construct a root and mutate it directly.  |
+| `api.NewRule`, `NewAtRule`, `NewDeclaration` | Construct common AST nodes.               |
 
 ## Source maps
 
@@ -61,6 +61,6 @@ Annotation cleanup differs by path: `Process` removes `# sourceMappingURL=` comm
 The Go API does not require the Node.js runtime. Use the JavaScript API when
 you need PostCSS configuration files or JavaScript plugins.
 
-The module root exports this facade as package `postcss`; it is backed by the
+The public Go surface lives in `pkg/api` as package `api`; it is backed by the
 same internal parser, AST, processor, stringifier, and source-map packages used
 by the native Node and WASM bridges.

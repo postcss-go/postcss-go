@@ -1,5 +1,7 @@
-// Package postcss exposes the public Go API for the postcss-go CSS pipeline.
-package postcss
+// Package api exposes postcss-go's public Go API: parsing, AST mutation,
+// traversal, stringifying, and source maps. It is intended for integrating
+// the CSS pipeline into other Go tools as a library.
+package api
 
 import internal "postcss-go/internal/postcss"
 

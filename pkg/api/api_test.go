@@ -1,4 +1,4 @@
-package postcss_test
+package api_test
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	gosourcemap "github.com/go-sourcemap/sourcemap"
-	postcss "postcss-go"
+	postcss "postcss-go/pkg/api"
 )
 
 type contractAST struct {
@@ -62,7 +62,7 @@ type coreContract struct {
 
 func loadPublicCoreContract(t *testing.T) coreContract {
 	t.Helper()
-	data, err := os.ReadFile("packages/postcss-go/test/testdata/core-css-contract.json")
+	data, err := os.ReadFile("../../packages/postcss-go/test/testdata/core-css-contract.json")
 	if err != nil {
 		t.Fatalf("read Core CSS contract: %v", err)
 	}

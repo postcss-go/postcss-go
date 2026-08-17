@@ -55,10 +55,10 @@ type TokenizeIntResult struct {
 	Value int `json:"value"`
 }
 
-// TokenizeBatchParams is used by the compatibility layer's synchronous bridge.
-// The long-lived RPC surface keeps the session methods above for callers that
-// need incremental tokenization; the single-request compatibility bridge uses
-// this snapshot form because a new process is used for each request.
+// TokenizeBatchParams is used by the PostCSS-compatible tokenizer wrapper.
+// The persistent compat bridge also exposes tokenize.open/next/back/position/eof/close
+// for incremental tokenization; the wrapper uses this snapshot so a tokenizer
+// without an explicit close() does not leak a Go session.
 type TokenizeBatchParams struct {
 	CSS            string            `json:"css"`
 	File           string            `json:"file,omitempty"`
