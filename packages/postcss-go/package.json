@@ -76,7 +76,7 @@
   "devDependencies": {
     "@postcss-go/shared": "workspace:*",
     "node-api-headers": "^1.9.0",
-    "node-gyp": "11.4.2",
+    "node-gyp": "13.0.1",
     "postcss": "^8.5.15",
     "unplugin-dts": "^1.0.3",
     "vite": "^8.1.5",
