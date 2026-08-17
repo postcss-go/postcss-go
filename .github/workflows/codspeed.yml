@@ -5,7 +5,15 @@ on:
     branches:
       - main
       - master
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
   pull_request:
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
