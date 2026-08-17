@@ -12,6 +12,8 @@ to parsing, AST mutation, traversal, stringifying, and source maps.
 ## Parse and transform
 
 ```go
+import postcss "postcss-go"
+
 root, err := postcss.Parse(".button { color: red; }")
 if err != nil {
   return err
@@ -58,3 +60,7 @@ Annotation cleanup differs by path: `Process` removes `# sourceMappingURL=` comm
 
 The Go API does not require the Node.js runtime. Use the JavaScript API when
 you need PostCSS configuration files or JavaScript plugins.
+
+The module root exports this facade as package `postcss`; it is backed by the
+same internal parser, AST, processor, stringifier, and source-map packages used
+by the native Node and WASM bridges.

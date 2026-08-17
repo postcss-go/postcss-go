@@ -49,6 +49,37 @@ func TestParseRoundTripsThroughStringify(t *testing.T) {
 	}
 }
 
+func TestStringifyBuilderReturnsChunksAndBoundaries(t *testing.T) {
+	encoded, err := Call(Parse, []byte(".a { color: red; }"), []byte("x.css"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	payload, err := Call(StringifyBuilder, encoded, []byte("1"))
+	if err != nil {
+		t.Fatalf("stringify builder: %v", err)
+	}
+	var result stringifyBuilderResult
+	if err := json.Unmarshal(payload, &result); err != nil {
+		t.Fatalf("decode builder result: %v", err)
+	}
+	if len(result.Parts) == 0 {
+		t.Fatal("expected builder chunks")
+	}
+	var css strings.Builder
+	var start, end bool
+	for _, part := range result.Parts {
+		css.WriteString(part.CSS)
+		start = start || part.Type == "start"
+		end = end || part.Type == "end"
+	}
+	if css.String() != ".a { color: red; }" || !start || !end {
+		t.Fatalf("unexpected builder result: css=%q parts=%#v", css.String(), result.Parts)
+	}
+	if _, err := Call(StringifyBuilder, encoded, []byte("99")); err == nil {
+		t.Fatal("expected an invalid builder target error")
+	}
+}
+
 func TestCallRejectsInvalidInputs(t *testing.T) {
 	if _, err := Call(Stringify, []byte("XXXX\x01"), nil); err == nil {
 		t.Fatal("expected bad AST error")

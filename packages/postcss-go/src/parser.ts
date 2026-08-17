@@ -8,9 +8,9 @@ import type { ProcessOptions, SourceLocation } from './types.js';
 type Parent = Root | Rule | AtRule;
 
 /**
- * Synchronous CSS parser used by AST string insertion and plugin helpers.
- * The Go parser remains the authoritative async pipeline parser; this parser
- * deliberately implements the same core node set without importing PostCSS.
+ * Browser-compatible synchronous parser used where no native sync runtime can
+ * exist (notably the Worker-only WASM entry). The Node entry injects Go/native
+ * parsing for AST string insertion and plugin helpers.
  */
 export function parseOwnedSync(
   cssInput: string | { toString(): string },

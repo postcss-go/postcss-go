@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"postcss-go/internal/csserrors"
+	"postcss-go/internal/jsbridge"
 )
 
 func TestFitPayload(t *testing.T) {
@@ -39,8 +41,19 @@ func TestMainIsCallable(t *testing.T) {
 
 func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
 	syntaxError := csserrors.New("Unknown word", 1, 2, "a{?", "input.css", "")
-	if message := nativeErrorMessage(syntaxError); !strings.HasPrefix(message, cssSyntaxErrorPrefix) {
+	message := nativeErrorMessage(syntaxError)
+	if !strings.HasPrefix(message, cssSyntaxErrorPrefix) {
 		t.Fatalf("syntax error missing marker: %q", message)
+	}
+	var dto jsbridge.ErrorDTO
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(message, cssSyntaxErrorPrefix)), &dto); err != nil {
+		t.Fatalf("syntax error payload is not JSON: %v (%q)", err, message)
+	}
+	if dto.Name != "CssSyntaxError" || dto.Reason != "Unknown word" || dto.Line != 1 || dto.Column != 2 {
+		t.Fatalf("unexpected syntax error payload: %#v", dto)
+	}
+	if dto.Source != "" || (dto.Input != nil && dto.Input.Source != "") {
+		t.Fatalf("native syntax error payload must omit source: %#v", dto)
 	}
 
 	plain := errors.New("source map could not be loaded")

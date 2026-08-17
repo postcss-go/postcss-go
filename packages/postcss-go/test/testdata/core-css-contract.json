@@ -1,0 +1,152 @@
+{
+  "css": "@media screen {\n  .card { color: tomato; }\n}\n",
+  "from": "contract/input.css",
+  "to": "contract/output.css",
+  "invalidCss": "a {\n  color red;\n}",
+  "error": {
+    "line": 2,
+    "column": 3,
+    "reason": "Unknown word: expected declaration"
+  },
+  "previousMap": {
+    "version": 3,
+    "file": "generated.css",
+    "sources": ["original.css"],
+    "sourcesContent": ["@media screen {\n  .card { color: tomato; }\n}\n"],
+    "names": [],
+    "mappings": "AAAA;CACE;EAEE"
+  },
+  "previousSource": "original.css",
+  "previousMapUrl": "generated.css.map",
+  "roundTrips": [
+    {
+      "name": "at-rule and declaration",
+      "css": "@media screen {\n  .card { color: tomato; }\n}\n",
+      "ast": {
+        "type": "root",
+        "source": { "start": [1, 1], "end": [4, 1] },
+        "nodes": [
+          {
+            "type": "atrule",
+            "name": "media",
+            "params": "screen",
+            "source": { "start": [1, 1], "end": [3, 1] },
+            "nodes": [
+              {
+                "type": "rule",
+                "selector": ".card",
+                "source": { "start": [2, 3], "end": [2, 26] },
+                "nodes": [
+                  {
+                    "type": "decl",
+                    "prop": "color",
+                    "value": "tomato",
+                    "source": { "start": [2, 11], "end": [2, 24] }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "comments and custom properties",
+      "css": "/* top */\n:root{\n  --tone: rgb(1, 2, 3) /* kept */;\n}\n",
+      "ast": {
+        "type": "root",
+        "source": { "start": [1, 1], "end": [5, 1] },
+        "nodes": [
+          {
+            "type": "comment",
+            "text": "top",
+            "source": { "start": [1, 1], "end": [1, 9] }
+          },
+          {
+            "type": "rule",
+            "selector": ":root",
+            "source": { "start": [2, 1], "end": [4, 1] },
+            "nodes": [
+              {
+                "type": "decl",
+                "prop": "--tone",
+                "value": "rgb(1, 2, 3) /* kept */",
+                "source": { "start": [3, 3], "end": [3, 34] }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "strings urls and omitted final semicolon",
+      "css": "a,\n b{content:\"x;y\";background:url(\"data:x;y\");color:red}",
+      "ast": {
+        "type": "root",
+        "source": { "start": [1, 1], "end": [2, 55] },
+        "nodes": [
+          {
+            "type": "rule",
+            "selector": "a,\n b",
+            "source": { "start": [1, 1], "end": [2, 54] },
+            "nodes": [
+              {
+                "type": "decl",
+                "prop": "content",
+                "value": "\"x;y\"",
+                "source": { "start": [2, 4], "end": [2, 17] }
+              },
+              {
+                "type": "decl",
+                "prop": "background",
+                "value": "url(\"data:x;y\")",
+                "source": { "start": [2, 18], "end": [2, 44] }
+              },
+              {
+                "type": "decl",
+                "prop": "color",
+                "value": "red",
+                "source": { "start": [2, 45], "end": [2, 53] }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "documentCss": "a { color: red; }\n\nb { color: blue; }\n",
+  "noWorkCleanCss": "@media screen {\n  .card { color: tomato; }\n}",
+  "mutation": {
+    "css": ".box { color: red; display: block; }\n",
+    "expectedCss": ".box { color: teal; display: block; }\n"
+  },
+  "mapChecks": [
+    { "generated": [1, 0], "original": [1, 0] },
+    { "generated": [2, 2], "original": [2, 2] },
+    { "generated": [2, 10], "original": [2, 10] },
+    { "generated": [2, 17], "original": [2, 17] }
+  ],
+  "errors": [
+    {
+      "name": "unknown declaration",
+      "css": "a {\n  color red;\n}",
+      "line": 2,
+      "column": 3,
+      "reason": "Unknown word: expected declaration"
+    },
+    {
+      "name": "unclosed comment",
+      "css": "a { color: red; /* open",
+      "line": 1,
+      "column": 17,
+      "reason": "Unclosed comment"
+    },
+    {
+      "name": "unclosed block",
+      "css": "a {\n  color: red;",
+      "line": 1,
+      "column": 1,
+      "reason": "Unclosed block: missing closing brace"
+    }
+  ]
+}

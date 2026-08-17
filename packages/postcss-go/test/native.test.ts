@@ -89,17 +89,50 @@ test('createNativeService fails when the addon is disabled', () => {
   expect(() => createNativeService()).toThrow(/native addon is unavailable/);
 });
 
-test('syntax-prefixed native errors rebuild structured CssSyntaxError metadata', () => {
+test('syntax-prefixed native errors rebuild structured CssSyntaxError metadata from Go JSON', () => {
+  const payload = JSON.stringify({
+    name: 'CssSyntaxError',
+    reason: 'Unknown word: expected declaration',
+    line: 2,
+    column: 3,
+    file: 'contract/input.css',
+  });
+  const service = new NativePostcssGoService({
+    parse() {
+      throw new Error(`postcss-go:css-syntax:${payload}`);
+    },
+    parseAsync() {
+      return Promise.reject(new Error(`postcss-go:css-syntax:${payload}`));
+    },
+  } as never);
+
+  // `a {` would be "Unclosed block" if native still re-ran the JavaScript parser.
+  expect(() => service.parseSync('a {')).toThrow(
+    expect.objectContaining({
+      name: 'CssSyntaxError',
+      reason: 'Unknown word: expected declaration',
+      line: 2,
+      column: 3,
+      file: 'contract/input.css',
+      source: 'a {',
+    }),
+  );
+});
+
+test('syntax-prefixed native errors keep Go metadata when the JSON payload is malformed', () => {
   const service = new NativePostcssGoService({
     parse() {
       throw new Error('postcss-go:css-syntax: Unexpected }');
     },
-    parseAsync() {
-      return Promise.reject(new Error('postcss-go:css-syntax: Unexpected }'));
-    },
   } as never);
 
-  expect(() => service.parseSync('a {')).toThrow(/Unclosed block/);
+  expect(() => service.parseSync('a {')).toThrow(
+    expect.objectContaining({
+      name: 'CssSyntaxError',
+      reason: 'Unexpected }',
+      source: 'a {',
+    }),
+  );
 });
 
 test('sync map.annotation thenables are rejected as async plugins', () => {

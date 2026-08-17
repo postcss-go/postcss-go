@@ -6,10 +6,13 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
+	"postcss-go/internal/ast"
 	"postcss-go/internal/codec"
 	"postcss-go/internal/postcss"
 	"postcss-go/internal/result"
+	"postcss-go/internal/stringifier"
 )
 
 // Operation identifies an operation on the private Go/C boundary.
@@ -20,12 +23,18 @@ const (
 	Stringify Operation = 1
 	Process   Operation = 2
 	NoWork    Operation = 3
+	// StringifyBuilder returns Go-owned builder chunks and node boundary metadata.
+	StringifyBuilder Operation = 4
 )
 
 type stringifyResult struct {
 	CSS     string `json:"css"`
 	Map     string `json:"map,omitempty"`
 	MapFile string `json:"mapFile,omitempty"`
+}
+
+type stringifyBuilderResult struct {
+	Parts []stringifier.BuilderPart `json:"parts"`
 }
 
 type processResult struct {
@@ -55,9 +64,49 @@ func Call(operation Operation, first, second []byte) ([]byte, error) {
 		return process(string(first), second)
 	case NoWork:
 		return noWork(string(first), second)
+	case StringifyBuilder:
+		return stringifyBuilder(first, second)
 	default:
 		return nil, fmt.Errorf("unknown native operation %d", operation)
 	}
+}
+
+func stringifyBuilder(astBytes, targetBytes []byte) ([]byte, error) {
+	node, err := codec.DecodeAST(astBytes)
+	if err != nil {
+		return nil, err
+	}
+	target := node
+	if len(targetBytes) > 0 {
+		targetID, parseErr := strconv.Atoi(string(targetBytes))
+		if parseErr != nil || targetID < 1 {
+			return nil, fmt.Errorf("invalid builder target %q", targetBytes)
+		}
+		var current int
+		var found ast.Node
+		var visit func(ast.Node)
+		visit = func(candidate ast.Node) {
+			if found != nil {
+				return
+			}
+			current++
+			if current == targetID {
+				found = candidate
+				return
+			}
+			if container, ok := candidate.(ast.Container); ok {
+				for _, child := range container.Children() {
+					visit(child)
+				}
+			}
+		}
+		visit(node)
+		if found == nil {
+			return nil, fmt.Errorf("builder target %d is outside the AST", targetID)
+		}
+		target = found
+	}
+	return json.Marshal(stringifyBuilderResult{Parts: stringifier.StringifyWithBuilder(target)})
 }
 
 func parse(css, from string) ([]byte, error) {

@@ -76,6 +76,30 @@ export type WalkCallback<T extends Node = Node> = (node: T, index: number) => un
  */
 export type InsertMode = 'hydrate' | 'prepend' | undefined;
 
+export interface SyncCssRuntime {
+  parse(css: string, options?: ProcessOptions): Root;
+  stringify(node: Node, builder: Builder): void;
+}
+
+const javascriptSyncCssRuntime: SyncCssRuntime = {
+  parse: parseOwnedSync,
+  stringify: (node, builder) => stringifyOwned(node, builder as never),
+};
+let syncCssRuntime = javascriptSyncCssRuntime;
+
+/** Select the synchronous parser/stringifier used by AST helpers in this entry point. */
+export function setSyncCssRuntime(runtime?: SyncCssRuntime): void {
+  syncCssRuntime = runtime ?? javascriptSyncCssRuntime;
+}
+
+export function parseWithSyncCssRuntime(css: string, options?: ProcessOptions): Root {
+  return syncCssRuntime.parse(css, options);
+}
+
+export function stringifyWithSyncCssRuntime(node: Node, builder: Builder): void {
+  syncCssRuntime.stringify(node, builder);
+}
+
 function isNode(value: unknown): value is Node {
   return value instanceof Node;
 }
@@ -798,7 +822,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
         continue;
       }
       if (typeof child === 'string') {
-        const parsed = parseOwnedSync(child);
+        const parsed = parseWithSyncCssRuntime(child);
         nodes.push(
           ...parsed.nodes.map((node) => {
             const json = node.toJSON() as unknown as AstDTO;
@@ -1022,12 +1046,18 @@ export class Root extends Container<ChildNode> {
     }
     if (!sample) return;
     if (mode === 'prepend') {
-      if (this.nodes.length > 1) sample.raws.before = this.nodes[1].raws.before;
-      else delete sample.raws.before;
+      if (this.nodes.length > 1 && this.nodes[1].raws.before !== undefined) {
+        sample.raws.before = this.nodes[1].raws.before;
+      } else {
+        delete sample.raws.before;
+      }
       return;
     }
     if (this.first !== sample) {
-      for (const node of nodes) node.raws.before = sample.raws.before;
+      for (const node of nodes) {
+        if (sample.raws.before === undefined) delete node.raws.before;
+        else node.raws.before = sample.raws.before;
+      }
     }
   }
 
@@ -1268,7 +1298,7 @@ export function toAst(node: Node): AstDTO {
 }
 
 function defaultStringifier(node: Node, builder: Builder): void {
-  stringifyOwned(node, builder as never);
+  stringifyWithSyncCssRuntime(node, builder);
 }
 
 function hydrateJSON(

@@ -2,8 +2,7 @@ import { createRequire } from 'node:module';
 
 import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
-import { Node, Root } from './ast.js';
-import { stringify as stringifyOwned } from './ast-stringifier.js';
+import { Node, Root, setSyncCssRuntime, stringifyWithSyncCssRuntime } from './ast.js';
 import { SyncBackendUnavailableError } from './errors.js';
 import {
   createDefaultAsyncService,
@@ -158,7 +157,7 @@ export function stringifySync(
   builderOrOptions?: ((chunk: string, node?: Node, type?: string) => void) | ProcessOptions,
 ): string | void {
   if (typeof builderOrOptions === 'function') {
-    stringifyOwned(node, builderOrOptions as never);
+    stringifyWithSyncCssRuntime(node, builderOrOptions);
     return;
   }
   return dispatchStringifySync(requireSyncService(), node, builderOrOptions ?? {});
@@ -172,3 +171,15 @@ function requireSyncService(): NativePostcssGoService {
   if (!isNativeBridgeAvailable()) throw new SyncBackendUnavailableError();
   return createNativeService();
 }
+
+// The Node entry point uses Go for every default synchronous parse/stringify
+// decision. Browser/WASM entries do not import this module and retain the
+// JavaScript compatibility runtime required by their Worker-only architecture.
+setSyncCssRuntime({
+  parse(css, options) {
+    return dispatchParseSync(requireSyncService(), css, options);
+  },
+  stringify(node, builder) {
+    requireSyncService().stringifyBuilderSync(node, builder);
+  },
+});

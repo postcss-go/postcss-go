@@ -6,6 +6,14 @@ import { afterEach, expect, test, vi } from 'vitest';
 import chokidar from 'chokidar';
 
 import { runCLI } from '../src/cli.ts';
+import {
+  coreCssContract,
+  cssWithPreviousMapAnnotation,
+  expectCoreCssPreviousMap,
+  expectCoreCssSourceMap,
+  expectUnchangedCoreCss,
+  stripSourceMapAnnotation,
+} from './helpers/core-css-contract.ts';
 import tmp from './helpers/tmp.ts';
 import read from './helpers/read.ts';
 
@@ -46,6 +54,67 @@ test('runCLI writes processed CSS to an output file', async () => {
 
   expect(await read(output)).toContain('color: red');
   expect(exit).not.toHaveBeenCalled();
+});
+
+test('runCLI follows the shared Core CSS and external source-map contract', async () => {
+  const exit = mockExit();
+  const directory = tmp();
+  const input = await writeCss(directory, 'input.css', coreCssContract.css);
+  const output = path.join(directory, 'output.css');
+  const identity = path.resolve('test/fixtures/plugins/identity.mjs');
+
+  await runCLI([input, '-o', output, '--map', '-u', identity]);
+
+  expectUnchangedCoreCss(stripSourceMapAnnotation(await read(output)));
+  expectCoreCssSourceMap(await fs.readFile(`${output}.map`, 'utf8'));
+  expect(exit).not.toHaveBeenCalled();
+});
+
+test('runCLI composes the shared Core CSS previous map', async () => {
+  const exit = mockExit();
+  const directory = tmp();
+  const input = await writeCss(directory, 'input.css', cssWithPreviousMapAnnotation());
+  const output = path.join(directory, 'output.css');
+
+  await runCLI([
+    input,
+    '-o',
+    output,
+    '--map',
+    '-u',
+    path.resolve('test/fixtures/plugins/identity.mjs'),
+  ]);
+
+  // Annotation cleanup drops the newline that preceded the previous-map comment.
+  expect(stripSourceMapAnnotation(await read(output)).trimEnd()).toBe(
+    coreCssContract.css.trimEnd(),
+  );
+  expectCoreCssPreviousMap(await fs.readFile(`${output}.map`, 'utf8'));
+  expect(exit).not.toHaveBeenCalled();
+});
+
+test('runCLI reports the shared Core CSS syntax-error position', async () => {
+  const exit = mockExit();
+  const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  const directory = tmp();
+  const input = await writeCss(directory, 'input.css', coreCssContract.invalidCss);
+  const output = path.join(directory, 'output.css');
+
+  await expect(
+    runCLI([
+      input,
+      '-o',
+      output,
+      '--no-map',
+      '-u',
+      path.resolve('test/fixtures/plugins/identity.mjs'),
+    ]),
+  ).rejects.toThrow(/process\.exit:1/);
+
+  expect(error.mock.calls.flat().join('\n')).toContain(
+    `input.css:${coreCssContract.error.line}:${coreCssContract.error.column}`,
+  );
+  expect(exit).toHaveBeenCalledWith(1);
 });
 
 test('runCLI prints backend details in verbose mode', async () => {

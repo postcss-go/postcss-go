@@ -55,6 +55,11 @@ Browser remains asynchronous and Worker-backed. An initialized main-thread WASM
 backend is intentionally out of scope for v1: sync Go work on the UI thread
 would freeze the page, and Node already covers sync through N-API.
 
+PostCSS-shaped plugin helpers such as `helpers.postcss.parse`, AST string
+insertion, and `Node#toString()` are synchronous. The browser entry implements
+those helpers with the owned JavaScript compatibility parser/stringifier; CSS
+entering and leaving the processing pipeline still uses the Go/WASM Worker.
+
 ## Asset loading
 
 Bundlers must emit three assets as fetchable URLs:

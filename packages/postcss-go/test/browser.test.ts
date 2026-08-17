@@ -82,6 +82,47 @@ test('createBrowserProcessor runs plugins through the injected worker service', 
   expect(worker.terminated).toBe(true);
 });
 
+test('browser plugin helpers retain synchronous JavaScript parse and stringify', async () => {
+  const worker = new FakeBrowserWorker();
+  const processor = createBrowserProcessor(
+    [
+      {
+        postcssPlugin: 'browser-sync-helpers',
+        Once(root, helpers) {
+          root.append(helpers.postcss.parse('.b{}'));
+          root.append('.c{}');
+          expect(root.toString()).toContain('.c{}');
+        },
+      },
+    ],
+    { worker },
+  );
+
+  const pending = processor.process('.a{}', { from: 'a.css', map: false });
+  await vi.waitFor(() => expect(worker.sent[0]).toMatchObject({ method: 'parse' }));
+  worker.respond({
+    id: 1,
+    result: {
+      root: {
+        type: 'root',
+        nodes: [{ type: 'rule', selector: '.a', nodes: [] }],
+      },
+    },
+  });
+  await vi.waitFor(() => expect(worker.sent.at(-1)).toMatchObject({ method: 'stringify' }));
+  expect(worker.sent.at(-1)).toMatchObject({
+    params: {
+      ast: {
+        nodes: [{ selector: '.a' }, { selector: '.b' }, { selector: '.c' }],
+      },
+    },
+  });
+  worker.respond({ id: 2, result: { css: '.a{}.b{}.c{}' } });
+
+  await expect(pending).resolves.toMatchObject({ css: '.a{}.b{}.c{}' });
+  await processor.close();
+});
+
 test('browser service rejects sync APIs and missing Worker transport', () => {
   const service = new BrowserPostcssGoService({ worker: new FakeBrowserWorker() });
   expect(() => service.parseSync('.a{}')).toThrow(SyncBackendUnavailableError);

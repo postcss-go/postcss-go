@@ -10,12 +10,13 @@ import {
   fromAst,
   fromJSON,
   Node,
+  parseWithSyncCssRuntime,
   Root,
   Rule,
+  stringifyWithSyncCssRuntime,
   toAst,
   type ProcessRoot,
 } from './ast.js';
-import { stringify as stringifyOwned } from './ast-stringifier.js';
 import { CssSyntaxError } from './errors.js';
 import { AsyncPluginError, isThenable, observeThenable } from './errors.js';
 import { attachInputMetadata, Input } from './input.js';
@@ -23,7 +24,6 @@ import { list } from './list.js';
 import type { PostcssGoService } from './service.js';
 import type { AstNode as AstDTO, ProcessOptions } from './types.js';
 import type { AcceptedPlugin, Plugin } from './plugin-types.js';
-import { parseOwnedSync } from './parser.js';
 import { hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
@@ -81,7 +81,7 @@ export interface PostcssPublic {
     name: string,
     initializer: (...args: T) => Omit<Plugin, 'postcssPlugin'> | Plugin,
   ): ((...args: T) => Plugin) & { postcss: true };
-  parse: typeof parseOwnedSync;
+  parse: typeof parseWithSyncCssRuntime;
   stringify: (
     node: Node,
     builder?: (chunk: string, node?: Node, type?: string) => void,
@@ -159,11 +159,11 @@ export const postcssApi = Object.assign(
     list,
     fromJSON,
     parse(css: string, opts?: ProcessOptions) {
-      return parseOwnedSync(css, opts);
+      return parseWithSyncCssRuntime(css, opts);
     },
     stringify(node: Node, builder?: (chunk: string, node?: Node, type?: string) => void) {
       if (!builder) return node.toString();
-      stringifyOwned(node, builder as never);
+      stringifyWithSyncCssRuntime(node, builder);
     },
     atRule: (defaults: ConstructorParameters<typeof AtRule>[0] = {}) => new AtRule(defaults),
     comment: (defaults: ConstructorParameters<typeof Comment>[0] = {}) => new Comment(defaults),

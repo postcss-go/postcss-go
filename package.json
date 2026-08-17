@@ -43,6 +43,7 @@
     "sync:upstream": "node ./scripts/sync-upstream-postcss-tests.mjs",
     "sync:benchmark-fixtures": "node ./benchmark/sync-fixtures.mjs",
     "test": "pnpm test:js && pnpm test:go",
+    "test:core-css-contract": "go test -mod=mod . -run CoreCSS && pnpm --filter @postcss-go/core test:core-css-contract",
     "test:js": "pnpm -r --if-present test",
     "test:go": "go test -mod=mod ./...",
     "test:coverage": "pnpm test:coverage:js && pnpm test:coverage:go",

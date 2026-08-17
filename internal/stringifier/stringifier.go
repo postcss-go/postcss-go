@@ -101,13 +101,10 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int)
 		close := "}"
 		if hasRaw(current, "after") {
 			close = escapeHTMLInCSS(rawString(current, "after", "")) + close
+		} else if inferred, ok := inferBlockAfter(current, len(current.Nodes) != 0); ok {
+			close = escapeHTMLInCSS(inferred) + close
 		} else if len(current.Nodes) != 0 {
-			inferred, ok := inferSiblingRawForNode(current, "after")
-			if ok {
-				close = escapeHTMLInCSS(inferred) + close
-			} else {
-				close = "\n" + strings.Repeat(indentFor(current), depth) + close
-			}
+			close = "\n" + strings.Repeat(indentFor(current), depth) + close
 		}
 		appendBuilderPart(parts, close+rawString(current, "ownSemicolon", ""), id, "end")
 	case *ast.AtRule:
@@ -127,13 +124,10 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int)
 		close := "}"
 		if hasRaw(current, "after") {
 			close = escapeHTMLInCSS(rawString(current, "after", "")) + close
+		} else if inferred, ok := inferBlockAfter(current, len(current.Nodes) != 0); ok {
+			close = escapeHTMLInCSS(inferred) + close
 		} else if len(current.Nodes) != 0 {
-			inferred, ok := inferSiblingRawForNode(current, "after")
-			if ok {
-				close = escapeHTMLInCSS(inferred) + close
-			} else {
-				close = "\n" + strings.Repeat(indentFor(current), depth) + close
-			}
+			close = "\n" + strings.Repeat(indentFor(current), depth) + close
 		}
 		appendBuilderPart(parts, close, id, "end")
 	case *ast.Declaration:
@@ -275,13 +269,11 @@ func atRuleHasSemicolon(node *ast.AtRule) bool {
 func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
 	if hasRaw(node, "after") {
 		writer.writeString(escapeHTMLInCSS(rawString(node, "after", "")))
+	} else if inferred, ok := inferBlockAfter(node, childCount != 0); ok {
+		writer.writeString(escapeHTMLInCSS(inferred))
 	} else if childCount != 0 {
-		if inferred, ok := inferSiblingRawForNode(node, "after"); ok {
-			writer.writeString(escapeHTMLInCSS(inferred))
-		} else {
-			writer.writeByte('\n')
-			writeIndent(writer, node, depth)
-		}
+		writer.writeByte('\n')
+		writeIndent(writer, node, depth)
 	}
 	writer.writeByte('}')
 }
@@ -440,7 +432,33 @@ func atRuleHeader(node *ast.AtRule) string {
 	if params == "" && !hasRaw(node, "afterName") {
 		return "@" + node.Name
 	}
-	return escapeHTMLInCSS("@" + node.Name + rawStringDetected(node, "afterName", " ") + params)
+	return escapeHTMLInCSS("@" + node.Name + atRuleAfterName(node, params) + params)
+}
+
+func atRuleAfterName(node *ast.AtRule, params string) string {
+	if value, ok := lookupRaw(node, "afterName"); ok {
+		if text, ok := value.(string); ok {
+			return text
+		}
+		return " "
+	}
+	if params != "" {
+		if parent := node.Parent(); parent != nil {
+			for _, sibling := range parent.Children() {
+				other, ok := sibling.(*ast.AtRule)
+				if !ok || other == node || strings.TrimSpace(other.Params) == "" {
+					continue
+				}
+				if value, ok := lookupRaw(other, "afterName"); ok {
+					if text, ok := value.(string); ok {
+						return text
+					}
+				}
+			}
+		}
+		return " "
+	}
+	return ""
 }
 
 func declarationText(node *ast.Declaration) string {
@@ -584,6 +602,28 @@ func inferDescendantRaw(parent ast.Container, key string, nodeType ast.NodeType)
 		}
 		if inferred, ok := inferDescendantRaw(container, key, nodeType); ok && inferred != "" {
 			return inferred, true
+		}
+	}
+	return "", false
+}
+
+func inferBlockAfter(node ast.Node, withChildren bool) (string, bool) {
+	parent := node.Parent()
+	if parent == nil {
+		return "", false
+	}
+	for _, sibling := range parent.Children() {
+		if sibling == node || sibling.Type() != node.Type() {
+			continue
+		}
+		container, ok := sibling.(ast.Container)
+		if !ok || (len(container.Children()) != 0) != withChildren {
+			continue
+		}
+		if value, ok := lookupRaw(sibling, "after"); ok {
+			if text, ok := value.(string); ok {
+				return text, true
+			}
 		}
 	}
 	return "", false

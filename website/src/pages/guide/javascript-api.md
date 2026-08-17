@@ -71,10 +71,12 @@ console.log(await stringify(root));
 matching `parse()` and `Processor#process()`. `toResult` generates source maps
 through `stringifyResult` so Document structure is preserved.
 
-`postcss.parse` / `helpers.postcss.parse` use the owned synchronous JavaScript
-parser so plugins can insert CSS without requiring the N-API backend.
-`parseSync` uses the Go/native parser. Prefer `parse`/`parseSync` for
-pipeline input; use `postcss.parse` inside plugin helpers.
+In Node, `postcss.parse`, `helpers.postcss.parse`, AST string insertion, and
+`parseSync` all use the Go parser through the synchronous N-API backend. The
+browser entry retains an owned JavaScript parser for synchronous plugin helpers
+because its Go/WASM transport is Worker-only. See
+[Core CSS compatibility](./core-css-compatibility/) for the shared contract and
+this browser-specific helper path.
 
 ## Source maps
 
@@ -118,9 +120,11 @@ main thread. The default is intentionally native-required: when the compatible
 async addon is unavailable, Promise-returning APIs throw
 `AsyncBackendUnavailableError` instead of silently changing transports.
 
-`stringifySync(root, builder)` is the owned JavaScript builder adapter required
-by the PostCSS-shaped API. `stringifySync(root, options)` returns a string via
-N-API; the two call forms are explicit and do not select a backend implicitly.
+`postcss.stringify(root, builder)`, `Node#toString()`, and
+`stringifySync(root, builder)` replay Go-produced chunks and node boundaries
+through the synchronous N-API backend. `stringifySync(root, options)` returns a
+string through the same backend. The browser entry retains its JavaScript
+builder adapter for synchronous plugin helpers.
 
 ## Engine and service
 

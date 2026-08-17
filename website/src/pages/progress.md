@@ -103,10 +103,10 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Stringifier support for raw formatting and source maps on the main path.
 - [x] Structured syntax errors and bridge serialization.
 - [x] Source-map generation, previous maps, annotations, and source locations on the main path.
-- [x] Route all compatibility tokenizer behavior through Go.
+- [ ] Route all compatibility tokenizer behavior through Go.
 - [x] Implement the supported builder callback adapter with node and boundary metadata.
 - [x] Move map-generator, previous-map, no-work-result, and annotation normalization into the Go-owned path.
-- [ ] Ensure Node, CLI, WASM, Go API, and source-map behavior share the same documented compatibility contract.
+- [x] Ensure Node, CLI, WASM, Go API, and source-map behavior share the same documented compatibility contract.
 
 ### Node CLI and package boundary
 

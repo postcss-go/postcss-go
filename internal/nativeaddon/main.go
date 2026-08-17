@@ -13,11 +13,13 @@ package main
 import "C"
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"unsafe"
 
 	"postcss-go/internal/csserrors"
+	"postcss-go/internal/jsbridge"
 	"postcss-go/internal/nativebridge"
 )
 
@@ -59,10 +61,19 @@ func writeError(buf *C.char, capacity C.int, err error) C.int {
 
 func nativeErrorMessage(err error) string {
 	var syntaxError *csserrors.SyntaxError
-	if errors.As(err, &syntaxError) {
+	if !errors.As(err, &syntaxError) {
+		return err.Error()
+	}
+	detail := jsbridge.ErrorDTOFromError(err)
+	detail.Source = ""
+	if detail.Input != nil {
+		detail.Input.Source = ""
+	}
+	payload, marshalErr := json.Marshal(detail)
+	if marshalErr != nil {
 		return cssSyntaxErrorPrefix + err.Error()
 	}
-	return err.Error()
+	return cssSyntaxErrorPrefix + string(payload)
 }
 
 //export pcgoCall

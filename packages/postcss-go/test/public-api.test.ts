@@ -52,6 +52,35 @@ test('default entry point creates a reusable Processor', () => {
   expect(postcss({ postcssPlugin: 'one' }, { postcssPlugin: 'two' }).plugins).toHaveLength(2);
 });
 
+test('Node compatibility parse, string insertion, and default stringify require the Go runtime', () => {
+  const previous = globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE;
+  globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE = '1';
+  try {
+    expect(() => postcss.parse('.a{}')).toThrow(SyncBackendUnavailableError);
+    expect(() => new Root().append('.a{}')).toThrow(SyncBackendUnavailableError);
+    expect(() => new Root().toString()).toThrow(SyncBackendUnavailableError);
+  } finally {
+    if (previous === undefined) delete globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE;
+    else globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE = previous;
+  }
+});
+
+test('Node builder adapter replays Go chunks with live node identities', () => {
+  const css = '.a { color: red; }';
+  const root = postcss.parse(css);
+  const chunks: string[] = [];
+  const boundaries: Array<{ node?: unknown; type?: string }> = [];
+
+  postcss.stringify(root, (chunk, node, type) => {
+    chunks.push(chunk);
+    if (type) boundaries.push({ node, type });
+  });
+
+  expect(chunks.join('')).toBe(css);
+  expect(boundaries).toContainEqual({ node: root.first, type: 'start' });
+  expect(boundaries).toContainEqual({ node: root.first, type: 'end' });
+});
+
 test('postcss.plugin creates named plugin creators', async () => {
   const createBlue = postcss.plugin('set-blue', () => ({
     Declaration(decl) {

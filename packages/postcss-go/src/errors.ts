@@ -16,6 +16,28 @@ export interface RangePosition {
   column: number;
 }
 
+/** Wire shape for Go `CssSyntaxError` metadata across native and WASM transports. */
+export interface CssSyntaxErrorDTO {
+  name?: string;
+  message?: string;
+  reason?: string;
+  line?: number;
+  column?: number;
+  endLine?: number;
+  endColumn?: number;
+  source?: string;
+  file?: string;
+  plugin?: string;
+  input?: {
+    source?: string;
+    file?: string;
+    line?: number;
+    column?: number;
+    offset?: number;
+    sourceMapPresent?: boolean;
+  };
+}
+
 /** A PostCSS-compatible syntax error owned by postcss-go. */
 export class CssSyntaxError extends Error {
   reason: string;
@@ -110,6 +132,39 @@ export class CssSyntaxError extends Error {
     const source = this.showSourceCode();
     return `${this.name}: ${this.message}${source ? `\n\n${source}\n` : ''}`;
   }
+}
+
+/** Rebuild a structured `CssSyntaxError` from a Go error DTO. */
+export function cssSyntaxErrorFromDto(
+  dto: CssSyntaxErrorDTO,
+  fallbackSource?: string,
+): CssSyntaxError {
+  const reason = dto.reason || stripLeadingErrorName(dto.message) || 'Unknown error';
+  return new CssSyntaxError(reason, {
+    line: dto.line,
+    column: dto.column,
+    endLine: dto.endLine,
+    endColumn: dto.endColumn,
+    source: dto.source ?? dto.input?.source ?? fallbackSource,
+    file: dto.file ?? dto.input?.file,
+    plugin: dto.plugin,
+    input: dto.input
+      ? {
+          source: dto.input.source ?? fallbackSource,
+          file: dto.input.file,
+          line: dto.input.line,
+          column: dto.input.column,
+          offset: dto.input.offset,
+          sourceMapPresent: dto.input.sourceMapPresent,
+        }
+      : undefined,
+  });
+}
+
+function stripLeadingErrorName(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  const match = message.match(/^CssSyntaxError:\s*(?:.*?:\d+:\d+:\s*)?(.*)$/);
+  return match?.[1] ?? message;
 }
 
 function isRangePosition(value: unknown): value is RangePosition {
