@@ -46,6 +46,43 @@ test('errorFromWasmDto rebuilds CssSyntaxError metadata from the Worker DTO', as
   });
 });
 
+test('errorFromWasmDto derives CssSyntaxError reasons and input metadata from fallbacks', async () => {
+  const { errorFromWasmDto } = await import('../src/wasm/errors.ts');
+
+  const prefixed = errorFromWasmDto({
+    name: 'CssSyntaxError',
+    message: 'CssSyntaxError: input.css:2:4: Unexpected token',
+    input: {
+      source: 'a{',
+      file: 'input.css',
+      line: 2,
+      column: 4,
+      offset: 3,
+      sourceMapPresent: true,
+    },
+  });
+  expect(prefixed).toMatchObject({
+    reason: 'Unexpected token',
+    source: 'a{',
+    file: 'input.css',
+    input: {
+      source: 'a{',
+      file: 'input.css',
+      line: 2,
+      column: 4,
+      offset: 3,
+      sourceMapPresent: true,
+    },
+  });
+
+  expect(errorFromWasmDto({ name: 'CssSyntaxError' })).toMatchObject({
+    reason: 'Unknown error',
+  });
+  expect(errorFromWasmDto({ name: 'CssSyntaxError', message: 'plain reason' })).toMatchObject({
+    reason: 'plain reason',
+  });
+});
+
 test('errorFromWasmDto returns WasmWorkerError instances for transport failures', async () => {
   const { WasmWorkerError, errorFromWasmDto } = await import('../src/wasm/errors.ts');
   const unnamed = errorFromWasmDto({ message: 'handler unavailable' });
@@ -54,6 +91,22 @@ test('errorFromWasmDto returns WasmWorkerError instances for transport failures'
 
   const named = errorFromWasmDto({ message: 'boom', name: 'WasmWorkerError' });
   expect(named).toBeInstanceOf(WasmWorkerError);
+
+  expect(errorFromWasmDto({})).toMatchObject({
+    name: 'WasmWorkerError',
+    message: 'postcss-go WASM request failed',
+  });
+});
+
+test('errorFromWasmDto preserves custom error names and supplies a default message', async () => {
+  const { errorFromWasmDto } = await import('../src/wasm/errors.ts');
+  const error = errorFromWasmDto({ name: 'RuntimeError' });
+
+  expect(error).toBeInstanceOf(Error);
+  expect(error).toMatchObject({
+    name: 'RuntimeError',
+    message: 'postcss-go WASM request failed',
+  });
 });
 
 test('UnsupportedAstNodeError names the custom AST node type', () => {

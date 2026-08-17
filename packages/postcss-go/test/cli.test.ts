@@ -261,56 +261,60 @@ test('watch mode recompiles when input changes without updating mtime', async ()
   }
 }, 15000);
 
-test('watch mode exits cleanly on SIGINT', async () => {
-  const { input, output } = createWatchFixture();
-  await fs.mkdir(path.dirname(input), { recursive: true });
-  await fs.writeFile(input, '.a { color: red; }');
+test.skipIf(process.platform === 'win32')(
+  'watch mode exits cleanly on SIGINT',
+  async () => {
+    const { input, output } = createWatchFixture();
+    await fs.mkdir(path.dirname(input), { recursive: true });
+    await fs.writeFile(input, '.a { color: red; }');
 
-  const child = spawn(
-    'node',
-    [
-      path.join(packageRoot, 'bin/postcss-go.js'),
-      input,
-      '-o',
-      output,
-      '--watch',
-      '--poll',
-      '--verbose',
-      '--no-map',
-    ],
-    {
-      cwd: packageRoot,
-      env: { ...process.env, FORCE_IS_TTY: 'true' },
-    },
-  );
-  let stderr = '';
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk.toString();
-  });
-
-  try {
-    await waitForContent(output, 'color: red').catch((error) => {
-      throw new Error(`${error.message}\nchild stderr:\n${stderr}`);
+    const child = spawn(
+      'node',
+      [
+        path.join(packageRoot, 'bin/postcss-go.js'),
+        input,
+        '-o',
+        output,
+        '--watch',
+        '--poll',
+        '--verbose',
+        '--no-map',
+      ],
+      {
+        cwd: packageRoot,
+        env: { ...process.env, FORCE_IS_TTY: 'true' },
+      },
+    );
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
     });
-    await waitForStreamContent(child.stderr, 'Waiting for file changes...', 10000, stderr);
 
-    child.kill('SIGINT');
-    const exit = await Promise.race([
-      new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-        child.on('exit', (code, signal) => resolve({ code, signal }));
-      }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-    ]);
+    try {
+      await waitForContent(output, 'color: red').catch((error) => {
+        throw new Error(`${error.message}\nchild stderr:\n${stderr}`);
+      });
+      await waitForStreamContent(child.stderr, 'Waiting for file changes...', 10000, stderr);
 
-    expect(exit, `watch process did not exit after SIGINT\nstderr:\n${stderr}`).not.toBeNull();
-    expect(exit?.signal).toBeNull();
-    expect(exit?.code).toBe(0);
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGKILL');
+      child.kill('SIGINT');
+      const exit = await Promise.race([
+        new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+          child.on('exit', (code, signal) => resolve({ code, signal }));
+        }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+
+      expect(exit, `watch process did not exit after SIGINT\nstderr:\n${stderr}`).not.toBeNull();
+      expect(exit?.signal).toBeNull();
+      expect(exit?.code).toBe(0);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL');
+      }
     }
-  }
-}, 15000);
+  },
+  15000,
+);
 
 test('watch mode exits cleanly when stdin ends', async () => {
   const { input, output } = createWatchFixture();

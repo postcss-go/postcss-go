@@ -60,6 +60,19 @@ test('worker rejects requests before initialization', async () => {
   });
 });
 
+test('worker ignores invalid and shutdown messages', async () => {
+  const messages: unknown[] = [];
+  scope.postMessage = (message) => messages.push(message);
+
+  const onmessage = await loadWorker();
+  onmessage({ data: null } as MessageEvent);
+  onmessage({ data: 'invalid' } as MessageEvent);
+  onmessage({ data: { type: 'shutdown' } } as MessageEvent);
+
+  await Promise.resolve();
+  expect(messages).toEqual([]);
+});
+
 test('worker requires classic Worker importScripts and wasm URLs', async () => {
   const messages: unknown[] = [];
   scope.postMessage = (message) => {
@@ -231,6 +244,41 @@ test('worker streams WASM instantiation when the response can be cloned', async 
   await vi.waitFor(() => expect(messages).toContainEqual({ type: 'ready' }));
   expect(WebAssembly.instantiateStreaming).toHaveBeenCalledOnce();
   expect(WebAssembly.instantiate).not.toHaveBeenCalled();
+});
+
+test('worker falls back to byte instantiation when streaming fails', async () => {
+  const messages: unknown[] = [];
+  scope.postMessage = (message) => messages.push(message);
+  scope.importScripts = () => {
+    scope.Go = class {
+      importObject = {} as WebAssembly.Imports;
+      async run() {
+        scope.postcssGoWasmRequest = () => JSON.stringify({ root: { type: 'root', nodes: [] } });
+      }
+    };
+  };
+  globalThis.fetch = vi.fn(
+    async () =>
+      new Response(new Uint8Array([0, 97, 115, 109]), {
+        headers: { 'content-type': 'application/octet-stream' },
+      }),
+  ) as typeof fetch;
+  WebAssembly.instantiateStreaming = vi.fn(async () => {
+    throw new TypeError('unsupported MIME type');
+  }) as typeof WebAssembly.instantiateStreaming;
+  WebAssembly.instantiate = vi.fn(async () => ({
+    instance: {} as WebAssembly.Instance,
+    module: {} as WebAssembly.Module,
+  })) as typeof WebAssembly.instantiate;
+
+  const onmessage = await loadWorker();
+  onmessage({
+    data: { type: 'init', wasmUrl: '/runtime.wasm', wasmExecUrl: '/wasm_exec.js' },
+  } as MessageEvent);
+
+  await vi.waitFor(() => expect(messages).toContainEqual({ type: 'ready' }));
+  expect(WebAssembly.instantiateStreaming).toHaveBeenCalledOnce();
+  expect(WebAssembly.instantiate).toHaveBeenCalledOnce();
 });
 
 function mockWasmBootstrap(run: () => void | Promise<void>) {

@@ -332,10 +332,11 @@ test('processWithGoEngine defers default map mode to the Go noWork path', async 
 
 test('processWithGoEngine resolves dynamic source map annotations before the Go bridge', async () => {
   const root = { type: 'root', nodes: [{ type: 'rule', selector: '.a', nodes: [] }] };
+  const expectedMapFile = path.resolve('/dist/maps/custom.map');
   const processSpy = vi.fn().mockResolvedValue({
     css: '.a {}\n/*# sourceMappingURL=maps/custom.map */',
     map: '{"version":3,"sources":[],"names":[],"mappings":"AAAA"}',
-    mapFile: '/dist/maps/custom.map',
+    mapFile: expectedMapFile,
     messages: [],
   });
   const parseSpy = vi.fn().mockResolvedValue({ root });
@@ -358,7 +359,6 @@ test('processWithGoEngine resolves dynamic source map annotations before the Go 
 
   expect(parseSpy).toHaveBeenCalledWith('.a {}', { from: '/src/a.css' });
   expect(annotation).toHaveBeenCalledWith('/dist/a.css', expect.any(Root));
-  const expectedMapFile = path.resolve('/dist/maps/custom.map');
   expect(processSpy).toHaveBeenCalledWith(
     expect.any(String),
     expect.objectContaining({

@@ -151,7 +151,7 @@ test('Input loads an external previous source map through the Node entry point',
     );
 
     const input = new Input('a{}\n/*# sourceMappingURL=input.css.map */', { from });
-    expect(input.map?.mapFile).toBe(`${from}.map`);
+    expect(input.map?.mapFile).toBe(`${from}.map`.replace(/\\/g, '/'));
     expect(input.map?.consumer().sources).toEqual(['input.scss']);
   } finally {
     rmSync(directory, { recursive: true, force: true });
