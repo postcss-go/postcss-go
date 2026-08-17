@@ -1,0 +1,136 @@
+name: Codecov
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - 'internal/**'
+      - 'cmd/**'
+      - 'benchmark/fixtures/**'
+      - 'packages/postcss-go/**'
+      - 'packages/postcss-compat/**'
+      - 'packages/shared/**'
+      - 'npm/postcss-go/**'
+      - scripts/build-wasm.mjs
+      - scripts/check-go-coverage.mjs
+      - scripts/prepare-js-lcov-for-codecov.mjs
+      - .github/codecov.yml
+      - .github/workflows/codecov.yml
+  pull_request:
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - 'internal/**'
+      - 'cmd/**'
+      - 'benchmark/fixtures/**'
+      - 'packages/postcss-go/**'
+      - 'packages/postcss-compat/**'
+      - 'packages/shared/**'
+      - 'npm/postcss-go/**'
+      - scripts/build-wasm.mjs
+      - scripts/check-go-coverage.mjs
+      - scripts/prepare-js-lcov-for-codecov.mjs
+      - .github/codecov.yml
+      - .github/workflows/codecov.yml
+
+concurrency:
+  group: codecov-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Go coverage
+        run: pnpm test:coverage:go
+
+      - name: Generate JS coverage
+        run: pnpm test:coverage:js
+
+      - name: Prepare JS lcov for Codecov
+        run: node ./scripts/prepare-js-lcov-for-codecov.mjs
+
+      - name: Upload Go coverage artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-coverage
+          path: |
+            coverage/go.out
+            coverage/go.txt
+
+      - name: Upload JS coverage artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: js-coverage
+          path: |
+            packages/postcss-go/coverage/lcov.info
+            packages/postcss-compat/coverage/lcov.info
+
+      - name: Upload Go coverage to Codecov
+        if: env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage/go.out
+          flags: go
+          name: codecov-go
+          disable_search: true
+          fail_ci_if_error: true
+          token: ${{ env.CODECOV_TOKEN }}
+          verbose: true
+
+      - name: Upload JS coverage to Codecov
+        if: env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./packages/postcss-go/coverage/lcov.info,./packages/postcss-compat/coverage/lcov.info
+          flags: js
+          name: codecov-js
+          disable_search: true
+          fail_ci_if_error: true
+          token: ${{ env.CODECOV_TOKEN }}
+          verbose: true

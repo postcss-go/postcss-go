@@ -1,0 +1,154 @@
+name: Unit Tests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - 'internal/**'
+      - 'cmd/**'
+      - 'benchmark/fixtures/**'
+      - 'packages/**'
+      - 'npm/postcss-go/**'
+      - 'vendor/postcss/**'
+      - scripts/build-wasm.mjs
+      - scripts/run-upstream-tests.mjs
+      - scripts/prepare-upstream-compat.mjs
+      - .github/workflows/unit-tests.yml
+  pull_request:
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - 'internal/**'
+      - 'cmd/**'
+      - 'benchmark/fixtures/**'
+      - 'packages/**'
+      - 'npm/postcss-go/**'
+      - 'vendor/postcss/**'
+      - scripts/build-wasm.mjs
+      - scripts/run-upstream-tests.mjs
+      - scripts/prepare-upstream-compat.mjs
+      - .github/workflows/unit-tests.yml
+
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    name: Node / TypeScript Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    env:
+      GOFLAGS: -mod=mod
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+  upstream-tests:
+    name: Upstream PostCSS Test Suite
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=mod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run full upstream PostCSS unit suite
+        run: pnpm test:upstream
+
+      - name: Run full Go compatibility suite
+        run: pnpm test:upstream:go
+
+  go-tests:
+    name: Go Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    env:
+      GOFLAGS: -mod=mod
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
