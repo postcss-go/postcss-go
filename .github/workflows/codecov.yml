@@ -12,9 +12,19 @@ on:
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - 'internal/**'
+      - 'cmd/**'
+      - 'benchmark/fixtures/**'
       - 'packages/postcss-go/**'
       - 'packages/postcss-compat/**'
       - 'packages/shared/**'
+      - 'npm/postcss-go/**'
+      - scripts/build-wasm.mjs
+      - scripts/check-go-coverage.mjs
+      - scripts/prepare-js-lcov-for-codecov.mjs
+      - .github/codecov.yml
+      - .github/workflows/codecov.yml
   pull_request:
     paths:
       - '**/*.go'
@@ -23,9 +33,19 @@ on:
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - 'internal/**'
+      - 'cmd/**'
+      - 'benchmark/fixtures/**'
       - 'packages/postcss-go/**'
       - 'packages/postcss-compat/**'
       - 'packages/shared/**'
+      - 'npm/postcss-go/**'
+      - scripts/build-wasm.mjs
+      - scripts/check-go-coverage.mjs
+      - scripts/prepare-js-lcov-for-codecov.mjs
+      - .github/codecov.yml
+      - .github/workflows/codecov.yml
 
 concurrency:
   group: codecov-${{ github.workflow }}-${{ github.ref }}
