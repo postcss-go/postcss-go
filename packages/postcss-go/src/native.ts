@@ -9,13 +9,13 @@ import {
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
-import { Node, Root, asProcessRoot, fromAst, toAst } from './ast.js';
+import { Node, asProcessRoot, fromAst, setSyncCssRuntime, type Builder, type Root } from './ast.js';
 import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
 import {
   AsyncBackendUnavailableError,
   AsyncPluginError,
-  cssSyntaxErrorFromDto,
   CssSyntaxError,
+  cssSyntaxErrorFromDto,
   isThenable,
   observeThenable,
   type CssSyntaxErrorDTO,
@@ -46,13 +46,7 @@ type NativeAddon = {
   processAsync(css: string, optionsJson?: string): Promise<Buffer>;
   noWork(css: string, optionsJson?: string): string;
   noWorkAsync(css: string, optionsJson?: string): Promise<string>;
-  stringifyBuilder(ast: Buffer, target?: string): string;
-};
-
-type NativeBuilderPart = {
-  css: string;
-  node?: number;
-  type?: string;
+  stringifyBuilder(ast: Buffer, optionsJson?: string): string;
 };
 
 export type LiveParseResult = { root: Root };
@@ -126,6 +120,27 @@ function encodeBoundaryAst(ast: AstNode | Node): Buffer {
   return ast instanceof Node ? serializeAst(ast) : encodeAst(ast);
 }
 
+function indexLiveNodes(node: Node): Node[] {
+  const nodes: Node[] = [];
+  const visit = (current: Node): void => {
+    nodes.push(current);
+    for (const child of (current as Node & { nodes?: Node[] }).nodes ?? []) visit(child);
+  };
+  visit(node);
+  return nodes;
+}
+
+/** Encode the node's root so Go can infer raws from siblings, plus a 1-based index. */
+function encodeStringifyTarget(node: Node): { buffer: Buffer; options?: string } {
+  const root = node.root();
+  if (root === node) return { buffer: serializeAst(node) };
+  const nodeIndex = indexLiveNodes(root).indexOf(node) + 1;
+  return {
+    buffer: serializeAst(root),
+    options: nodeIndex > 0 ? JSON.stringify({ nodeIndex }) : undefined,
+  };
+}
+
 /** True when the sync native addon is available for this platform. */
 export function isNativeBridgeAvailable(): boolean {
   return loadAddon() !== null;
@@ -161,6 +176,30 @@ export function createNativeService(): NativePostcssGoService {
     );
   }
   return new NativePostcssGoService(addon);
+}
+
+/** Point AST helpers at the N-API parse/stringify runtime. */
+export function installNativeSyncCssRuntime(): void {
+  if (!isNativeBridgeAvailable()) {
+    setSyncCssRuntime(undefined);
+    return;
+  }
+  const service = createNativeService();
+  setSyncCssRuntime({
+    parse(css, options = {}) {
+      const cssText = String(css);
+      const root = service.parseSync(cssText, options).root;
+      attachInputMetadata(root, cssText, options);
+      return root;
+    },
+    stringify(node, builder) {
+      if (builder) {
+        service.stringifyBuilderSync(node, builder);
+        return;
+      }
+      return service.stringifyNodeSync(node);
+    },
+  });
 }
 
 /**
@@ -333,24 +372,25 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     return this.stringifyResultSync(ast, options).css;
   }
 
-  /** Replay chunks produced by the Go stringifier through a PostCSS builder callback. */
-  stringifyBuilderSync(
-    ast: Node,
-    builder: (chunk: string, node?: Node, type?: string) => void,
-  ): void {
-    const context = builderContext(ast);
-    const target = builderTargetIndex(context, ast);
-    const result = JSON.parse(
-      this.addon.stringifyBuilder(encodeBuilderAst(context), String(target)),
-    ) as {
-      parts?: NativeBuilderPart[];
-    };
-    if (!Array.isArray(result.parts)) {
-      throw new Error('postcss-go native builder response is missing parts');
-    }
-    const nodes = indexBuilderNodes(ast);
-    for (const part of result.parts) {
-      builder(part.css, part.node ? nodes.get(part.node) : undefined, part.type || undefined);
+  /** Stringify a live node without map options, for `Node#toString()`. */
+  stringifyNodeSync(node: Node): string {
+    const target = encodeStringifyTarget(node);
+    return (JSON.parse(this.addon.stringify(target.buffer, target.options)) as AstStringifyResult)
+      .css;
+  }
+
+  /** Replay Go builder chunks onto a PostCSS-shaped callback. */
+  stringifyBuilderSync(node: Node, builder: Builder): void {
+    const target = encodeStringifyTarget(node);
+    const parts = JSON.parse(this.addon.stringifyBuilder(target.buffer, target.options)) as Array<{
+      css: string;
+      node?: number;
+      type?: string;
+    }>;
+    const indexed = indexLiveNodes(node);
+    for (const part of parts) {
+      const live = part.node && part.node > 0 ? indexed[part.node - 1] : undefined;
+      builder(part.css, live, part.type || undefined);
     }
   }
 
@@ -429,55 +469,6 @@ export class NativePostcssGoService implements SyncPostcssGoService {
   }
 }
 
-function builderContext(node: Node): Node {
-  let context = node;
-  while (context.parent) context = context.parent;
-  return context;
-}
-
-function builderTargetIndex(context: Node, target: Node): number {
-  let current = 0;
-  let found = 0;
-  const visit = (node: Node) => {
-    if (found) return;
-    current += 1;
-    if (node === target) {
-      found = current;
-      return;
-    }
-    const children = (node as Node & { nodes?: Node[] }).nodes;
-    for (const child of children ?? []) visit(child);
-  };
-  visit(context);
-  if (!found) throw new Error('postcss-go builder target is outside its AST context');
-  return found;
-}
-
-function indexBuilderNodes(root: Node): Map<number, Node> {
-  const indexed = new Map<number, Node>();
-  let next = 0;
-  const visit = (node: Node) => {
-    next += 1;
-    indexed.set(next, node);
-    const children = (node as Node & { nodes?: Node[] }).nodes;
-    for (const child of children ?? []) visit(child);
-  };
-  visit(root);
-  return indexed;
-}
-
-function encodeBuilderAst(root: Node): Buffer {
-  const ast = toAst(root);
-  const stripSources = (node: AstNode): void => {
-    delete node.source;
-    if ('nodes' in node) {
-      for (const child of node.nodes ?? []) stripSources(child as AstNode);
-    }
-  };
-  stripSources(ast);
-  return encodeAst(ast);
-}
-
 function hasAnnotationCallback(options: ProcessOptions): boolean {
   return (
     !!options.map && typeof options.map === 'object' && typeof options.map.annotation === 'function'
@@ -522,21 +513,15 @@ function throwStructuredSyntaxError(
     throw nativeError;
   }
   const payload = nativeError.message.slice(CSS_SYNTAX_ERROR_PREFIX.length).trim();
-  let dto: CssSyntaxErrorDTO;
-  try {
-    dto = JSON.parse(payload) as CssSyntaxErrorDTO;
-  } catch {
-    throw new CssSyntaxError(payload, {
-      source: css,
-      file: options.from,
-    });
+  const fallback = { source: css, file: options.from };
+  if (payload.startsWith('{')) {
+    let dto: CssSyntaxErrorDTO;
+    try {
+      dto = JSON.parse(payload) as CssSyntaxErrorDTO;
+    } catch {
+      throw new CssSyntaxError(payload, fallback);
+    }
+    throw cssSyntaxErrorFromDto(dto, fallback);
   }
-  throw cssSyntaxErrorFromDto(
-    {
-      ...dto,
-      name: 'CssSyntaxError',
-      file: dto.file || options.from,
-    },
-    css,
-  );
+  throw new CssSyntaxError(payload, fallback);
 }

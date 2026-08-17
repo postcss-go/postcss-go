@@ -97,6 +97,9 @@ const processor = createBrowserProcessor([], {
 ```
 
 See the website guide page `guide/browser-wasm` for CSP and asset-loading details.
+Browser plugins may mutate the hydrated AST; `helpers.postcss.parse`,
+`root.append('.a{}')`, `Node#toString()`, and `helpers.postcss.stringify` throw
+`SyncBackendUnavailableError`.
 
 `isNativeBridgeAvailable()` is the boolean discovery shortcut. The CLI prints
 `Backend: native (native addon available)` with `--verbose`. There is no silent

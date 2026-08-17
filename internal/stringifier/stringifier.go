@@ -98,14 +98,7 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int)
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
 			writeBuilderNode(parts, child, depth+1, next)
 		}
-		close := "}"
-		if hasRaw(current, "after") {
-			close = escapeHTMLInCSS(rawString(current, "after", "")) + close
-		} else if inferred, ok := inferBlockAfter(current, len(current.Nodes) != 0); ok {
-			close = escapeHTMLInCSS(inferred) + close
-		} else if len(current.Nodes) != 0 {
-			close = "\n" + strings.Repeat(indentFor(current), depth) + close
-		}
+		close := blockClosePrefix(current, len(current.Nodes), depth) + "}"
 		appendBuilderPart(parts, close+rawString(current, "ownSemicolon", ""), id, "end")
 	case *ast.AtRule:
 		if !current.Block {
@@ -121,14 +114,7 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int)
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
 			writeBuilderNode(parts, child, depth+1, next)
 		}
-		close := "}"
-		if hasRaw(current, "after") {
-			close = escapeHTMLInCSS(rawString(current, "after", "")) + close
-		} else if inferred, ok := inferBlockAfter(current, len(current.Nodes) != 0); ok {
-			close = escapeHTMLInCSS(inferred) + close
-		} else if len(current.Nodes) != 0 {
-			close = "\n" + strings.Repeat(indentFor(current), depth) + close
-		}
+		close := blockClosePrefix(current, len(current.Nodes), depth) + "}"
 		appendBuilderPart(parts, close, id, "end")
 	case *ast.Declaration:
 		text := declarationText(current)
@@ -267,15 +253,75 @@ func atRuleHasSemicolon(node *ast.AtRule) bool {
 }
 
 func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
-	if hasRaw(node, "after") {
-		writer.writeString(escapeHTMLInCSS(rawString(node, "after", "")))
-	} else if inferred, ok := inferBlockAfter(node, childCount != 0); ok {
-		writer.writeString(escapeHTMLInCSS(inferred))
-	} else if childCount != 0 {
-		writer.writeByte('\n')
-		writeIndent(writer, node, depth)
-	}
+	writer.writeString(blockClosePrefix(node, childCount, depth))
 	writer.writeByte('}')
+}
+
+func blockClosePrefix(node ast.Node, childCount, depth int) string {
+	if hasRaw(node, "after") {
+		return escapeHTMLInCSS(rawString(node, "after", ""))
+	}
+	if inferred, ok := inferBlockAfter(node, childCount); ok {
+		return escapeHTMLInCSS(inferred)
+	}
+	if childCount != 0 {
+		return "\n" + strings.Repeat(indentFor(node), depth)
+	}
+	return ""
+}
+
+func inferBlockAfter(node ast.Node, childCount int) (string, bool) {
+	origin := node.Root()
+	if origin == nil {
+		origin = node
+	}
+	wantEmpty := childCount == 0
+	var found string
+	ok := false
+	var visit func(ast.Node) bool
+	visit = func(candidate ast.Node) bool {
+		if candidate == nil {
+			return true
+		}
+		if candidate != node {
+			if container, isContainer := candidate.(ast.Container); isContainer {
+				if _, isRoot := candidate.(*ast.Root); !isRoot {
+					if _, isDocument := candidate.(*ast.Document); !isDocument {
+						empty := len(container.Children()) == 0
+						if empty == wantEmpty {
+							if value, exists := lookupRaw(candidate, "after"); exists {
+								ok = true
+								if text, isString := value.(string); isString {
+									found = text
+								}
+								return false
+							}
+						}
+					}
+				}
+			}
+		}
+		container, isContainer := candidate.(ast.Container)
+		if !isContainer {
+			return true
+		}
+		for _, child := range container.Children() {
+			if !visit(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if container, isContainer := origin.(ast.Container); isContainer && origin != node {
+		for _, child := range container.Children() {
+			if !visit(child) {
+				break
+			}
+		}
+	} else {
+		visit(origin)
+	}
+	return found, ok
 }
 
 func declarationValuePosition(node *ast.Declaration) sourcemap.Position {
@@ -343,19 +389,8 @@ func writeChildren(writer cssWriter, nodes []ast.Node, depth int, escapeBefore, 
 	return written
 }
 
-func writeIndent(writer cssWriter, node ast.Node, depth int) {
-	indent := indentFor(node)
-	for i := 0; i < depth; i++ {
-		writer.writeString(indent)
-	}
-}
-
 func hasRaw(node ast.Node, key string) bool {
-	raws := node.RawFormattingReadOnly()
-	if raws == nil {
-		return false
-	}
-	_, ok := raws[key]
+	_, ok := lookupRaw(node, key)
 	return ok
 }
 
@@ -420,7 +455,10 @@ func lookupRaw(node ast.Node, key string) (any, bool) {
 		return nil, false
 	}
 	value, ok := raws[key]
-	return value, ok
+	if !ok || value == nil {
+		return nil, false
+	}
+	return value, true
 }
 
 func ruleHeader(node *ast.Rule) string {
@@ -429,9 +467,6 @@ func ruleHeader(node *ast.Rule) string {
 
 func atRuleHeader(node *ast.AtRule) string {
 	params := rawValue(node, "params", strings.TrimSpace(node.Params))
-	if params == "" && !hasRaw(node, "afterName") {
-		return "@" + node.Name
-	}
 	return escapeHTMLInCSS("@" + node.Name + atRuleAfterName(node, params) + params)
 }
 
@@ -602,46 +637,6 @@ func inferDescendantRaw(parent ast.Container, key string, nodeType ast.NodeType)
 		}
 		if inferred, ok := inferDescendantRaw(container, key, nodeType); ok && inferred != "" {
 			return inferred, true
-		}
-	}
-	return "", false
-}
-
-func inferBlockAfter(node ast.Node, withChildren bool) (string, bool) {
-	parent := node.Parent()
-	if parent == nil {
-		return "", false
-	}
-	for _, sibling := range parent.Children() {
-		if sibling == node || sibling.Type() != node.Type() {
-			continue
-		}
-		container, ok := sibling.(ast.Container)
-		if !ok || (len(container.Children()) != 0) != withChildren {
-			continue
-		}
-		if value, ok := lookupRaw(sibling, "after"); ok {
-			if text, ok := value.(string); ok {
-				return text, true
-			}
-		}
-	}
-	return "", false
-}
-
-func inferSiblingRawForNode(node ast.Node, key string) (string, bool) {
-	parent := node.Parent()
-	if parent == nil {
-		return "", false
-	}
-	for _, sibling := range parent.Children() {
-		if sibling == node || sibling.Type() != node.Type() {
-			continue
-		}
-		if value, ok := lookupRaw(sibling, key); ok {
-			if text, ok := value.(string); ok {
-				return text, true
-			}
 		}
 	}
 	return "", false

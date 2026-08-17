@@ -64,6 +64,7 @@ func nativeErrorMessage(err error) string {
 	if !errors.As(err, &syntaxError) {
 		return err.Error()
 	}
+	// Omit source text so the 4KiB N-API error slot stays structured.
 	detail := jsbridge.ErrorDTOFromError(err)
 	detail.Source = ""
 	if detail.Input != nil {

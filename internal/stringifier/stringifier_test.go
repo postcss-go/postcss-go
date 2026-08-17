@@ -92,6 +92,36 @@ func TestStringifyInfersBeforeFromFormattedSibling(t *testing.T) {
 	}
 }
 
+func TestStringifyClonesEmptyBodyAndBeforeClose(t *testing.T) {
+	root, err := parser.Parse("b{\n  }", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	em := ast.NewRule("em")
+	em.SetParent(root)
+	root.Nodes = append(root.Nodes, em)
+	want := "b{\n  }\nem{\n  }"
+	if got := Stringify(root); got != want {
+		t.Fatalf("empty body clone\nwant: %q\ngot:  %q", want, got)
+	}
+
+	root, err = parser.Parse("a{}\nb{\n a:1\n}", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	em = ast.NewRule("em")
+	em.SetParent(root)
+	root.Nodes = append(root.Nodes, em)
+	if got := Stringify(root); got != "a{}\nb{\n a:1\n}\nem{}" {
+		t.Fatalf("compact empty body\nwant: %q\ngot:  %q", "a{}\nb{\n a:1\n}\nem{}", got)
+	}
+	em.Append(ast.NewDeclaration("top", "0"))
+	want = "a{}\nb{\n a:1\n}\nem{\n top:0\n}"
+	if got := Stringify(root); got != want {
+		t.Fatalf("beforeClose clone\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
 func TestParsePreservesCommentsAsASTNodes(t *testing.T) {
 	tests := []struct {
 		name string

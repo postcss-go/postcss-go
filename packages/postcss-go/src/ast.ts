@@ -20,11 +20,9 @@ import {
   serializeJSONValue,
 } from './ast-utils.js';
 import { defaultRaw } from './ast-stringifier.js';
-import { stringify as stringifyOwned } from './ast-stringifier.js';
-import { CssSyntaxError } from './errors.js';
+import { CssSyntaxError, SyncBackendUnavailableError } from './errors.js';
 import { hydrateInput } from './input.js';
 import { list } from './list.js';
-import { parseOwnedSync } from './parser.js';
 import { Warning } from './warning.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
@@ -76,28 +74,59 @@ export type WalkCallback<T extends Node = Node> = (node: T, index: number) => un
  */
 export type InsertMode = 'hydrate' | 'prepend' | undefined;
 
+/** Synchronous CSS parser used by plugin helpers and AST string insertion. */
+export type Parser = (css: string | { toString(): string }, options?: ProcessOptions) => Root;
+
 export interface SyncCssRuntime {
-  parse(css: string, options?: ProcessOptions): Root;
-  stringify(node: Node, builder: Builder): void;
+  parse: Parser;
+  stringify(node: Node, builder?: Builder): string | void;
 }
 
-const javascriptSyncCssRuntime: SyncCssRuntime = {
-  parse: parseOwnedSync,
-  stringify: (node, builder) => stringifyOwned(node, builder as never),
-};
-let syncCssRuntime = javascriptSyncCssRuntime;
+let syncCssRuntime: SyncCssRuntime | undefined;
+let wasmSyncCssHelpersBlocked = 0;
 
-/** Select the synchronous parser/stringifier used by AST helpers in this entry point. */
-export function setSyncCssRuntime(runtime?: SyncCssRuntime): void {
-  syncCssRuntime = runtime ?? javascriptSyncCssRuntime;
+const syncCssUnavailable =
+  'helpers.postcss.parse, AST string insertion, Node#toString(), and helpers.postcss.stringify require the Node N-API backend; the browser WASM Worker backend is asynchronous only';
+
+/** Install the Node N-API parse/stringify helpers, or clear them when missing. */
+export function setSyncCssRuntime(runtime: SyncCssRuntime | undefined): void {
+  syncCssRuntime = runtime;
 }
 
-export function parseWithSyncCssRuntime(css: string, options?: ProcessOptions): Root {
-  return syncCssRuntime.parse(css, options);
+/**
+ * Disable synchronous CSS parse/stringify for the WASM plugin run even if a
+ * Node N-API runtime is installed in the same isolate (contract tests).
+ */
+export async function runWithWasmSyncCssHelpersBlocked<T>(work: () => Promise<T>): Promise<T> {
+  wasmSyncCssHelpersBlocked += 1;
+  try {
+    return await work();
+  } finally {
+    wasmSyncCssHelpersBlocked -= 1;
+  }
 }
 
-export function stringifyWithSyncCssRuntime(node: Node, builder: Builder): void {
-  syncCssRuntime.stringify(node, builder);
+function requireSyncCssRuntime(): SyncCssRuntime {
+  if (wasmSyncCssHelpersBlocked > 0 || !syncCssRuntime) {
+    throw new SyncBackendUnavailableError(syncCssUnavailable);
+  }
+  return syncCssRuntime;
+}
+
+/**
+ * Parse CSS on the calling thread. Node uses N-API; the browser WASM Worker
+ * path throws because it cannot wait on the Worker from a sync helper.
+ */
+export function parseCssSync(
+  css: string | { toString(): string },
+  options: ProcessOptions = {},
+): Root {
+  return requireSyncCssRuntime().parse(css, options);
+}
+
+/** Stringify a live node through Go. With a builder, replays Go chunk events. */
+export function stringifyCssSync(node: Node, builder?: Builder): string | void {
+  return requireSyncCssRuntime().stringify(node, builder);
 }
 
 function isNode(value: unknown): value is Node {
@@ -556,7 +585,11 @@ export class Node {
     return this.proxyCache;
   }
 
-  toString(stringifier: Stringifier | StringifierSyntax = defaultStringifier): string {
+  toString(stringifier?: Stringifier | StringifierSyntax): string {
+    if (stringifier === undefined) {
+      const css = stringifyCssSync(this);
+      return typeof css === 'string' ? css : '';
+    }
     const stringify = typeof stringifier === 'function' ? stringifier : stringifier.stringify;
     let result = '';
     stringify(this, (chunk) => {
@@ -822,7 +855,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
         continue;
       }
       if (typeof child === 'string') {
-        const parsed = parseWithSyncCssRuntime(child);
+        const parsed = parseCssSync(child);
         nodes.push(
           ...parsed.nodes.map((node) => {
             const json = node.toJSON() as unknown as AstDTO;
@@ -1046,18 +1079,17 @@ export class Root extends Container<ChildNode> {
     }
     if (!sample) return;
     if (mode === 'prepend') {
-      if (this.nodes.length > 1 && this.nodes[1].raws.before !== undefined) {
-        sample.raws.before = this.nodes[1].raws.before;
+      if (this.nodes.length > 1) {
+        const nextBefore = this.nodes[1].raws.before;
+        if (nextBefore === undefined) delete sample.raws.before;
+        else sample.raws.before = nextBefore;
       } else {
         delete sample.raws.before;
       }
       return;
     }
     if (this.first !== sample) {
-      for (const node of nodes) {
-        if (sample.raws.before === undefined) delete node.raws.before;
-        else node.raws.before = sample.raws.before;
-      }
+      for (const node of nodes) node.raws.before = sample.raws.before;
     }
   }
 
@@ -1295,10 +1327,6 @@ export function toAst(node: Node): AstDTO {
   restoreBridgeSources(ast, [...inputs.keys()]);
   markBridgeBlocks(ast);
   return ast;
-}
-
-function defaultStringifier(node: Node, builder: Builder): void {
-  stringifyWithSyncCssRuntime(node, builder);
 }
 
 function hydrateJSON(

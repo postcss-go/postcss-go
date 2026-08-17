@@ -32,7 +32,7 @@ test('cssSyntaxErrorFromDto prefers DTO fields and fills source from the fallbac
       column: 3,
       file: 'input.css',
     },
-    'a {\n  color red;\n}',
+    { source: 'a {\n  color red;\n}' },
   );
 
   expect(error).toBeInstanceOf(CssSyntaxError);

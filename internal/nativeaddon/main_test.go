@@ -45,8 +45,9 @@ func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
 	if !strings.HasPrefix(message, cssSyntaxErrorPrefix) {
 		t.Fatalf("syntax error missing marker: %q", message)
 	}
+	payload := strings.TrimPrefix(message, cssSyntaxErrorPrefix)
 	var dto jsbridge.ErrorDTO
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(message, cssSyntaxErrorPrefix)), &dto); err != nil {
+	if err := json.Unmarshal([]byte(payload), &dto); err != nil {
 		t.Fatalf("syntax error payload is not JSON: %v (%q)", err, message)
 	}
 	if dto.Name != "CssSyntaxError" || dto.Reason != "Unknown word" || dto.Line != 1 || dto.Column != 2 {
@@ -55,10 +56,13 @@ func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
 	if dto.Source != "" || (dto.Input != nil && dto.Input.Source != "") {
 		t.Fatalf("native syntax error payload must omit source: %#v", dto)
 	}
+	if strings.Contains(payload, "a{?") {
+		t.Fatalf("syntax error leaked source into the N-API slot: %q", message)
+	}
 
 	plain := errors.New("source map could not be loaded")
-	if message := nativeErrorMessage(plain); message != plain.Error() {
-		t.Fatalf("plain error was changed: %q", message)
+	if got := nativeErrorMessage(plain); got != plain.Error() {
+		t.Fatalf("plain error was changed: %q", got)
 	}
 }
 

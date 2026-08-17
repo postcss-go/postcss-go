@@ -2,12 +2,13 @@ import { createRequire } from 'node:module';
 
 import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
-import { Node, Root, setSyncCssRuntime, stringifyWithSyncCssRuntime } from './ast.js';
+import { Node, stringifyCssSync, type Root } from './ast.js';
 import { SyncBackendUnavailableError } from './errors.js';
 import {
   createDefaultAsyncService,
   createNativeService,
   getDefaultAsyncBackendCapabilities,
+  installNativeSyncCssRuntime,
   isNativeBridgeAvailable,
   NativePostcssGoService,
 } from './native.js';
@@ -135,6 +136,7 @@ Object.defineProperty(postcss, 'default', {
 });
 
 setProcessorFactory((plugins) => new Processor(plugins));
+installNativeSyncCssRuntime();
 
 export function parseSync(css: CssInput, options: ProcessOptions = {}): Root {
   return dispatchParseSync(requireSyncService(), String(css), options);
@@ -157,7 +159,7 @@ export function stringifySync(
   builderOrOptions?: ((chunk: string, node?: Node, type?: string) => void) | ProcessOptions,
 ): string | void {
   if (typeof builderOrOptions === 'function') {
-    stringifyWithSyncCssRuntime(node, builderOrOptions);
+    stringifyCssSync(node, builderOrOptions);
     return;
   }
   return dispatchStringifySync(requireSyncService(), node, builderOrOptions ?? {});
@@ -171,15 +173,3 @@ function requireSyncService(): NativePostcssGoService {
   if (!isNativeBridgeAvailable()) throw new SyncBackendUnavailableError();
   return createNativeService();
 }
-
-// The Node entry point uses Go for every default synchronous parse/stringify
-// decision. Browser/WASM entries do not import this module and retain the
-// JavaScript compatibility runtime required by their Worker-only architecture.
-setSyncCssRuntime({
-  parse(css, options) {
-    return dispatchParseSync(requireSyncService(), css, options);
-  },
-  stringify(node, builder) {
-    requireSyncService().stringifyBuilderSync(node, builder);
-  },
-});

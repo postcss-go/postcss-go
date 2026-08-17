@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"postcss-go/internal/ast"
 	"postcss-go/internal/codec"
@@ -19,11 +18,10 @@ import (
 type Operation uint8
 
 const (
-	Parse     Operation = 0
-	Stringify Operation = 1
-	Process   Operation = 2
-	NoWork    Operation = 3
-	// StringifyBuilder returns Go-owned builder chunks and node boundary metadata.
+	Parse            Operation = 0
+	Stringify        Operation = 1
+	Process          Operation = 2
+	NoWork           Operation = 3
 	StringifyBuilder Operation = 4
 )
 
@@ -31,10 +29,6 @@ type stringifyResult struct {
 	CSS     string `json:"css"`
 	Map     string `json:"map,omitempty"`
 	MapFile string `json:"mapFile,omitempty"`
-}
-
-type stringifyBuilderResult struct {
-	Parts []stringifier.BuilderPart `json:"parts"`
 }
 
 type processResult struct {
@@ -71,44 +65,6 @@ func Call(operation Operation, first, second []byte) ([]byte, error) {
 	}
 }
 
-func stringifyBuilder(astBytes, targetBytes []byte) ([]byte, error) {
-	node, err := codec.DecodeAST(astBytes)
-	if err != nil {
-		return nil, err
-	}
-	target := node
-	if len(targetBytes) > 0 {
-		targetID, parseErr := strconv.Atoi(string(targetBytes))
-		if parseErr != nil || targetID < 1 {
-			return nil, fmt.Errorf("invalid builder target %q", targetBytes)
-		}
-		var current int
-		var found ast.Node
-		var visit func(ast.Node)
-		visit = func(candidate ast.Node) {
-			if found != nil {
-				return
-			}
-			current++
-			if current == targetID {
-				found = candidate
-				return
-			}
-			if container, ok := candidate.(ast.Container); ok {
-				for _, child := range container.Children() {
-					visit(child)
-				}
-			}
-		}
-		visit(node)
-		if found == nil {
-			return nil, fmt.Errorf("builder target %d is outside the AST", targetID)
-		}
-		target = found
-	}
-	return json.Marshal(stringifyBuilderResult{Parts: stringifier.StringifyWithBuilder(target)})
-}
-
 func parse(css, from string) ([]byte, error) {
 	options := postcss.ParseOptions{TrackSource: true}
 	if from != "" {
@@ -122,7 +78,7 @@ func parse(css, from string) ([]byte, error) {
 }
 
 func stringify(astBytes, optionsJSON []byte) ([]byte, error) {
-	node, err := codec.DecodeAST(astBytes)
+	target, err := decodeIndexedNode(astBytes, optionsJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +88,7 @@ func stringify(astBytes, optionsJSON []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-	stringified, err := postcss.StringifyWithOptions(node, options)
+	stringified, err := postcss.StringifyWithOptions(target, options)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +97,55 @@ func stringify(astBytes, optionsJSON []byte) ([]byte, error) {
 		Map:     stringified.Map,
 		MapFile: stringified.MapFile,
 	})
+}
+
+func stringifyBuilder(astBytes, optionsJSON []byte) ([]byte, error) {
+	target, err := decodeIndexedNode(astBytes, optionsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(stringifier.StringifyWithBuilder(target))
+}
+
+func decodeIndexedNode(astBytes, optionsJSON []byte) (ast.Node, error) {
+	node, err := codec.DecodeAST(astBytes)
+	if err != nil {
+		return nil, err
+	}
+	nodeIndex := 0
+	if len(optionsJSON) > 0 {
+		var extra struct {
+			NodeIndex int `json:"nodeIndex"`
+		}
+		if err := json.Unmarshal(optionsJSON, &extra); err != nil {
+			return nil, err
+		}
+		nodeIndex = extra.NodeIndex
+	}
+	return selectIndexedNode(node, nodeIndex)
+}
+
+func selectIndexedNode(root ast.Node, nodeIndex int) (ast.Node, error) {
+	if nodeIndex <= 0 {
+		return root, nil
+	}
+	nodes := indexAST(root)
+	if nodeIndex > len(nodes) {
+		return nil, fmt.Errorf("stringify nodeIndex %d is out of range", nodeIndex)
+	}
+	return nodes[nodeIndex-1], nil
+}
+
+func indexAST(node ast.Node) []ast.Node {
+	if node == nil {
+		return nil
+	}
+	nodes := make([]ast.Node, 0)
+	_ = ast.Walk(node, func(current ast.Node) error {
+		nodes = append(nodes, current)
+		return nil
+	})
+	return nodes
 }
 
 func process(css string, optionsJSON []byte) ([]byte, error) {

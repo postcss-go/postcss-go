@@ -45,6 +45,7 @@ export {
   type NodeInit,
   type NodeInput,
   type NodeType,
+  type Parser,
   type ProcessRoot,
   type RootInit,
   type RuleInit,
@@ -66,7 +67,6 @@ export {
 export { WasmWorkerError, errorFromWasmDto, type WasmErrorDTO } from './wasm/errors.js';
 export { Warning, type WarningOptions } from './warning.js';
 export { Result, ResultMap, type ResultProcessor } from './result.js';
-export type { Parser } from './parser.js';
 export {
   noWorkSync,
   getBackendCapabilities,

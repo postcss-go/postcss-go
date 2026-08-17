@@ -134,39 +134,6 @@ export class CssSyntaxError extends Error {
   }
 }
 
-/** Rebuild a structured `CssSyntaxError` from a Go error DTO. */
-export function cssSyntaxErrorFromDto(
-  dto: CssSyntaxErrorDTO,
-  fallbackSource?: string,
-): CssSyntaxError {
-  const reason = dto.reason || stripLeadingErrorName(dto.message) || 'Unknown error';
-  return new CssSyntaxError(reason, {
-    line: dto.line,
-    column: dto.column,
-    endLine: dto.endLine,
-    endColumn: dto.endColumn,
-    source: dto.source ?? dto.input?.source ?? fallbackSource,
-    file: dto.file ?? dto.input?.file,
-    plugin: dto.plugin,
-    input: dto.input
-      ? {
-          source: dto.input.source ?? fallbackSource,
-          file: dto.input.file,
-          line: dto.input.line,
-          column: dto.input.column,
-          offset: dto.input.offset,
-          sourceMapPresent: dto.input.sourceMapPresent,
-        }
-      : undefined,
-  });
-}
-
-function stripLeadingErrorName(message: string | undefined): string | undefined {
-  if (!message) return undefined;
-  const match = message.match(/^CssSyntaxError:\s*(?:.*?:\d+:\d+:\s*)?(.*)$/);
-  return match?.[1] ?? message;
-}
-
 function isRangePosition(value: unknown): value is RangePosition {
   return (
     !!value &&
@@ -222,6 +189,39 @@ export class UnsupportedAstNodeError extends Error {
     );
     this.name = 'UnsupportedAstNodeError';
   }
+}
+
+/** Rebuild a structured `CssSyntaxError` from a Go DTO. */
+export function cssSyntaxErrorFromDto(
+  dto: CssSyntaxErrorDTO,
+  fallback: { source?: string; file?: string } = {},
+): CssSyntaxError {
+  const reason = dto.reason || stripLeadingErrorName(dto.message) || 'Unknown error';
+  return new CssSyntaxError(reason, {
+    line: dto.line,
+    column: dto.column,
+    endLine: dto.endLine,
+    endColumn: dto.endColumn,
+    source: dto.source ?? dto.input?.source ?? fallback.source,
+    file: dto.file ?? dto.input?.file ?? fallback.file,
+    plugin: dto.plugin,
+    input: dto.input
+      ? {
+          source: dto.input.source ?? fallback.source,
+          file: dto.input.file ?? fallback.file,
+          line: dto.input.line,
+          column: dto.input.column,
+          offset: dto.input.offset,
+          sourceMapPresent: dto.input.sourceMapPresent,
+        }
+      : undefined,
+  });
+}
+
+function stripLeadingErrorName(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  const match = message.match(/^CssSyntaxError:\s*(?:.*?:\d+:\d+:\s*)?(.*)$/);
+  return match?.[1] ?? message;
 }
 
 export function positionAt(source: string, offset: number): SourcePosition {

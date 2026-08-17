@@ -248,8 +248,8 @@ export function hydrateInput(value: unknown): unknown {
 
 /** Attach one shared owned Input instance to every source-bearing live node. */
 export function attachInput(root: Node, css: string, options: ProcessOptions = {}): Input {
-  const file = options.from;
   const input = new Input(css, options);
+  const file = options.from;
   if (!root.source) {
     root.source = {
       start: { line: 1, column: 1, offset: 0 },

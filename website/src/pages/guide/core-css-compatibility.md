@@ -49,8 +49,9 @@ The compatibility contract covers CSS behavior, not execution mechanics:
   the main thread. Explicit sync APIs, `postcss.parse`, AST string insertion,
   `Node#toString()`, and builder callbacks use the in-process N-API backend.
 - Browser processing is asynchronous and Worker-only. Synchronous plugin
-  helpers retain the owned JavaScript compatibility parser and stringifier; it
-  does not expose a synchronous WASM path.
+  helpers such as `helpers.postcss.parse`, AST string insertion, and
+  `Node#toString()` throw `SyncBackendUnavailableError`; it does not expose a
+  synchronous WASM path.
 - The Go API accepts Go-native plugins. Node, CLI, and browser surfaces accept
   supported JavaScript plugins through the owned JavaScript runtime.
 - Custom parser, syntax, and stringifier delegates are rejected with a stable

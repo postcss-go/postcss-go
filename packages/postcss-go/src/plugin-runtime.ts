@@ -10,15 +10,16 @@ import {
   fromAst,
   fromJSON,
   Node,
-  parseWithSyncCssRuntime,
+  parseCssSync,
   Root,
   Rule,
-  stringifyWithSyncCssRuntime,
+  runWithWasmSyncCssHelpersBlocked,
+  stringifyCssSync,
   toAst,
+  type Parser,
   type ProcessRoot,
 } from './ast.js';
-import { CssSyntaxError } from './errors.js';
-import { AsyncPluginError, isThenable, observeThenable } from './errors.js';
+import { AsyncPluginError, CssSyntaxError, isThenable, observeThenable } from './errors.js';
 import { attachInputMetadata, Input } from './input.js';
 import { list } from './list.js';
 import type { PostcssGoService } from './service.js';
@@ -81,7 +82,7 @@ export interface PostcssPublic {
     name: string,
     initializer: (...args: T) => Omit<Plugin, 'postcssPlugin'> | Plugin,
   ): ((...args: T) => Plugin) & { postcss: true };
-  parse: typeof parseWithSyncCssRuntime;
+  parse: Parser;
   stringify: (
     node: Node,
     builder?: (chunk: string, node?: Node, type?: string) => void,
@@ -159,11 +160,11 @@ export const postcssApi = Object.assign(
     list,
     fromJSON,
     parse(css: string, opts?: ProcessOptions) {
-      return parseWithSyncCssRuntime(css, opts);
+      return parseCssSync(css, opts);
     },
     stringify(node: Node, builder?: (chunk: string, node?: Node, type?: string) => void) {
       if (!builder) return node.toString();
-      stringifyWithSyncCssRuntime(node, builder);
+      stringifyCssSync(node, builder);
     },
     atRule: (defaults: ConstructorParameters<typeof AtRule>[0] = {}) => new AtRule(defaults),
     comment: (defaults: ConstructorParameters<typeof Comment>[0] = {}) => new Comment(defaults),
@@ -179,8 +180,24 @@ export const postcssApi = Object.assign(
  * Runs JavaScript plugin callbacks around the Go AST bridge. Go owns parsing
  * on the way in; this runtime owns plugin lifecycle, AST-based source maps for
  * the plugin phase, and leaves final map annotation/composition to the engine.
+ * WASM plugin runs disable synchronous CSS parse/stringify helpers.
  */
 export async function runPluginsWithBridge(
+  service: PluginBridgeService,
+  plugins: AcceptedPlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor?: ResultProcessorFacade,
+): Promise<PluginResult> {
+  if (service.capabilities?.backend === 'wasm-worker') {
+    return runWithWasmSyncCssHelpersBlocked(() =>
+      runPluginsWithBridgeBody(service, plugins, css, options, processor),
+    );
+  }
+  return runPluginsWithBridgeBody(service, plugins, css, options, processor);
+}
+
+async function runPluginsWithBridgeBody(
   service: PluginBridgeService,
   plugins: AcceptedPlugin[],
   css: string,

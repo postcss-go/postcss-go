@@ -42,23 +42,27 @@ no-work, or stringify without JavaScript plugins.
 
 ## Contract
 
-| Surface                                            | Browser WASM Worker                         |
-| -------------------------------------------------- | ------------------------------------------- |
-| Async parse / process / no-work / stringify        | Supported                                   |
-| JavaScript plugins (sync and async callbacks)      | Supported via `createBrowserProcessor`      |
-| Explicit sync APIs (`parseSync`, `processSync`, …) | Rejected with `SyncBackendUnavailableError` |
-| Main-thread synchronous WASM                       | Not provided; deferred                      |
-| Classic Worker + `importScripts`                   | Required                                    |
-| Module Worker                                      | Unsupported (`WasmWorkerError`)             |
+| Surface                                                                                             | Browser WASM Worker                         |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Async parse / process / no-work / stringify                                                         | Supported                                   |
+| JavaScript plugins (sync and async callbacks)                                                       | Supported via `createBrowserProcessor`      |
+| `helpers.postcss.parse`, `Container#append(string)`, `Node#toString()`, `helpers.postcss.stringify` | Rejected with `SyncBackendUnavailableError` |
+| Explicit sync APIs (`parseSync`, `processSync`, …)                                                  | Rejected with `SyncBackendUnavailableError` |
+| Main-thread synchronous WASM                                                                        | Not provided; deferred                      |
+| Classic Worker + `importScripts`                                                                    | Required                                    |
+| Module Worker                                                                                       | Unsupported (`WasmWorkerError`)             |
 
 Browser remains asynchronous and Worker-backed. An initialized main-thread WASM
 backend is intentionally out of scope for v1: sync Go work on the UI thread
 would freeze the page, and Node already covers sync through N-API.
 
-PostCSS-shaped plugin helpers such as `helpers.postcss.parse`, AST string
-insertion, and `Node#toString()` are synchronous. The browser entry implements
-those helpers with the owned JavaScript compatibility parser/stringifier; CSS
-entering and leaving the processing pipeline still uses the Go/WASM Worker.
+Plugins may mutate the hydrated JavaScript AST (change declaration values,
+construct `Rule` / `Declaration` nodes, walk). They must not parse CSS strings,
+insert CSS source, or stringify the live tree with `helpers.postcss.parse`,
+`root.append('.a{}')`, `Node#toString()`, or `helpers.postcss.stringify`: those
+helpers are synchronous and the Worker cannot service them. Callers that need
+that PostCSS plugin surface should use Node with the N-API backend. Pipeline
+stringify stays in the Worker.
 
 ## Asset loading
 
@@ -124,11 +128,11 @@ need synchronous PostCSS-shaped APIs should use Node with the N-API backend.
 
 ## Errors
 
-| Error                         | When                                                                                                                        |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `WasmWorkerError`             | Missing classic Worker / `workerUrl`, closed service, init/transport failures, optional RPC timeouts, fatal runtime crashes |
-| `SyncBackendUnavailableError` | Any explicit `*Sync` API against the WASM Worker backend                                                                    |
-| `CssSyntaxError`              | Rebuilt from the Worker RPC ErrorDTO (`name`, `reason`, `line`, `column`, `source`, `file`, …)                              |
+| Error                         | When                                                                                                                                                                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WasmWorkerError`             | Missing classic Worker / `workerUrl`, closed service, init/transport failures, optional RPC timeouts, fatal runtime crashes                                                                                            |
+| `SyncBackendUnavailableError` | Any explicit `*Sync` API against the WASM Worker backend, or plugin helpers that parse, insert, or stringify CSS (`helpers.postcss.parse`, `Container#append(string)`, `Node#toString()`, `helpers.postcss.stringify`) |
+| `CssSyntaxError`              | Rebuilt from the Worker RPC ErrorDTO (`name`, `reason`, `line`, `column`, `source`, `file`, …)                                                                                                                         |
 
 Fatal Worker failures (`runtime-error`, `Worker.onerror`) mark the service closed,
 reject pending RPCs, and terminate the Worker. Create a new service to recover.
