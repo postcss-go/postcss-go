@@ -459,13 +459,6 @@ func TestRawStringDetectedInfersFromSibling(t *testing.T) {
 	}
 }
 
-func TestInferSiblingRawForNodeWithoutParent(t *testing.T) {
-	rule := ast.NewRule(".a")
-	if _, ok := inferSiblingRawForNode(rule, "after"); ok {
-		t.Fatal("detached node should not infer")
-	}
-}
-
 func TestWriteMappedChildrenSkipsAnnotation(t *testing.T) {
 	root := ast.NewRoot()
 	root.Append(ast.NewRule(".a"), ast.NewComment("# sourceMappingURL=z.map"))

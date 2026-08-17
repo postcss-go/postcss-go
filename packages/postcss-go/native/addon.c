@@ -104,7 +104,7 @@ static int call_go_bridge(
 }
 #endif
 
-typedef enum { OP_PARSE, OP_STRINGIFY, OP_PROCESS, OP_NO_WORK } operation;
+typedef enum { OP_PARSE, OP_STRINGIFY, OP_PROCESS, OP_NO_WORK, OP_STRINGIFY_BUILDER } operation;
 typedef struct {
   const char* name;
   const char* usage;
@@ -139,6 +139,7 @@ static const binding bindings[] = {
     {"processAsync", "processAsync(css, optionsJson?)", "postcss-go:process", OP_PROCESS, false, false, true},
     {"noWork", "noWork(css, optionsJson?)", NULL, OP_NO_WORK, false, true, false},
     {"noWorkAsync", "noWorkAsync(css, optionsJson?)", "postcss-go:noWork", OP_NO_WORK, false, true, true},
+    {"stringifyBuilder", "stringifyBuilder(astBuffer, optionsJson?)", NULL, OP_STRINGIFY_BUILDER, true, true, false},
 };
 
 static napi_value throw_error(napi_env env, const char* message) {

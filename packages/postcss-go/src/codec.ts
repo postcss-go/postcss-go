@@ -8,7 +8,7 @@
 
 import { AtRule, Comment, Declaration, Document, Node, Root, Rule, type ChildNode } from './ast.js';
 import { UnsupportedAstNodeError } from './errors.js';
-import type { AstNode, Raws, SourceLocation } from './types.js';
+import type { AstNode, Raws, SourceLocation, SourcePosition } from './types.js';
 
 const MAGIC = Buffer.from('PCGW');
 const VERSION = 1;
@@ -423,12 +423,20 @@ function encodeRaw(writer: Writer, value: unknown): void {
 }
 
 function encodeRaws(writer: Writer, raws: Raws | undefined): void {
-  const entries = Object.entries(raws ?? {});
+  const entries = Object.entries(raws ?? {}).filter(
+    ([, value]) => value !== undefined && value !== null,
+  );
   writer.uvarint(entries.length);
   for (const [key, value] of entries) {
     writer.string(key);
     encodeRaw(writer, value);
   }
+}
+
+function encodePosition(writer: Writer, position: SourcePosition | undefined): void {
+  writer.varint(position?.line ?? 1);
+  writer.varint(position?.column ?? 1);
+  writer.varint(position?.offset ?? 0);
 }
 
 function encodeSource(writer: Writer, source: SourceLocation | undefined): void {
@@ -456,12 +464,8 @@ function encodeSource(writer: Writer, source: SourceLocation | undefined): void 
         : '';
   const mapText = typeof extended.map === 'string' ? extended.map : inputMapText;
   writer.u8(1);
-  writer.varint(source.start.line);
-  writer.varint(source.start.column);
-  writer.varint(source.start.offset);
-  writer.varint(source.end.line);
-  writer.varint(source.end.column);
-  writer.varint(source.end.offset);
+  encodePosition(writer, source.start);
+  encodePosition(writer, source.end ?? source.start);
   writer.string(source.file ?? extended.input?.file ?? extended.input?.from ?? '');
   writer.string(extended.css ?? extended.input?.css ?? '');
   writer.string(mapText);

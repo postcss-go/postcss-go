@@ -82,6 +82,48 @@ test('createBrowserProcessor runs plugins through the injected worker service', 
   expect(worker.terminated).toBe(true);
 });
 
+test('browser plugins reject synchronous CSS parse and string insertion', async () => {
+  const worker = new FakeBrowserWorker();
+  const processor = createBrowserProcessor(
+    [
+      {
+        postcssPlugin: 'needs-sync-parse',
+        Once(root, helpers) {
+          expect(() => helpers.postcss.parse('.b{}')).toThrow(SyncBackendUnavailableError);
+          expect(() => root.append('.b{}')).toThrow(SyncBackendUnavailableError);
+          expect(() => root.toString()).toThrow(SyncBackendUnavailableError);
+          expect(() => helpers.postcss.stringify(root)).toThrow(SyncBackendUnavailableError);
+        },
+      },
+    ],
+    { worker },
+  );
+
+  const pending = processor.process('.a { color: red }', { from: 'a.css', map: false });
+  await vi.waitFor(() => expect(worker.sent[0]).toMatchObject({ method: 'parse' }));
+  worker.respond({
+    id: 1,
+    result: {
+      root: {
+        type: 'root',
+        nodes: [
+          {
+            type: 'rule',
+            selector: '.a',
+            nodes: [{ type: 'decl', prop: 'color', value: 'red' }],
+          },
+        ],
+      },
+    },
+  });
+  await vi.waitFor(() => expect(worker.sent.at(-1)).toMatchObject({ method: 'stringify' }));
+  worker.respond({ id: 2, result: { css: '.a { color: red }' } });
+
+  const result = await pending;
+  expect(result.css).toContain('red');
+  await processor.close();
+});
+
 test('browser service rejects sync APIs and missing Worker transport', () => {
   const service = new BrowserPostcssGoService({ worker: new FakeBrowserWorker() });
   expect(() => service.parseSync('.a{}')).toThrow(SyncBackendUnavailableError);

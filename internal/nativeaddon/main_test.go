@@ -39,13 +39,21 @@ func TestMainIsCallable(t *testing.T) {
 
 func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
 	syntaxError := csserrors.New("Unknown word", 1, 2, "a{?", "input.css", "")
-	if message := nativeErrorMessage(syntaxError); !strings.HasPrefix(message, cssSyntaxErrorPrefix) {
+	message := nativeErrorMessage(syntaxError)
+	if !strings.HasPrefix(message, cssSyntaxErrorPrefix) {
 		t.Fatalf("syntax error missing marker: %q", message)
+	}
+	payload := strings.TrimPrefix(message, cssSyntaxErrorPrefix)
+	if !strings.Contains(payload, `"name":"CssSyntaxError"`) || !strings.Contains(payload, `"reason":"Unknown word"`) {
+		t.Fatalf("syntax error missing JSON DTO: %q", message)
+	}
+	if strings.Contains(payload, "a{?") {
+		t.Fatalf("syntax error leaked source into the N-API slot: %q", message)
 	}
 
 	plain := errors.New("source map could not be loaded")
-	if message := nativeErrorMessage(plain); message != plain.Error() {
-		t.Fatalf("plain error was changed: %q", message)
+	if got := nativeErrorMessage(plain); got != plain.Error() {
+		t.Fatalf("plain error was changed: %q", got)
 	}
 }
 

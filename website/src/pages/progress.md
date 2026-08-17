@@ -22,7 +22,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 ## Current status
 
 - [x] Go tokenizer, parser, AST, processor, stringifier, source-map layer, native Node service, and WASM service are implemented.
-- [x] The Node N-API addon provides async-work and synchronous parse, process, no-work, and stringify operations with a compact binary AST.
+- [x] The Node N-API addon provides async-work and synchronous parse, process, no-work, stringify, and builder-stringify operations with a compact binary AST.
 - [x] The JavaScript plugin runtime implements the baseline plugin lifecycle over the postcss-go AST.
 - [x] Remove every production runtime and type dependency on the `postcss` package.
 - [ ] Complete the documented PostCSS-compatible public API using postcss-go-owned implementations.

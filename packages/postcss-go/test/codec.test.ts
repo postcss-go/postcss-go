@@ -222,7 +222,8 @@ describe('binary codec + native bridge', () => {
     };
 
     const encoded = encodeAst(dto as never);
-    expect(decodeAst(encoded)).toMatchObject({
+    const decoded = decodeAst(encoded);
+    expect(decoded).toMatchObject({
       type: 'document',
       nodes: [
         {
@@ -232,7 +233,6 @@ describe('binary codec + native bridge', () => {
               type: 'comment',
               text: 'hi',
               raws: {
-                before: null,
                 flag: true,
                 ratio: 1.5,
                 list: ['a', { nested: 2 }],
@@ -244,6 +244,10 @@ describe('binary codec + native bridge', () => {
         },
       ],
     });
+    expect(
+      (decoded as { nodes: Array<{ nodes: Array<{ raws: Record<string, unknown> }> }> }).nodes[0]
+        .nodes[0].raws,
+    ).not.toHaveProperty('before');
 
     const live = new Document({
       nodes: [new Root({ nodes: [] })],
@@ -251,6 +255,25 @@ describe('binary codec + native bridge', () => {
     const liveEncoded = serializeAst(live);
     expect(decodeAst(liveEncoded).type).toBe('document');
     expect(() => hydrateAst(liveEncoded)).toThrow(/expected a root/);
+  });
+
+  it('serializes incomplete source records so Node#toString can reach Go', () => {
+    const live = new Root({
+      nodes: [],
+      source: {
+        start: { line: 1, column: 1, offset: 0 },
+        input: { css: '.a{}', from: 'partial.css' },
+      } as never,
+    });
+
+    expect(decodeAst(serializeAst(live))).toMatchObject({
+      source: {
+        file: 'partial.css',
+        css: '.a{}',
+        start: { line: 1, column: 1, offset: 0 },
+        end: { line: 1, column: 1, offset: 0 },
+      },
+    });
   });
 
   it('rejects malformed buffers and unsupported raw values', () => {

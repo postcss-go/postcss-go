@@ -13,6 +13,7 @@ package main
 import "C"
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"unsafe"
@@ -59,10 +60,35 @@ func writeError(buf *C.char, capacity C.int, err error) C.int {
 
 func nativeErrorMessage(err error) string {
 	var syntaxError *csserrors.SyntaxError
-	if errors.As(err, &syntaxError) {
-		return cssSyntaxErrorPrefix + err.Error()
+	if !errors.As(err, &syntaxError) {
+		return err.Error()
 	}
-	return err.Error()
+	// Omit source text so the 4KiB N-API error slot stays structured.
+	payload, jsonErr := json.Marshal(struct {
+		Name      string `json:"name"`
+		Message   string `json:"message"`
+		Reason    string `json:"reason,omitempty"`
+		Line      int    `json:"line,omitempty"`
+		Column    int    `json:"column,omitempty"`
+		EndLine   int    `json:"endLine,omitempty"`
+		EndColumn int    `json:"endColumn,omitempty"`
+		File      string `json:"file,omitempty"`
+		Plugin    string `json:"plugin,omitempty"`
+	}{
+		Name:      "CssSyntaxError",
+		Message:   syntaxError.Error(),
+		Reason:    syntaxError.Reason,
+		Line:      syntaxError.Line,
+		Column:    syntaxError.Column,
+		EndLine:   syntaxError.EndLine,
+		EndColumn: syntaxError.EndColumn,
+		File:      syntaxError.File,
+		Plugin:    syntaxError.Plugin,
+	})
+	if jsonErr != nil {
+		return cssSyntaxErrorPrefix + syntaxError.Error()
+	}
+	return cssSyntaxErrorPrefix + string(payload)
 }
 
 //export pcgoCall

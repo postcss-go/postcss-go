@@ -121,6 +121,27 @@ test('browser processor runs asynchronous plugins over real WASM', async () => {
   await processor.close();
 });
 
+test('browser WASM plugins reject synchronous CSS parse and string insertion', async () => {
+  const processor = createBrowserProcessor(
+    [
+      {
+        postcssPlugin: 'needs-sync-parse',
+        Once(root, helpers) {
+          expect(() => helpers.postcss.parse('.b{}')).toThrow(SyncBackendUnavailableError);
+          expect(() => root.append('.b{}')).toThrow(SyncBackendUnavailableError);
+          expect(() => root.toString()).toThrow(SyncBackendUnavailableError);
+          expect(() => helpers.postcss.stringify(root)).toThrow(SyncBackendUnavailableError);
+        },
+      },
+    ],
+    { worker: new RealWasmWorker() },
+  );
+
+  const result = await processor.process('.a { color: red }', { from: 'a.css', map: false });
+  expect(result.css).toContain('red');
+  await processor.close();
+});
+
 test('browser WASM service rejects synchronous APIs with SyncBackendUnavailableError', () => {
   const service = new BrowserPostcssGoService({ worker: new RealWasmWorker() });
   expect(() => service.parseSync('.a {}')).toThrow(SyncBackendUnavailableError);

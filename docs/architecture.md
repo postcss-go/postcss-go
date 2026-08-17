@@ -53,12 +53,14 @@ The tokenizer never builds AST nodes; the parser never runs plugins; the process
 TypeScript service → Node-API addon → internal/nativeaddon → internal/nativebridge → Go core
 ```
 
-Four core operations—`parse`, `process`, `noWork`, and `stringify`—share one
-private Go/C dispatcher. ASTs use the compact binary codec. Process responses
-use a length-prefixed frame containing small JSON metadata followed by the raw
-binary AST, avoiding base64 conversion. Promise operations run as Node-API
-async work, while the explicit sync API calls the same Go operations on the
-Node thread. The old production stdio child-process backend is not shipped.
+Five core operations—`parse`, `process`, `noWork`, `stringify`, and
+`stringifyBuilder`—share one private Go/C dispatcher. ASTs use the compact
+binary codec. Process responses use a length-prefixed frame containing small
+JSON metadata followed by the raw binary AST, avoiding base64 conversion.
+Promise operations run as Node-API async work, while the explicit sync API
+calls the same Go operations on the Node thread. Plugin `Node#toString()` and
+builder callbacks use `stringify` / `stringifyBuilder` on the Node thread. The
+old production stdio child-process backend is not shipped.
 
 Worker ownership, async-work cleanup, shutdown, and error translation are
 specified in the [Node native lifecycle contract](native-lifecycle.md).
@@ -84,7 +86,10 @@ sequenceDiagram
 - **browser / wasm** — Worker-backed async WASM service lives in
   `@postcss-go/core/browser` and `@postcss-go/core/wasm`; `createBrowserProcessor`
   runs JavaScript plugins on the calling thread while parse/stringify stay in the
-  Worker. Sync APIs are Node N-API only. The `./wasm` export also ships
+  Worker. Sync APIs, `helpers.postcss.parse`, AST string insertion, and
+  `Node#toString()` / `helpers.postcss.stringify` are Node N-API only; the WASM
+  plugin path throws `SyncBackendUnavailableError`. The
+  `./wasm` export also ships
   `worker.js`, `postcss-go.wasm`, and `wasm_exec.js`.
   Worker RPC rebuilds structured `CssSyntaxError` from the Go ErrorDTO; fatal
   `runtime-error` / `Worker.onerror` events close the service and terminate the
@@ -92,7 +97,7 @@ sequenceDiagram
 - **cli** — config, JS plugins, message combining, writing Go-generated CSS and maps
 - **shared** — private dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; bundled into core and used directly by vendored compat overrides
 
-JavaScript stays responsible for ecosystem-facing behavior and synchronous JavaScript plugin callbacks. Go handles parse, the canonical AST implementation, process, no-work map handling, and all pipeline/plugin-result stringify and source-map generation. The TypeScript AST stringifier is only the synchronous compatibility fallback required by `Node#toString()`.
+JavaScript stays responsible for ecosystem-facing behavior and synchronous JavaScript plugin callbacks. Go handles parse, the canonical AST implementation, process, no-work map handling, and all pipeline/plugin-result stringify and source-map generation. Node plugin helpers that parse or stringify CSS (`helpers.postcss.parse`, `Node#toString()`, builder callbacks) use the N-API Go parser/stringifier; the browser WASM Worker path throws `SyncBackendUnavailableError` instead.
 
 ## Source maps
 

@@ -247,8 +247,9 @@ export function hydrateInput(value: unknown): unknown {
 }
 
 /** Attach one shared owned Input instance to every source-bearing live node. */
-export function attachInput(root: Node, css: string, file?: string): Input {
-  const input = new Input(css, { from: file });
+export function attachInput(root: Node, css: string, options: ProcessOptions = {}): Input {
+  const input = new Input(css, options);
+  const file = options.from;
   if (!root.source) {
     root.source = {
       start: { line: 1, column: 1, offset: 0 },
@@ -290,7 +291,7 @@ export function attachPreviousMap(input: Input, css: string, options: ProcessOpt
 
 /** Attach one Input, including previous-map metadata, to a live AST. */
 export function attachInputMetadata(root: Node, css: string, options: ProcessOptions = {}): Input {
-  return attachPreviousMap(attachInput(root, css, options.from), css, options);
+  return attachPreviousMap(attachInput(root, css, options), css, options);
 }
 
 let inputSequence = 0;

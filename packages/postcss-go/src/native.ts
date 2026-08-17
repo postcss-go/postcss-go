@@ -9,16 +9,18 @@ import {
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
-import { Node, Root, asProcessRoot, fromAst } from './ast.js';
+import { Node, asProcessRoot, fromAst, setSyncCssRuntime, type Builder, type Root } from './ast.js';
 import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
 import {
   AsyncBackendUnavailableError,
   AsyncPluginError,
+  CssSyntaxError,
+  cssSyntaxErrorFromDto,
   isThenable,
   observeThenable,
+  type CssSyntaxErrorDTO,
 } from './errors.js';
 import { attachInputMetadata } from './input.js';
-import { parseOwnedSync } from './parser.js';
 import {
   NATIVE_BACKEND_CAPABILITIES,
   type PostcssGoService,
@@ -44,6 +46,7 @@ type NativeAddon = {
   processAsync(css: string, optionsJson?: string): Promise<Buffer>;
   noWork(css: string, optionsJson?: string): string;
   noWorkAsync(css: string, optionsJson?: string): Promise<string>;
+  stringifyBuilder(ast: Buffer, optionsJson?: string): string;
 };
 
 export type LiveParseResult = { root: Root };
@@ -117,6 +120,27 @@ function encodeBoundaryAst(ast: AstNode | Node): Buffer {
   return ast instanceof Node ? serializeAst(ast) : encodeAst(ast);
 }
 
+function indexLiveNodes(node: Node): Node[] {
+  const nodes: Node[] = [];
+  const visit = (current: Node): void => {
+    nodes.push(current);
+    for (const child of (current as Node & { nodes?: Node[] }).nodes ?? []) visit(child);
+  };
+  visit(node);
+  return nodes;
+}
+
+/** Encode the node's root so Go can infer raws from siblings, plus a 1-based index. */
+function encodeStringifyTarget(node: Node): { buffer: Buffer; options?: string } {
+  const root = node.root();
+  if (root === node) return { buffer: serializeAst(node) };
+  const nodeIndex = indexLiveNodes(root).indexOf(node) + 1;
+  return {
+    buffer: serializeAst(root),
+    options: nodeIndex > 0 ? JSON.stringify({ nodeIndex }) : undefined,
+  };
+}
+
 /** True when the sync native addon is available for this platform. */
 export function isNativeBridgeAvailable(): boolean {
   return loadAddon() !== null;
@@ -152,6 +176,30 @@ export function createNativeService(): NativePostcssGoService {
     );
   }
   return new NativePostcssGoService(addon);
+}
+
+/** Point AST helpers at the N-API parse/stringify runtime. */
+export function installNativeSyncCssRuntime(): void {
+  if (!isNativeBridgeAvailable()) {
+    setSyncCssRuntime(undefined);
+    return;
+  }
+  const service = createNativeService();
+  setSyncCssRuntime({
+    parse(css, options = {}) {
+      const cssText = String(css);
+      const root = service.parseSync(cssText, options).root;
+      attachInputMetadata(root, cssText, options);
+      return root;
+    },
+    stringify(node, builder) {
+      if (builder) {
+        service.stringifyBuilderSync(node, builder);
+        return;
+      }
+      return service.stringifyNodeSync(node);
+    },
+  });
 }
 
 /**
@@ -324,6 +372,28 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     return this.stringifyResultSync(ast, options).css;
   }
 
+  /** Stringify a live node without map options, for `Node#toString()`. */
+  stringifyNodeSync(node: Node): string {
+    const target = encodeStringifyTarget(node);
+    return (JSON.parse(this.addon.stringify(target.buffer, target.options)) as AstStringifyResult)
+      .css;
+  }
+
+  /** Replay Go builder chunks onto a PostCSS-shaped callback. */
+  stringifyBuilderSync(node: Node, builder: Builder): void {
+    const target = encodeStringifyTarget(node);
+    const parts = JSON.parse(this.addon.stringifyBuilder(target.buffer, target.options)) as Array<{
+      css: string;
+      node?: number;
+      type?: string;
+    }>;
+    const indexed = indexLiveNodes(node);
+    for (const part of parts) {
+      const live = part.node && part.node > 0 ? indexed[part.node - 1] : undefined;
+      builder(part.css, live, part.type || undefined);
+    }
+  }
+
   private resolveNoWorkAnnotationSync(options: ProcessOptions): ProcessOptions {
     const map = options.map;
     if (!map || typeof map !== 'object' || typeof map.annotation !== 'function') return options;
@@ -442,18 +512,16 @@ function throwStructuredSyntaxError(
   if (!(nativeError instanceof Error) || !nativeError.message.startsWith(CSS_SYNTAX_ERROR_PREFIX)) {
     throw nativeError;
   }
-  // Re-run only the owned parser's error path to recover structured source
-  // metadata that Node-API's string-only error slot cannot transport.
-  const structuredError = captureParserError(css, options);
-  if (structuredError) throw structuredError;
-  throw nativeError;
-}
-
-function captureParserError(css: string, options: ProcessOptions): unknown {
-  try {
-    parseOwnedSync(css, options);
-    return undefined;
-  } catch (error) {
-    return error;
+  const payload = nativeError.message.slice(CSS_SYNTAX_ERROR_PREFIX.length).trim();
+  const fallback = { source: css, file: options.from };
+  if (payload.startsWith('{')) {
+    let dto: CssSyntaxErrorDTO;
+    try {
+      dto = JSON.parse(payload) as CssSyntaxErrorDTO;
+    } catch {
+      throw new CssSyntaxError(payload, fallback);
+    }
+    throw cssSyntaxErrorFromDto(dto, fallback);
   }
+  throw new CssSyntaxError(payload, fallback);
 }

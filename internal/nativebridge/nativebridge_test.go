@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"postcss-go/internal/ast"
 	"postcss-go/internal/codec"
 	"postcss-go/internal/result"
+	"postcss-go/internal/stringifier"
 )
 
 func TestParseReturnsBinaryCodec(t *testing.T) {
@@ -46,6 +48,60 @@ func TestParseRoundTripsThroughStringify(t *testing.T) {
 	}
 	if !strings.Contains(result.CSS, "color: red !important") {
 		t.Fatalf("unexpected css: %q", result.CSS)
+	}
+}
+
+func TestStringifyBuilderEmitsGoParts(t *testing.T) {
+	encoded, err := Call(Parse, []byte(".a { color: red; }"), nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	payload, err := Call(StringifyBuilder, encoded, nil)
+	if err != nil {
+		t.Fatalf("stringify builder: %v", err)
+	}
+	var parts []stringifier.BuilderPart
+	if err := json.Unmarshal(payload, &parts); err != nil {
+		t.Fatalf("decode builder parts: %v", err)
+	}
+	if len(parts) == 0 {
+		t.Fatal("expected builder parts")
+	}
+	var css strings.Builder
+	for _, part := range parts {
+		css.WriteString(part.CSS)
+	}
+	if !strings.Contains(css.String(), "color: red") {
+		t.Fatalf("unexpected builder css: %q", css.String())
+	}
+}
+
+func TestStringifyNodeIndexUsesSiblingRaws(t *testing.T) {
+	encoded, err := Call(Parse, []byte("@page{}a{}"), nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root, err := codec.DecodeAST(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	page := ast.NewAtRule("page", "1")
+	page.Block = true
+	root.(*ast.Root).Append(page)
+	tree, err := codec.EncodeAST(root)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	payload, err := Call(Stringify, tree, []byte(`{"nodeIndex":4}`))
+	if err != nil {
+		t.Fatalf("stringify: %v", err)
+	}
+	var result stringifyResult
+	if err := json.Unmarshal(payload, &result); err != nil {
+		t.Fatalf("decode stringify json: %v", err)
+	}
+	if result.CSS != "@page 1{}" {
+		t.Fatalf("expected compact at-rule from sibling between, got %q", result.CSS)
 	}
 }
 

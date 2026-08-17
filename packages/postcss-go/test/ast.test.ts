@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { defaultRaw, stringify, stringifyNode } from '../src/ast-stringifier.ts';
+import { defaultRaw } from '../src/ast-stringifier.ts';
+import { stringify } from './helpers/stringify.ts';
 import {
   AtRule,
   Comment,
@@ -801,7 +802,7 @@ test('stringify helpers cover raw value objects, comment spacing, and unknown no
     value: 'red',
     raws: { value: { value: 'red', raw: 'RED' } as never, between: ': ' },
   });
-  expect(stringifyNode(withRawValue)).toBe('color: RED');
+  expect(withRawValue.toString()).toBe('color: RED');
 
   const commentRoot = new Root();
   commentRoot.append(new Comment({ text: 'a', raws: { before: '\n  ' } }));

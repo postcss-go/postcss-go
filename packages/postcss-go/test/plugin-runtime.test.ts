@@ -1,25 +1,36 @@
-import postcss, { type AcceptedPlugin } from 'postcss';
-import { SourceMapConsumer } from 'source-map-js';
+import postcss from 'postcss';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { expect, test, vi } from 'vitest';
 
-import { Document, fromAst, Root } from '../src/ast.ts';
+import { Document, fromAst, Node, Root, type Declaration } from '../src/ast.ts';
+import { stringifyNode } from './helpers/stringify.ts';
 import { Processor } from '../src/processor.ts';
 import {
   postcssApi,
   runPluginsWithBridge,
   runPluginsWithBridgeSync,
   setProcessorFactory,
+  type PluginResult,
 } from '../src/plugin-runtime.ts';
+import type { AcceptedPlugin, PluginCreator, Transformer } from '../src/plugin-types.ts';
 import { NATIVE_BACKEND_CAPABILITIES } from '../src/service.ts';
-import type { AstNode, ProcessResult } from '../src/types.ts';
+import type { AstNode, ProcessResult, RootNode } from '../src/types.ts';
+
+function parsedRoot(css: string): RootNode {
+  return postcss.parse(css).toJSON() as RootNode;
+}
+
+const stringifyAst = (ast: AstNode | Node): string =>
+  stringifyNode(ast instanceof Node ? ast : fromAst(ast));
 
 function bridge() {
   let sourceCss = '';
-  const stringify = vi.fn(async (ast: AstNode) => fromAst(ast).toString());
+  const stringify = vi.fn(async (ast: AstNode) => stringifyAst(ast));
+
   return {
     parse: vi.fn(async (css: string) => {
       sourceCss = css;
-      return { root: postcss.parse(css).toJSON() as AstNode };
+      return { root: parsedRoot(css) };
     }),
     process: vi.fn(
       async (css: string): Promise<ProcessResult> => ({
@@ -31,7 +42,7 @@ function bridge() {
           names: [],
           mappings: 'AAAA',
         }),
-        root: postcss.parse(css).toJSON() as AstNode,
+        root: parsedRoot(css),
         messages: [],
       }),
     ),
@@ -60,19 +71,19 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
   const events: string[] = [];
   const plugin = {
     postcssPlugin: 'bridge-lifecycle',
-    prepare(result) {
+    prepare(result: PluginResult) {
       result.messages.push({ type: 'dependency', file: 'tokens.css' });
       return {
         Once: () => events.push('Once'),
         Root: () => events.push('Root'),
         Rule: () => events.push('Rule'),
         Declaration: {
-          color(decl) {
+          color(decl: Declaration) {
             events.push('Declaration');
             decl.value = 'blue';
           },
         },
-        DeclarationExit(decl) {
+        DeclarationExit(decl: Declaration) {
           events.push('DeclarationExit');
           decl.warn(result, 'checked');
         },
@@ -120,10 +131,10 @@ test('plugin runtime runs lifecycle and named visitors over the bridge AST', asy
 test('async plugin runtime uses the live native bridge without synchronous N-API calls', async () => {
   const service = bridge();
   const parseLive = vi.fn(async (css: string) => ({
-    root: fromAst(postcss.parse(css).toJSON() as AstNode),
+    root: fromAst(parsedRoot(css)),
   }));
-  const stringifyResultLive = vi.fn(async (root: AstNode | ReturnType<typeof fromAst>) => ({
-    css: fromAst(root as AstNode).toString(),
+  const stringifyResultLive = vi.fn(async (root: AstNode | Node) => ({
+    css: stringifyAst(root),
   }));
   const parseSync = vi.fn(() => {
     throw new Error('async plugin path must not call parseSync');
@@ -213,7 +224,9 @@ test('plugin runtime builds AST-based maps that keep original source content', a
   expect(map.sourcesContent).toEqual([original]);
   expect(map.mappings.length).toBeGreaterThan(0);
 
-  const consumer = await new SourceMapConsumer(result.map?.toString() ?? '');
+  const consumer = await new SourceMapConsumer(
+    (result.map?.toJSON() ?? {}) as unknown as RawSourceMap,
+  );
   const originalPos = consumer.originalPositionFor({ line: 1, column: 0 });
   expect(originalPos.source).toBe('input.css');
   expect(originalPos.line).toBe(1);
@@ -257,12 +270,20 @@ test('named AtRule visitors run general filters before specific filters', async 
       {
         postcssPlugin: 'order',
         AtRule: {
-          '*': () => events.push('AtRule:*'),
-          media: () => events.push('AtRule:media'),
+          '*': () => {
+            events.push('AtRule:*');
+          },
+          media: () => {
+            events.push('AtRule:media');
+          },
         },
         AtRuleExit: {
-          '*': () => events.push('AtRuleExit:*'),
-          media: () => events.push('AtRuleExit:media'),
+          '*': () => {
+            events.push('AtRuleExit:*');
+          },
+          media: () => {
+            events.push('AtRuleExit:media');
+          },
         },
       },
     ],
@@ -325,15 +346,15 @@ test('nodes use postcss-go classes without patching PostCSS constructors', async
 test('normalizePlugins supports creators, packs, and legacy transformers', async () => {
   const events: string[] = [];
 
-  function creator() {
-    return {
+  const creator: PluginCreator = Object.assign(
+    () => ({
       postcssPlugin: 'from-creator',
       Once() {
         events.push('creator');
       },
-    };
-  }
-  creator.postcss = true;
+    }),
+    { postcss: true as const },
+  );
 
   const withPostcssField = {
     postcss: {
@@ -355,14 +376,14 @@ test('normalizePlugins supports creators, packs, and legacy transformers', async
     ],
   };
 
-  function legacy(root: { append: (node: unknown) => void }) {
+  const legacy: Transformer = (root) => {
     events.push('legacy');
     root.append({ selector: '.legacy', nodes: [] });
-  }
+  };
 
   const result = await runPluginsWithBridge(
     bridge(),
-    [creator as AcceptedPlugin, withPostcssField as AcceptedPlugin, pack as AcceptedPlugin, legacy],
+    [creator, withPostcssField, pack, legacy],
     '.a{}',
     { from: 'input.css', map: false },
   );
@@ -427,7 +448,7 @@ test('Comment visitors run and non-root parse responses fail', async () => {
 
   const broken = bridge();
   broken.parse = vi.fn(async () => ({
-    root: { type: 'rule', selector: '.a', nodes: [] } as AstNode,
+    root: { type: 'rule', selector: '.a', nodes: [] } as unknown as RootNode,
   }));
   await expect(
     runPluginsWithBridge(broken, [], '.a{}', { from: 'input.css', map: false }),
@@ -444,7 +465,7 @@ test('previous map metadata is attached from annotation and opts.prev', async ()
       type: 'root',
       source: { input: { file: 'input.css' }, start: { line: 1, column: 1, offset: 0 } },
       nodes: [{ type: 'rule', selector: '.a', nodes: [] }],
-    } as AstNode,
+    } as unknown as RootNode,
   }));
 
   const result = await runPluginsWithBridge(
@@ -536,15 +557,23 @@ test('named visitors run general filters across plugins before named filters', a
       {
         postcssPlugin: 'a',
         AtRule: {
-          '*': () => events.push('a:*'),
-          media: () => events.push('a:media'),
+          '*': () => {
+            events.push('a:*');
+          },
+          media: () => {
+            events.push('a:media');
+          },
         },
       },
       {
         postcssPlugin: 'b',
         AtRule: {
-          '*': () => events.push('b:*'),
-          media: () => events.push('b:media'),
+          '*': () => {
+            events.push('b:*');
+          },
+          media: () => {
+            events.push('b:media');
+          },
         },
       },
     ],
@@ -571,7 +600,7 @@ test('empty at-rule blocks keep braces and afterName spacing', async () => {
           raws: { before: '', afterName: ' ', between: ' ', after: '' },
         },
       ],
-    } as AstNode,
+    } as RootNode,
   }));
 
   const noMap = await runPluginsWithBridge(service, [{ postcssPlugin: 'noop', Once() {} }], css, {
@@ -616,7 +645,7 @@ test('hasPreviousMap treats map.prev false as absent', async () => {
       type: 'root',
       source: { start: { line: 1, column: 1, offset: 0 } },
       nodes: [],
-    } as AstNode,
+    } as unknown as RootNode,
   }));
 
   const result = await runPluginsWithBridge(

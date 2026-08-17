@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest';
 import { isExternalSourceMap, isSourceMapEnabled } from '@postcss-go/shared/map-options';
 
 import { fromAst, Root, type Declaration, type Rule } from '../src/ast.ts';
+import { stringifyNode } from './helpers/stringify.ts';
 import {
   assertGoCompatibility,
   createGoEngine,
@@ -16,8 +17,10 @@ import type { AcceptedPlugin } from '../src/plugin-types.ts';
 
 vi.mock('../src/native.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/native.ts')>();
+  const { stringifyNode } = await import('./helpers/stringify.ts');
+  const stringifyAst = (ast: Parameters<typeof fromAst>[0]): string => stringifyNode(fromAst(ast));
   const parse = async (css: string) => ({ root: postcss.parse(css).toJSON() });
-  const stringify = async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString();
+  const stringify = async (ast: Parameters<typeof fromAst>[0]) => stringifyAst(ast);
   const stringifyResult = async (
     ast: Parameters<typeof fromAst>[0],
     options?: { map?: unknown },
@@ -47,6 +50,10 @@ vi.mock('../src/native.ts', async (importOriginal) => {
   };
 });
 
+function stringifyAst(ast: Parameters<typeof fromAst>[0]): string {
+  return stringifyNode(fromAst(ast));
+}
+
 function mockEngine(service: {
   process: ReturnType<typeof vi.fn>;
   noWork?: ReturnType<typeof vi.fn>;
@@ -59,12 +66,11 @@ function mockEngine(service: {
     noWork: service.noWork ?? service.process,
     parse: service.parse ?? vi.fn(async (css: string) => ({ root: postcss.parse(css).toJSON() })),
     stringify:
-      service.stringify ??
-      vi.fn(async (ast: Parameters<typeof fromAst>[0]) => fromAst(ast).toString()),
+      service.stringify ?? vi.fn(async (ast: Parameters<typeof fromAst>[0]) => stringifyAst(ast)),
     stringifyResult:
       service.stringifyResult ??
       vi.fn(async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
-        css: fromAst(ast).toString(),
+        css: stringifyAst(ast),
         ...(options?.map
           ? {
               map: JSON.stringify({
@@ -131,7 +137,7 @@ test('processWithGoEngine converts buffer input and warning objects', async () =
 test('processWithGoEngine accepts an array of instantiated plugins', async () => {
   const processSpy = vi.fn();
   const stringifyResult = vi.fn(async (ast: Parameters<typeof fromAst>[0]) => ({
-    css: fromAst(ast).toString(),
+    css: stringifyAst(ast),
   }));
   const plugin = {
     postcssPlugin: 'to-green',
@@ -155,7 +161,7 @@ test('processWithGoEngine accepts an array of instantiated plugins', async () =>
 test('processWithGoEngine finalizes plugins via stringifyResult without a second process', async () => {
   const processSpy = vi.fn();
   const stringifyResult = vi.fn(async (ast: Parameters<typeof fromAst>[0]) => ({
-    css: fromAst(ast).toString(),
+    css: stringifyAst(ast),
   }));
   const plugin = {
     postcssPlugin: 'to-blue',
@@ -225,7 +231,7 @@ test('processWithGoEngine returns plugin source maps from stringifyResult', asyn
   const processSpy = vi.fn();
   const stringifyResult = vi.fn(
     async (ast: Parameters<typeof fromAst>[0], options?: { map?: unknown }) => ({
-      css: `${fromAst(ast).toString()}\n/*# sourceMappingURL=a.css.map */`,
+      css: `${stringifyAst(ast)}\n/*# sourceMappingURL=a.css.map */`,
       ...(options?.map
         ? {
             map: JSON.stringify({

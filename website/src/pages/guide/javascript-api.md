@@ -71,10 +71,10 @@ console.log(await stringify(root));
 matching `parse()` and `Processor#process()`. `toResult` generates source maps
 through `stringifyResult` so Document structure is preserved.
 
-`postcss.parse` / `helpers.postcss.parse` use the owned synchronous JavaScript
-parser so plugins can insert CSS without requiring the N-API backend.
-`parseSync` uses the Go/native parser. Prefer `parse`/`parseSync` for
-pipeline input; use `postcss.parse` inside plugin helpers.
+`postcss.parse` / `helpers.postcss.parse` use the in-process N-API parser, the
+same Go tokenizer as `parseSync()`. `Node#toString()` and
+`helpers.postcss.stringify` use the Go stringifier. On the browser WASM Worker
+path those synchronous helpers throw `SyncBackendUnavailableError`.
 
 ## Source maps
 
@@ -111,6 +111,13 @@ run.
 `prepare`, a visitor, `Once`, `OnceExit`, or a map annotation callback with
 `AsyncPluginError`. Use `process()` for asynchronous plugins.
 
+`helpers.postcss.parse`, AST string insertion (`root.append('.a{}')`),
+`Node#toString()`, and `helpers.postcss.stringify` use the same in-process N-API
+Go parser/stringifier as `parseSync()` / `stringifySync()`. On the browser WASM
+Worker path those helpers throw `SyncBackendUnavailableError`; plugins may still
+mutate already-hydrated nodes and construct AST objects without parsing or
+stringifying CSS.
+
 Synchronous parsing and processing block the Node.js event loop. Prefer the
 asynchronous API for server request paths. Promise-returning APIs prefer the
 native addon's `napi_async_work` methods, which execute Go outside the Node.js
@@ -118,9 +125,10 @@ main thread. The default is intentionally native-required: when the compatible
 async addon is unavailable, Promise-returning APIs throw
 `AsyncBackendUnavailableError` instead of silently changing transports.
 
-`stringifySync(root, builder)` is the owned JavaScript builder adapter required
-by the PostCSS-shaped API. `stringifySync(root, options)` returns a string via
-N-API; the two call forms are explicit and do not select a backend implicitly.
+`stringifySync(root, builder)` replays Go stringifier chunks through the
+PostCSS-shaped builder callback. `stringifySync(root, options)` returns a string
+via N-API; the two call forms are explicit and do not select a backend
+implicitly.
 
 ## Engine and service
 

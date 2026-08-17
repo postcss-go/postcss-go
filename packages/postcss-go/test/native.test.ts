@@ -4,11 +4,18 @@ import {
   createDefaultAsyncService,
   createNativeService,
   getDefaultAsyncBackendCapabilities,
+  installNativeSyncCssRuntime,
   isNativeAsyncBridgeAvailable,
   NativePostcssGoService,
 } from '../src/native.ts';
+import { parseCssSync, Root, setSyncCssRuntime, stringifyCssSync } from '../src/ast.ts';
 import { encodeAst } from '../src/codec.ts';
-import { AsyncBackendUnavailableError, AsyncPluginError } from '../src/errors.ts';
+import {
+  AsyncBackendUnavailableError,
+  AsyncPluginError,
+  CssSyntaxError,
+  SyncBackendUnavailableError,
+} from '../src/errors.ts';
 
 const originalDisableNative = process.env.POSTCSS_GO_DISABLE_NATIVE;
 
@@ -92,14 +99,53 @@ test('createNativeService fails when the addon is disabled', () => {
 test('syntax-prefixed native errors rebuild structured CssSyntaxError metadata', () => {
   const service = new NativePostcssGoService({
     parse() {
-      throw new Error('postcss-go:css-syntax: Unexpected }');
+      throw new Error(
+        'postcss-go:css-syntax:{"name":"CssSyntaxError","reason":"Unexpected }","line":1,"column":4}',
+      );
     },
     parseAsync() {
-      return Promise.reject(new Error('postcss-go:css-syntax: Unexpected }'));
+      return Promise.reject(
+        new Error(
+          'postcss-go:css-syntax:{"name":"CssSyntaxError","reason":"Unexpected }","line":1,"column":4}',
+        ),
+      );
     },
   } as never);
 
-  expect(() => service.parseSync('a {')).toThrow(/Unclosed block/);
+  expect(() => service.parseSync('a {')).toThrow(CssSyntaxError);
+  try {
+    service.parseSync('a {');
+  } catch (error) {
+    expect(error).toMatchObject({
+      name: 'CssSyntaxError',
+      reason: 'Unexpected }',
+      line: 1,
+      column: 4,
+      source: 'a {',
+    });
+  }
+});
+
+test('plain syntax-prefixed native errors become CssSyntaxError without a JS parser replay', () => {
+  const service = new NativePostcssGoService({
+    parse() {
+      throw new Error('postcss-go:css-syntax: Unexpected }');
+    },
+  } as never);
+
+  expect(() => service.parseSync('a {')).toThrow(CssSyntaxError);
+  expect(() => service.parseSync('a {')).toThrow(/Unexpected }/);
+});
+
+test('invalid syntax-prefixed JSON still becomes CssSyntaxError', () => {
+  const service = new NativePostcssGoService({
+    parse() {
+      throw new Error('postcss-go:css-syntax:{not-json');
+    },
+  } as never);
+
+  expect(() => service.parseSync('.a{}')).toThrow(CssSyntaxError);
+  expect(() => service.parseSync('.a{}')).toThrow(/not-json/);
 });
 
 test('sync map.annotation thenables are rejected as async plugins', () => {
@@ -213,3 +259,29 @@ test('process with annotation callbacks stringifies through the live async path'
   expect(result.css).toBe('.annotated{}');
   expect(result.backend).toBe('native');
 });
+
+test('parseCssSync and stringifyCssSync throw without an installed N-API runtime', () => {
+  setSyncCssRuntime(undefined);
+  try {
+    expect(() => parseCssSync('.a{}')).toThrow(SyncBackendUnavailableError);
+    expect(() => stringifyCssSync(new Root())).toThrow(SyncBackendUnavailableError);
+  } finally {
+    installNativeSyncCssRuntime();
+  }
+});
+
+test.runIf(isNativeAsyncBridgeAvailable())(
+  'parseCssSync and Node#toString use the Go N-API stringifier',
+  () => {
+    installNativeSyncCssRuntime();
+    const root = parseCssSync('.a { color: red }');
+    expect(root.toString()).toContain('color: red');
+
+    const chunks: Array<{ css: string; type?: string }> = [];
+    stringifyCssSync(root, (css, _node, type) => {
+      chunks.push({ css, type });
+    });
+    expect(chunks.map((part) => part.css).join('')).toContain('color: red');
+    expect(chunks.some((part) => part.type === 'start')).toBe(true);
+  },
+);
