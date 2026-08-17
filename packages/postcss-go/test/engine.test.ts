@@ -430,9 +430,9 @@ test('assertGoCompatibility identifies custom parser flags', () => {
 });
 
 test('assertGoCompatibility identifies custom config parser options', () => {
-  expect(
-    assertGoCompatibility({}, { plugins: [], options: { parser: './parser.js' } }),
-  ).toBe(false);
+  expect(assertGoCompatibility({}, { plugins: [], options: { parser: './parser.js' } })).toBe(
+    false,
+  );
 });
 
 test('assertGoCompatibility rejects explicit PostCSS default syntax delegates', () => {

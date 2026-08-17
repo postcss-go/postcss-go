@@ -113,7 +113,7 @@ test('release builds JavaScript and WASM without rebuilding validated native add
     scripts: Record<string, string>;
   };
   expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:js');
-  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/wasm build');
+  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:wasm');
   expect(rootPackage.scripts['build:release']).not.toContain('build:native');
   expect(rootPackage.scripts.release).toBe('node ./scripts/release.mjs');
 
@@ -285,11 +285,51 @@ test('@postcss-go/core does not expose native implementation internals', () => {
   }
 });
 
-test('@postcss-go/core browser entry exports BrowserPostcssGoService', async () => {
-  const browserApi = await import('../src/browser.ts');
+test('@postcss-go/core browser entry exports BrowserPostcssGoService and createBrowserProcessor', async () => {
+  const browserApi = await import('../src/wasm/index.ts');
   expect(browserApi).toHaveProperty('BrowserPostcssGoService');
+  expect(browserApi).toHaveProperty('createBrowserProcessor');
+  expect(browserApi).toHaveProperty('WasmWorkerError');
+  expect(browserApi).toHaveProperty('CssSyntaxError');
+  expect(browserApi).toHaveProperty('errorFromWasmDto');
+  expect(browserApi).not.toHaveProperty('UnsupportedServiceError');
+  expect(browserApi).not.toHaveProperty('WASM_WORKER_BACKEND_CAPABILITIES');
+  expect(browserApi).not.toHaveProperty('PostcssGoService');
 });
 
+test('@postcss-go/core wasm entry re-exports the browser API and declares asset subpaths', async () => {
+  const wasmApi = await import('../src/wasm/index.ts');
+  expect(wasmApi).toHaveProperty('createBrowserProcessor');
+  expect(wasmApi).toHaveProperty('BrowserPostcssGoService');
+  expect(wasmApi).toHaveProperty('WasmWorkerError');
+
+  const pkg = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
+    exports: Record<string, unknown>;
+    scripts: Record<string, string>;
+  };
+  expect(pkg.exports).toMatchObject({
+    './browser': {
+      types: './dist/wasm.d.ts',
+      default: './dist/wasm.js',
+    },
+    './wasm': {
+      types: './dist/wasm.d.ts',
+      default: './dist/wasm.js',
+    },
+    './wasm/worker': { default: './dist/wasm/worker.js' },
+    './wasm/postcss-go.wasm': { default: './dist/wasm/postcss-go.wasm' },
+    './wasm/wasm_exec.js': { default: './dist/wasm/wasm_exec.js' },
+  });
+  expect(pkg.scripts['build:wasm']).toContain('build-wasm.mjs');
+  expect(npmPackFiles(packageRoot)).toEqual(
+    expect.arrayContaining([
+      'dist/wasm.js',
+      'dist/wasm/worker.js',
+      'dist/wasm/postcss-go.wasm',
+      'dist/wasm/wasm_exec.js',
+    ]),
+  );
+});
 test('host platform package contains the native addon', () => {
   const tuple = hostTuple();
   const platformPkgRoot = resolve(repoRoot, 'npm/postcss-go', tuple);

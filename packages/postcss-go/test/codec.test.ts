@@ -291,7 +291,12 @@ describe('binary codec + native bridge', () => {
           map: {
             file: 'a.css.map',
             toString() {
-              return JSON.stringify({ version: 3, sources: ['a.css'], mappings: 'AAAA', names: [] });
+              return JSON.stringify({
+                version: 3,
+                sources: ['a.css'],
+                mappings: 'AAAA',
+                names: [],
+              });
             },
           },
         },

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -85,9 +86,16 @@ func NewInput(css string, opts Options) (*Input, error) {
 		} else {
 			abs, err := filepath.Abs(opts.From)
 			if err != nil {
-				return nil, err
+				if runtime.GOOS != "js" {
+					return nil, err
+				}
+				// Browser js/wasm has no process working directory. Keep a
+				// normalized virtual path instead of making every parse with a
+				// relative `from` fail with "getwd: not implemented".
+				input.File = filepath.Clean(opts.From)
+			} else {
+				input.File = abs
 			}
-			input.File = abs
 		}
 	}
 	if len(opts.SourceMap) > 0 {

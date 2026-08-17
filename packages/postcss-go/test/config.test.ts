@@ -133,10 +133,7 @@ test('CLI rejects an explicit --config path that does not exist', async () => {
   const directory = tmp();
   await fs.mkdir(directory, { recursive: true });
   await fs.writeFile(path.join(directory, 'input.css'), 'a { color: red; }');
-  await fs.writeFile(
-    path.join(directory, 'postcss.config.mjs'),
-    `export default { map: false };`,
-  );
+  await fs.writeFile(path.join(directory, 'postcss.config.mjs'), `export default { map: false };`);
 
   const missing = path.join(directory, 'missing.config.mjs');
   const { error, stderr } = await cli(
@@ -241,10 +238,7 @@ test('normalizeConfiguredPlugins resolves absolute path module ids', async () =>
   const directory = tmp();
   await fs.mkdir(directory, { recursive: true });
   const pluginFile = path.join(directory, 'abs-plugin.mjs');
-  await fs.writeFile(
-    pluginFile,
-    `export default { postcssPlugin: 'abs-plugin' };`,
-  );
+  await fs.writeFile(pluginFile, `export default { postcssPlugin: 'abs-plugin' };`);
   await fs.writeFile(
     path.join(directory, 'postcss.config.mjs'),
     `export default { plugins: { ${JSON.stringify(pluginFile)}: true } };`,

@@ -703,9 +703,11 @@ test('replaceWith flattens nested arrays and container proxies wrap walkers', ()
   });
   expect(walked).toEqual(['comment', 'rule', 'atrule']);
   expect(proxy.some((node) => node.type === 'rule')).toBe(true);
-  expect(proxy.every((node) => node.type === 'comment' || node.type === 'rule' || node.type === 'atrule')).toBe(
-    true,
-  );
+  expect(
+    proxy.every(
+      (node) => node.type === 'comment' || node.type === 'rule' || node.type === 'atrule',
+    ),
+  ).toBe(true);
   proxy.walkAtRules('media', (atRule) => {
     expect(atRule).toHaveProperty('proxyOf');
     expect(atRule.name).toBe('media');

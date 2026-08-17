@@ -27,17 +27,17 @@ graph.
 
 ## Compatibility table
 
-| Surface                          | Current contract                                                                            | Migration note                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Plugins                          | PostCSS-shaped creators, packs, visitors, `prepare`, `Once`, and `OnceExit`; sync and async | Plugins receive postcss-go-owned live nodes and helpers       |
-| Configuration                    | `.js`, `.mjs`, `.cjs`, `.json`; object or async function                                    | Loaded by postcss-go, not `postcss-load-config`               |
-| Context                          | `env`, config `cwd`, input `file`, and CLI `options`                                        | `env` defaults to `NODE_ENV`, then `development`              |
-| Maps                             | Boolean/object map options, previous maps, callback annotations, inline/external output     | Go owns generation, composition, and annotations              |
-| Custom parser/syntax/stringifier | Publicly typed and validated, currently unsupported                                         | Throws `UnsupportedSyntaxError`; no fallback                  |
-| Custom AST nodes                 | Built-in node classes cross native and WASM boundaries                                      | Unknown node types throw `UnsupportedAstNodeError`            |
-| Results                          | Explicit `Promise<Result>` or immediate sync `Result`                                       | No implicit `LazyResult` execution                            |
-| Node transport                   | Worker-backed async N-API and in-process sync N-API                                         | Missing addon throws a backend-unavailable error              |
-| Browser transport                | Worker-backed WASM service                                                                  | Async-only; browser plugin support remains tracked separately |
+| Surface                          | Current contract                                                                            | Migration note                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Plugins                          | PostCSS-shaped creators, packs, visitors, `prepare`, `Once`, and `OnceExit`; sync and async | Plugins receive postcss-go-owned live nodes and helpers   |
+| Configuration                    | `.js`, `.mjs`, `.cjs`, `.json`; object or async function                                    | Loaded by postcss-go, not `postcss-load-config`           |
+| Context                          | `env`, config `cwd`, input `file`, and CLI `options`                                        | `env` defaults to `NODE_ENV`, then `development`          |
+| Maps                             | Boolean/object map options, previous maps, callback annotations, inline/external output     | Go owns generation, composition, and annotations          |
+| Custom parser/syntax/stringifier | Publicly typed and validated, currently unsupported                                         | Throws `UnsupportedSyntaxError`; no fallback              |
+| Custom AST nodes                 | Built-in node classes cross native and WASM boundaries                                      | Unknown node types throw `UnsupportedAstNodeError`        |
+| Results                          | Explicit `Promise<Result>` or immediate sync `Result`                                       | No implicit `LazyResult` execution                        |
+| Node transport                   | Worker-backed async N-API and in-process sync N-API                                         | Missing addon throws a backend-unavailable error          |
+| Browser transport                | Worker-backed WASM; JS plugins via `createBrowserProcessor`                                 | Async-only; sync APIs throw `SyncBackendUnavailableError` |
 
 ## Typed standalone config
 

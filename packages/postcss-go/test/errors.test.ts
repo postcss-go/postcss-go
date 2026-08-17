@@ -6,12 +6,54 @@ import cli from './helpers/cli.ts';
 
 const fixtureDir = path.resolve('test/fixtures/errors');
 
-test('SyncBackendUnavailableError explains the missing N-API backend', () => {
+test('SyncBackendUnavailableError explains the missing sync backend', () => {
   const error = new SyncBackendUnavailableError();
 
   expect(error).toBeInstanceOf(Error);
   expect(error.name).toBe('SyncBackendUnavailableError');
   expect(error.message).toContain('Node N-API backend');
+  expect(error.message).toContain('WASM Worker');
+});
+
+test('WasmWorkerError preserves its stable name', async () => {
+  const { WasmWorkerError } = await import('../src/wasm/errors.ts');
+  const error = new WasmWorkerError('classic Worker required');
+  expect(error.name).toBe('WasmWorkerError');
+  expect(error.message).toBe('classic Worker required');
+});
+
+test('errorFromWasmDto rebuilds CssSyntaxError metadata from the Worker DTO', async () => {
+  const { errorFromWasmDto } = await import('../src/wasm/errors.ts');
+  const { CssSyntaxError } = await import('../src/errors.ts');
+  const error = errorFromWasmDto({
+    name: 'CssSyntaxError',
+    message: 'CssSyntaxError: a.css:1:2: Unclosed block',
+    reason: 'Unclosed block',
+    line: 1,
+    column: 2,
+    file: 'a.css',
+    source: '.a {',
+    input: { source: '.a {', file: 'a.css', line: 1, column: 2, offset: 1 },
+  });
+
+  expect(error).toBeInstanceOf(CssSyntaxError);
+  expect(error).toMatchObject({
+    name: 'CssSyntaxError',
+    reason: 'Unclosed block',
+    line: 1,
+    column: 2,
+    file: 'a.css',
+  });
+});
+
+test('errorFromWasmDto returns WasmWorkerError instances for transport failures', async () => {
+  const { WasmWorkerError, errorFromWasmDto } = await import('../src/wasm/errors.ts');
+  const unnamed = errorFromWasmDto({ message: 'handler unavailable' });
+  expect(unnamed).toBeInstanceOf(WasmWorkerError);
+  expect(unnamed.name).toBe('WasmWorkerError');
+
+  const named = errorFromWasmDto({ message: 'boom', name: 'WasmWorkerError' });
+  expect(named).toBeInstanceOf(WasmWorkerError);
 });
 
 test('UnsupportedAstNodeError names the custom AST node type', () => {

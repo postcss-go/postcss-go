@@ -56,6 +56,24 @@ export default defineConfig({
       include: ['src'],
       tsconfigPath: './tsconfig.json',
       beforeWriteFile(filePath, content) {
+        const wasmIndexDeclaration = resolve(root, 'dist/wasm/index.d.ts');
+        const wasmIndexDeclarationMap = `${wasmIndexDeclaration}.map`;
+        if (filePath === wasmIndexDeclaration) {
+          return {
+            filePath: resolve(root, 'dist/wasm.d.ts'),
+            content: content
+              .replace("from './browser.js'", "from './wasm/browser.js'")
+              .replace('index.d.ts.map', 'wasm.d.ts.map'),
+          };
+        }
+        if (filePath === wasmIndexDeclarationMap) {
+          return {
+            filePath: resolve(root, 'dist/wasm.d.ts.map'),
+            content: content
+              .replace('"file":"index.d.ts"', '"file":"wasm.d.ts"')
+              .replace('"../../src/wasm/index.ts"', '"../src/wasm/index.ts"'),
+          };
+        }
         return {
           content: content
             .replaceAll(
@@ -79,9 +97,10 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(root, 'src/index.ts'),
-        browser: resolve(root, 'src/browser.ts'),
         service: resolve(root, 'src/service.ts'),
         cli: resolve(root, 'src/cli.ts'),
+        wasm: resolve(root, 'src/wasm/index.ts'),
+        'wasm/worker': resolve(root, 'src/wasm/worker.ts'),
       },
       formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,

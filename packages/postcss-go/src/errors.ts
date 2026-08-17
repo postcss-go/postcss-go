@@ -123,10 +123,10 @@ function isRangePosition(value: unknown): value is RangePosition {
 
 /** Raised when an explicit synchronous API has no in-process backend. */
 export class SyncBackendUnavailableError extends Error {
-  constructor() {
-    super(
-      'A synchronous postcss-go API requires the Node N-API backend, but no native addon is available',
-    );
+  constructor(
+    message = 'A synchronous postcss-go API requires the Node N-API backend, but no native addon is available; the browser WASM Worker backend is asynchronous only',
+  ) {
+    super(message);
     this.name = 'SyncBackendUnavailableError';
   }
 }

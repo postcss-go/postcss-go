@@ -10,6 +10,8 @@ import { AtRule, Comment, Declaration, Document, Node, Root, Rule, type ChildNod
 import { UnsupportedAstNodeError } from './errors.js';
 import type { AstNode, Raws, SourceLocation } from './types.js';
 
+export { assertSupportedAst } from './ast-utils.js';
+
 const MAGIC = Buffer.from('PCGW');
 const VERSION = 1;
 
@@ -28,15 +30,6 @@ const RAW_INT = 4;
 const RAW_FLOAT = 5;
 const RAW_MAP = 6;
 const RAW_LIST = 7;
-const BUILTIN_NODE_TYPES = new Set(['root', 'document', 'rule', 'atrule', 'decl', 'comment']);
-
-/** Validate a tree before JSON, binary, native, or WASM transport. */
-export function assertSupportedAst(node: AstNode | Node): void {
-  if (!BUILTIN_NODE_TYPES.has(node.type)) throw new UnsupportedAstNodeError(node.type);
-  const children = (node as AstNode & { nodes?: AstNode[] }).nodes;
-  for (const child of children ?? []) assertSupportedAst(child);
-}
-
 class Reader {
   offset = 0;
   constructor(readonly buf: Buffer) {}

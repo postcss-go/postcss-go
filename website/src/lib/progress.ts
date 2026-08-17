@@ -44,10 +44,9 @@ const GROUP_METADATA: Record<string, Pick<ProgressGroup, 'shortName' | 'descript
   },
   'Browser and WASM': {
     shortName: 'Browser/WASM',
-    description: 'Worker · browser tests · contracts',
+    description: 'Worker · plugins · CSP · contracts',
   },
 };
-
 function slugify(value: string): string {
   return value
     .toLowerCase()

@@ -4,13 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import {
-  CssSyntaxError,
-  Input,
-  PreviousMap,
-  Warning,
-  postcss,
-} from '../src/index.ts';
+import { CssSyntaxError, Input, PreviousMap, Warning, postcss } from '../src/index.ts';
 import { hydrateInput } from '../src/input.ts';
 
 type RootLike = ReturnType<typeof upstream.parse>;
@@ -190,10 +184,9 @@ test('Input resolves URL source roots and file:// original sources', () => {
       sourcesContent: ['a{}'],
     }),
   ).toString('base64');
-  const filed = new Input(
-    `a{}\n/*# sourceMappingURL=data:application/json;base64,${withFile} */`,
-    { from: 'a.css' },
-  );
+  const filed = new Input(`a{}\n/*# sourceMappingURL=data:application/json;base64,${withFile} */`, {
+    from: 'a.css',
+  });
   const origin = filed.origin(1, 1, 1, 2);
   expect(origin).toMatchObject({
     file: '/tmp/orig.scss',

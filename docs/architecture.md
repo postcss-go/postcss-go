@@ -81,7 +81,14 @@ sequenceDiagram
 
 - **service** — shared async contract
 - **native** — addon loading, async-work and sync surfaces; map-option normalization via the private shared helpers bundled into core
-- **browser** — Worker-backed service; `@postcss-go/wasm` ships the WASM assets
+- **browser / wasm** — Worker-backed async WASM service lives in
+  `@postcss-go/core/browser` and `@postcss-go/core/wasm`; `createBrowserProcessor`
+  runs JavaScript plugins on the calling thread while parse/stringify stay in the
+  Worker. Sync APIs are Node N-API only. The `./wasm` export also ships
+  `worker.js`, `postcss-go.wasm`, and `wasm_exec.js`.
+  Worker RPC rebuilds structured `CssSyntaxError` from the Go ErrorDTO; fatal
+  `runtime-error` / `Worker.onerror` events close the service and terminate the
+  Worker. Optional `requestTimeoutMs` rejects hung RPCs.
 - **cli** — config, JS plugins, message combining, writing Go-generated CSS and maps
 - **shared** — private dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; bundled into core and used directly by vendored compat overrides
 

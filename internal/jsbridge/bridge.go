@@ -25,6 +25,7 @@ type Response struct {
 	OK       bool         `json:"ok"`
 	CSS      string       `json:"css,omitempty"`
 	Map      string       `json:"map,omitempty"`
+	MapFile  string       `json:"mapFile,omitempty"`
 	Root     *NodeDTO     `json:"root,omitempty"`
 	Messages []WarningDTO `json:"messages,omitempty"`
 	Error    *ErrorDTO    `json:"error,omitempty"`
@@ -146,19 +147,19 @@ func Execute(req Request) Response {
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, CSS: result.CSS, Map: result.Map, Root: result.Root, Messages: result.Messages}
+		return Response{OK: true, CSS: result.CSS, Map: result.Map, MapFile: result.MapFile, Root: result.Root, Messages: result.Messages}
 	case "noWork":
 		result, err := NoWorkRPC(context.Background(), NoWorkParams{CSS: req.CSS, Options: req.Options})
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, CSS: result.CSS, Map: result.Map}
+		return Response{OK: true, CSS: result.CSS, Map: result.Map, MapFile: result.MapFile}
 	case "stringify":
 		result, err := StringifyRPC(context.Background(), StringifyParams{AST: req.AST, Options: req.Options})
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, CSS: result.CSS, Map: result.Map}
+		return Response{OK: true, CSS: result.CSS, Map: result.Map, MapFile: result.MapFile}
 	default:
 		return errorResponse(fmt.Errorf("unsupported command %q", req.Command))
 	}

@@ -61,7 +61,7 @@ ignore:
   - 'packages/postcss-go/bin/**'
   - 'packages/postcss-go/native/**'
   - 'packages/postcss-go/src/cli.ts'
-  - 'packages/postcss-go/src/browser.ts'
+  - 'packages/postcss-go/src/wasm/browser.ts'
   - 'packages/postcss-go/src/config.ts'
   - 'packages/postcss-go/src/reporter.ts'
   - 'packages/postcss-go/src/types.ts'

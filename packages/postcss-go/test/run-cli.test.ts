@@ -406,13 +406,7 @@ test('runCLI --use keeps config options and replaces only plugins', async () => 
     };`,
   );
 
-  await runCLI([
-    input,
-    '-o',
-    output,
-    '-u',
-    path.resolve('test/fixtures/plugins/to-blue.mjs'),
-  ]);
+  await runCLI([input, '-o', output, '-u', path.resolve('test/fixtures/plugins/to-blue.mjs')]);
 
   expect(await read(output)).toContain('color: blue');
   expect(await fs.readFile(`${output}.map`, 'utf8')).toBeTruthy();

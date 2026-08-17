@@ -17,8 +17,21 @@
       "default": "./dist/index.js"
     },
     "./browser": {
-      "types": "./dist/browser.d.ts",
-      "default": "./dist/browser.js"
+      "types": "./dist/wasm.d.ts",
+      "default": "./dist/wasm.js"
+    },
+    "./wasm": {
+      "types": "./dist/wasm.d.ts",
+      "default": "./dist/wasm.js"
+    },
+    "./wasm/worker": {
+      "default": "./dist/wasm/worker.js"
+    },
+    "./wasm/postcss-go.wasm": {
+      "default": "./dist/wasm/postcss-go.wasm"
+    },
+    "./wasm/wasm_exec.js": {
+      "default": "./dist/wasm/wasm_exec.js"
     },
     "./service": {
       "types": "./dist/service.d.ts",
@@ -33,11 +46,13 @@
     "bin"
   ],
   "scripts": {
-    "build": "pnpm run build:js && pnpm run build:native",
+    "build": "pnpm run build:js && pnpm run build:native && pnpm run build:wasm",
     "build:js": "pnpm --filter @postcss-go/shared build && vite build",
     "build:native": "node ./native/build.mjs",
+    "build:wasm": "node ../../scripts/build-wasm.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.types.json",
     "test": "pnpm run build && vitest run",
+    "test:browser-wasm": "pnpm run build:js && pnpm run build:wasm && node ../../scripts/browser-wasm-smoke.mjs",
     "test:coverage": "pnpm run build && vitest run --coverage"
   },
   "dependencies": {

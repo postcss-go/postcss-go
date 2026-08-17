@@ -51,3 +51,5 @@ file or environment:
 <div class="mb-12 mt-7 overflow-hidden rounded-[.85rem] border border-white/10 bg-transparent" data-code-sample><div class="flex items-center justify-between gap-4 border-b border-white/[.08] px-[1.1rem] py-[.7rem]"><span class="font-mono text-[.68rem] tracking-[.08em] text-white/50">terminal</span><button class="shrink-0 cursor-pointer rounded-full border border-white/10 bg-transparent px-[.7rem] py-[.35rem] font-mono text-[.68rem] text-white/70 transition-colors duration-150 hover:border-acid hover:text-acid focus-visible:border-acid focus-visible:text-acid focus-visible:outline-none" type="button" data-copy-code>Copy</button></div><pre class="m-0 rounded-none border-0 px-[1.1rem] py-5"><code class="select-text whitespace-pre rounded-none border-0 bg-transparent p-0 text-[.9rem] leading-[inherit] text-inherit">pnpm postcss-go src/index.css -o dist/index.css</code></pre></div>
 
 For a gradual migration, see the [migration and compatibility guide](../migration/).
+For browsers, import `@postcss-go/core/wasm` and follow the
+[Browser and WASM](../browser-wasm/) guide.

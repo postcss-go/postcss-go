@@ -98,6 +98,9 @@ func TestParseProcessAndStringifyBridge(t *testing.T) {
 	if !strings.Contains(processResp.Map, `"version":3`) {
 		t.Fatalf("expected process response source map, got %#v", processResp.Map)
 	}
+	if processResp.MapFile != "out.css.map" {
+		t.Fatalf("expected process response map file, got %q", processResp.MapFile)
+	}
 
 	stringifyResp := Execute(Request{
 		Command: "stringify",
