@@ -23,9 +23,9 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 
 - [x] Go tokenizer, parser, AST, processor, stringifier, source-map layer, native Node service, and WASM service are implemented.
 - [x] The Node N-API addon provides async-work and synchronous parse, process, no-work, stringify, and builder-stringify operations with a compact binary AST.
-- [x] The JavaScript plugin runtime implements the baseline plugin lifecycle over the postcss-go AST.
+- [x] The JavaScript plugin runtime implements the PostCSS plugin lifecycle over the postcss-go AST, including context, messages, sync thenable rejection, and the native/WASM/upstream contract suite.
 - [x] Remove every production runtime and type dependency on the `postcss` package.
-- [ ] Complete the documented PostCSS-compatible public API using postcss-go-owned implementations.
+- [x] Complete the documented PostCSS-compatible public API using postcss-go-owned implementations.
 - [x] Export and validate the complete N-API synchronous API.
 - [ ] Build, test, and publish every declared native platform package.
 
@@ -60,6 +60,11 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 
 ### Plugin execution
 
+This section is the JavaScript plugin runtime used by Node, the CLI, and the
+browser WASM Worker. Go-native `Plugin`/`Visitor` values in `pkg/api` are a
+separate API: they share parse, stringify, and source maps with the JavaScript
+path, but they walk the tree once and do not dirty-rewalk.
+
 - [x] Support plugin normalization, `postcssPlugin`, `prepare`, `Once`, node enter/exit visitors, and `OnceExit` ordering.
 - [x] Support synchronous and asynchronous plugin callbacks and Promise rejection on the asynchronous path.
 - [x] Preserve baseline AST mutation, dirty rewalk, traversal, and visitor ordering semantics.
@@ -69,8 +74,8 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Detect thenables returned by supported synchronous extension points: plugin creators, `prepare`, visitors, `Once`, `OnceExit`, and annotation callbacks.
 - [x] Throw a stable asynchronous-plugin error from `processSync()` instead of waiting or switching execution modes.
 - [x] Provide stable diagnostics for unsupported plugin features without loading PostCSS.
-- [x] Validate representative real plugins, including mutation-heavy and asynchronous plugins.
-- [x] Run the same plugin contract suite against native, WASM Worker, and upstream PostCSS reference behavior.
+- [x] Validate `postcss-import` on native against upstream PostCSS, and mutation-heavy plus asynchronous plugin fixtures across native and WASM Worker.
+- [x] Land the plugin contract suite against native, WASM Worker, and upstream PostCSS. Re-running it at publish time is a Validation gate.
 
 ### Node N-API and synchronous execution
 
@@ -128,7 +133,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Rebuild structured `CssSyntaxError` metadata from the Worker ErrorDTO (line, column, reason, source, file).
 - [x] Decide that an initialized main-thread WASM backend is not required; browser remains async Worker-only (no opt-in sync WASM in v1).
 - [x] Document CSP, cross-origin isolation, asset loading, `SharedArrayBuffer`, and non-SAB behavior.
-- [x] Cover native Node and browser Worker backends with an expanded shared smoke contract (parse/process/stringify/noWork, source maps, syntax errors, async plugins, visitor ordering). Full upstream-parity suites remain under Plugin execution and Validation gates.
+- [x] Cover native Node and browser Worker backends with an expanded shared smoke contract (parse/process/stringify/noWork, source maps, syntax errors, async plugins, visitor ordering). Plugin contract coverage against native, WASM Worker, and upstream PostCSS is recorded under Plugin execution; repeating those suites at publish time remains a Validation gate.
 
 ## Optional performance work
 
@@ -146,8 +151,12 @@ N-API synchronous API.
 
 ## Validation and release gates
 
-- [ ] Run the complete Go, TypeScript, package, CLI, WASM, and upstream differential suites.
-- [ ] Run the shared plugin and AST contract suite across every supported backend.
+These boxes are the publication checklist. A checked item was verified during
+implementation. Unchecked items stay open until they are re-run or completed as
+part of a release.
+
+- [ ] Re-run the complete Go, TypeScript, package, CLI, WASM, and upstream differential suites.
+- [ ] Re-run the shared plugin and AST contract suite across every supported backend.
 - [ ] Pack `@postcss-go/core` and all platform packages into tarballs.
 - [ ] Install the tarballs in clean projects without workspace links.
 - [ ] Verify the packed dependency tree contains no `postcss`, `postcss-load-config`, or `postcss-reporter`.
@@ -161,7 +170,7 @@ N-API synchronous API.
 ## Implementation order
 
 - [x] Establish the Go CSS data-path baseline.
-- [x] Implement the current JavaScript AST facade and baseline plugin runtime.
+- [x] Implement the JavaScript AST facade and plugin runtime.
 - [x] Implement the compact binary N-API transport.
 - [x] Introduce postcss-go-owned public contracts and remove production PostCSS types.
 - [x] Replace `helpers.postcss`, class coupling, custom-syntax fallback, configuration loading, and reporting.
@@ -171,5 +180,5 @@ N-API synchronous API.
 - [x] Complete result, input, warning, error, plugin-context, and custom-syntax compatibility.
 - [x] Run real-plugin and cross-backend contract suites.
 - [ ] Complete the native build, packaging, installation, and publication matrix.
-- [ ] Update public compatibility and migration documentation.
+- [x] Update public compatibility and migration documentation.
 - [ ] Evaluate opaque AST handles only after the required replacement target is complete and benchmarked.

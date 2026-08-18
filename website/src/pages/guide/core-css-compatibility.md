@@ -56,8 +56,10 @@ The compatibility contract covers CSS behavior, not execution mechanics:
   helpers such as `helpers.postcss.parse`, AST string insertion, and
   `Node#toString()` throw `SyncBackendUnavailableError`; it does not expose a
   synchronous WASM path.
-- The Go API accepts Go-native plugins. Node, CLI, and browser surfaces accept
-  supported JavaScript plugins through the owned JavaScript runtime.
+- The Go API accepts Go-native `Plugin`/`Visitor` values. Those visitors walk
+  the tree once and do not dirty-rewalk. Node, CLI, and browser surfaces accept
+  supported JavaScript plugins through the owned JavaScript runtime, which does
+  dirty-rewalk.
 - Custom parser, syntax, and stringifier delegates are rejected with a stable
   `UnsupportedSyntaxError`; no surface falls back to PostCSS.
 

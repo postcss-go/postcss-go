@@ -62,6 +62,10 @@ still throw `UnsupportedSyntaxError`.
 The plugin contract suite in `packages/postcss-go/test/plugin-contract.test.ts`
 runs the same lifecycle, mutation, warning, message, and async-visitor cases
 against the native Node backend, the browser WASM Worker, and upstream PostCSS.
+`packages/postcss-go/test/real-plugins.test.ts` additionally checks `postcss-import`
+on native against upstream PostCSS, and mutation-heavy plus asynchronous plugin
+fixtures across native and WASM Worker. Go-native plugins in `pkg/api` are a
+separate single-pass API and are not this runtime.
 
 ## Parse and stringify
 

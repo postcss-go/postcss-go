@@ -55,11 +55,13 @@ Annotation cleanup differs by path: `Process` removes `# sourceMappingURL=` comm
 
 - Native Go build tools and CSS pipelines
 - Synchronous, low-overhead processing
-- Go-native plugins using `Plugin` and `Visitor`
+- Go-native plugins using `Plugin` and `Visitor` (single-pass walk; no dirty rewalk)
 - Direct access to source locations, raw formatting, and source maps
 
 The Go API does not require the Node.js runtime. Use the JavaScript API when
-you need PostCSS configuration files or JavaScript plugins.
+you need PostCSS configuration files or JavaScript plugins. Go-native plugins
+share parse, stringify, and source maps with that path, but they do not rewalk
+a dirty tree the way the JavaScript plugin runtime does.
 
 The public Go surface lives in `pkg/api` as package `api`; it is backed by the
 same internal parser, AST, processor, stringifier, and source-map packages used
