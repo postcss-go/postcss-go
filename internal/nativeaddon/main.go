@@ -64,7 +64,8 @@ func nativeErrorMessage(err error) string {
 		return err.Error()
 	}
 	// Omit source text so the 4KiB N-API error slot stays structured.
-	payload, jsonErr := json.Marshal(struct {
+	// encoding/json cannot fail for this closed string/int DTO.
+	payload, _ := json.Marshal(struct {
 		Name      string `json:"name"`
 		Message   string `json:"message"`
 		Reason    string `json:"reason,omitempty"`
@@ -85,9 +86,6 @@ func nativeErrorMessage(err error) string {
 		File:      syntaxError.File,
 		Plugin:    syntaxError.Plugin,
 	})
-	if jsonErr != nil {
-		return cssSyntaxErrorPrefix + syntaxError.Error()
-	}
 	return cssSyntaxErrorPrefix + string(payload)
 }
 
