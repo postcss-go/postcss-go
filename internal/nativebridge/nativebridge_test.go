@@ -151,6 +151,12 @@ func TestStringifyBuilderNodeIndexAndOutOfRange(t *testing.T) {
 	if _, err := Call(StringifyBuilder, encoded, []byte(`{`)); err == nil {
 		t.Fatal("expected bad stringifyBuilder options error")
 	}
+	if _, err := Call(Stringify, encoded, []byte(`{"map":{}}`)); err == nil {
+		t.Fatal("expected stringify process-options type error")
+	}
+	if got := indexAST(nil); got != nil {
+		t.Fatalf("indexAST(nil) = %#v", got)
+	}
 }
 
 func TestCallRejectsInvalidInputs(t *testing.T) {

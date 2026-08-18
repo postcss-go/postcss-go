@@ -33,10 +33,12 @@ type BuilderPart struct {
 type cssWriter interface {
 	writeString(string)
 	writeByte(byte)
+	renderCache() *renderCache
 }
 
 type builderWriter struct {
 	*strings.Builder
+	cache *renderCache
 }
 
 func (w builderWriter) writeString(text string) {
@@ -45,6 +47,10 @@ func (w builderWriter) writeString(text string) {
 
 func (w builderWriter) writeByte(ch byte) {
 	w.Builder.WriteByte(ch)
+}
+
+func (w builderWriter) renderCache() *renderCache {
+	return w.cache
 }
 
 func Stringify(node ast.Node) string {
@@ -60,13 +66,13 @@ func StringifyWithoutSourceMapAnnotations(node ast.Node) string {
 
 func stringify(node ast.Node, stripSourceMapAnnotations bool) string {
 	var builder strings.Builder
-	writeNode(builderWriter{&builder}, node, 0, stripSourceMapAnnotations)
+	writeNode(builderWriter{Builder: &builder, cache: &renderCache{}}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
 }
 
 func StringifyWithBuilder(node ast.Node) []BuilderPart {
 	parts := make([]BuilderPart, 0)
-	writeBuilderNode(&parts, node, 0, new(int))
+	writeBuilderNode(&parts, node, 0, new(int), &renderCache{})
 	return parts
 }
 
@@ -76,29 +82,29 @@ func appendBuilderPart(parts *[]BuilderPart, css string, node int, kind string) 
 	}
 }
 
-func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int) {
+func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int, cache *renderCache) {
 	(*next)++
 	id := *next
 	switch current := node.(type) {
 	case *ast.Document:
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, nodeBeforeDocument(child, depth, index), 0, "")
-			writeBuilderNode(parts, child, depth, next)
+			writeBuilderNode(parts, child, depth, next, cache)
 		}
 		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
 	case *ast.Root:
 		for index, child := range current.Nodes {
-			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth, index)), 0, "")
-			writeBuilderNode(parts, child, depth, next)
+			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(cache, child, depth, index)), 0, "")
+			writeBuilderNode(parts, child, depth, next, cache)
 		}
 		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
 	case *ast.Rule:
-		appendBuilderPart(parts, ruleHeader(current)+"{", id, "start")
+		appendBuilderPart(parts, ruleHeader(cache, current)+"{", id, "start")
 		for index, child := range current.Nodes {
-			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
-			writeBuilderNode(parts, child, depth+1, next)
+			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(cache, child, depth+1, index)), 0, "")
+			writeBuilderNode(parts, child, depth+1, next, cache)
 		}
-		close := blockClosePrefix(current, len(current.Nodes), depth) + "}"
+		close := blockClosePrefix(cache, current, len(current.Nodes), depth) + "}"
 		appendBuilderPart(parts, close+rawString(current, "ownSemicolon", ""), id, "end")
 	case *ast.AtRule:
 		if !current.Block {
@@ -109,21 +115,21 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int)
 			appendBuilderPart(parts, text, id, "")
 			return
 		}
-		appendBuilderPart(parts, atRuleHeader(current)+rawBetween(current, "between", " ")+"{", id, "start")
+		appendBuilderPart(parts, atRuleHeader(current)+rawBetween(cache, current, "between", " ")+"{", id, "start")
 		for index, child := range current.Nodes {
-			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
-			writeBuilderNode(parts, child, depth+1, next)
+			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(cache, child, depth+1, index)), 0, "")
+			writeBuilderNode(parts, child, depth+1, next, cache)
 		}
-		close := blockClosePrefix(current, len(current.Nodes), depth) + "}"
+		close := blockClosePrefix(cache, current, len(current.Nodes), depth) + "}"
 		appendBuilderPart(parts, close, id, "end")
 	case *ast.Declaration:
-		text := declarationText(current)
+		text := declarationText(cache, current)
 		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
 			text += ";"
 		}
 		appendBuilderPart(parts, text, id, "")
 	case *ast.Comment:
-		appendBuilderPart(parts, commentText(current), id, "")
+		appendBuilderPart(parts, commentText(cache, current), id, "")
 	}
 }
 
@@ -150,7 +156,7 @@ func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotat
 		writeChildren(writer, current.Nodes, depth, true, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
-		writer.writeString(ruleHeader(current))
+		writer.writeString(ruleHeader(writer.renderCache(), current))
 		writer.writeByte('{')
 		childCount := writeChildren(writer, current.Nodes, depth+1, true, stripSourceMapAnnotations)
 		writeBlockClose(writer, current, childCount, depth)
@@ -164,17 +170,17 @@ func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotat
 			}
 			return
 		}
-		writer.writeString(rawBetween(current, "between", " "))
+		writer.writeString(rawBetween(writer.renderCache(), current, "between", " "))
 		writer.writeByte('{')
 		childCount := writeChildren(writer, current.Nodes, depth+1, true, stripSourceMapAnnotations)
 		writeBlockClose(writer, current, childCount, depth)
 	case *ast.Declaration:
-		writer.writeString(declarationText(current))
+		writer.writeString(declarationText(writer.renderCache(), current))
 		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
 			writer.writeByte(';')
 		}
 	case *ast.Comment:
-		writer.writeString(commentText(current))
+		writer.writeString(commentText(writer.renderCache(), current))
 	}
 }
 
@@ -188,7 +194,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
 		writer.AddMapping(current)
-		writer.writeString(ruleHeader(current))
+		writer.writeString(ruleHeader(writer.renderCache(), current))
 		writer.writeByte('{')
 		childCount := writeMappedChildren(writer, current.Nodes, depth+1)
 		writeBlockClose(writer, current, childCount, depth)
@@ -206,7 +212,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 			writer.AddEndMapping(current)
 			return true
 		}
-		writer.writeString(rawBetween(current, "between", " "))
+		writer.writeString(rawBetween(writer.renderCache(), current, "between", " "))
 		writer.writeByte('{')
 		childCount := writeMappedChildren(writer, current.Nodes, depth+1)
 		writeBlockClose(writer, current, childCount, depth)
@@ -214,7 +220,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		return true
 	case *ast.Declaration:
 		writer.AddMapping(current)
-		writer.writeString(declarationPrefix(current))
+		writer.writeString(declarationPrefix(writer.renderCache(), current))
 		writer.AddMappingAt(current, declarationValuePosition(current))
 		writer.writeString(declarationValueText(current))
 		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
@@ -227,7 +233,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 			return false
 		}
 		writer.AddMapping(current)
-		writer.writeString(commentText(current))
+		writer.writeString(commentText(writer.renderCache(), current))
 		writer.AddEndMapping(current)
 		return true
 	}
@@ -253,75 +259,234 @@ func atRuleHasSemicolon(node *ast.AtRule) bool {
 }
 
 func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
-	writer.writeString(blockClosePrefix(node, childCount, depth))
+	writer.writeString(blockClosePrefix(writer.renderCache(), node, childCount, depth))
 	writer.writeByte('}')
 }
 
-func blockClosePrefix(node ast.Node, childCount, depth int) string {
+func blockClosePrefix(cache *renderCache, node ast.Node, childCount, depth int) string {
 	if hasRaw(node, "after") {
 		return escapeHTMLInCSS(rawString(node, "after", ""))
 	}
-	if inferred, ok := inferBlockAfter(node, childCount); ok {
+	if inferred, ok := cache.inferBlockAfter(node, childCount); ok {
 		return escapeHTMLInCSS(inferred)
 	}
 	if childCount != 0 {
-		return "\n" + strings.Repeat(indentFor(node), depth)
+		return "\n" + strings.Repeat(indentFor(cache, node), depth)
 	}
 	return ""
 }
 
-func inferBlockAfter(node ast.Node, childCount int) (string, bool) {
+// renderCache memoizes the document-wide lookups a stringify pass performs for
+// nodes that carry no explicit raw. Without it every such node rescans the
+// whole document, which makes stringifying quadratic in the node count. Raws
+// never change during a pass, so every sample below is stable once computed.
+type renderCache struct {
+	blockAfter      map[blockAfterKey]blockAfterRaw
+	containerIndent map[ast.Container]string
+	rootIndent      map[ast.Node]string
+	descendantRaw   map[descendantRawKey]string
+	siblingRaw      map[descendantRawKey]blockAfterRaw
+	beforeRaw       map[ast.Container]bool
+}
+
+type blockAfterKey struct {
+	origin ast.Node
+	empty  bool
+}
+
+type blockAfterRaw struct {
+	value string
+	ok    bool
+}
+
+type descendantRawKey struct {
+	container ast.Container
+	key       string
+	nodeType  ast.NodeType
+}
+
+// containerIndentSample memoizes inferredContainerIndent, which scans all of
+// `parent`'s children. It is called once per child, so without the cache a
+// container costs O(children²).
+func (cache *renderCache) containerIndentSample(parent ast.Container) string {
+	if cache == nil {
+		return inferredContainerIndent(parent)
+	}
+	if indent, found := cache.containerIndent[parent]; found {
+		return indent
+	}
+	indent := inferredContainerIndent(parent)
+	if cache.containerIndent == nil {
+		cache.containerIndent = make(map[ast.Container]string, 8)
+	}
+	cache.containerIndent[parent] = indent
+	return indent
+}
+
+// rootIndentSample memoizes the document-wide indent sample: an explicit
+// `indent` raw on the root, or the first indent inferred from any descendant's
+// `before` raw. Both only depend on the root.
+func (cache *renderCache) rootIndentSample(root ast.Node) string {
+	if cache == nil {
+		return rootIndent(root)
+	}
+	if indent, found := cache.rootIndent[root]; found {
+		return indent
+	}
+	indent := rootIndent(root)
+	if cache.rootIndent == nil {
+		cache.rootIndent = make(map[ast.Node]string, 2)
+	}
+	cache.rootIndent[root] = indent
+	return indent
+}
+
+func rootIndent(root ast.Node) string {
+	if indent := rawString(root, "indent", ""); indent != "" {
+		return indent
+	}
+	return inferredIndent(root)
+}
+
+// siblingRawSample memoizes inferSiblingRaw, which scans all of `parent`'s
+// children of a given type. The scan never excludes the node being written, so
+// the sample only depends on the container, the raw key and the node type.
+func (cache *renderCache) siblingRawSample(parent ast.Container, key string, nodeType ast.NodeType) (string, bool) {
+	if cache == nil {
+		return inferSiblingRaw(parent, key, nodeType)
+	}
+	cacheKey := descendantRawKey{container: parent, key: key, nodeType: nodeType}
+	if cached, found := cache.siblingRaw[cacheKey]; found {
+		return cached.value, cached.ok
+	}
+	value, ok := inferSiblingRaw(parent, key, nodeType)
+	if cache.siblingRaw == nil {
+		cache.siblingRaw = make(map[descendantRawKey]blockAfterRaw, 8)
+	}
+	cache.siblingRaw[cacheKey] = blockAfterRaw{value: value, ok: ok}
+	return value, ok
+}
+
+// hasBeforeRaw reports whether any child of `parent` carries a `before` raw.
+// When none does, rawBeforeDetected can only miss, whichever node is being
+// written, so the answer short-circuits its per-node sibling scan.
+func (cache *renderCache) hasBeforeRaw(parent ast.Container) bool {
+	if cache == nil {
+		return anyBeforeRaw(parent)
+	}
+	if present, found := cache.beforeRaw[parent]; found {
+		return present
+	}
+	present := anyBeforeRaw(parent)
+	if cache.beforeRaw == nil {
+		cache.beforeRaw = make(map[ast.Container]bool, 8)
+	}
+	cache.beforeRaw[parent] = present
+	return present
+}
+
+func anyBeforeRaw(parent ast.Container) bool {
+	for _, sibling := range parent.Children() {
+		if _, ok := lookupRaw(sibling, "before"); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// descendantRawSample memoizes inferDescendantRaw, which walks the whole
+// subtree of `container`. Callers only use a non-empty result, so an empty
+// string marks a miss. The lookup does not depend on the node being written.
+func (cache *renderCache) descendantRawSample(container ast.Container, key string, nodeType ast.NodeType) string {
+	if cache == nil {
+		inferred, ok := inferDescendantRaw(container, key, nodeType)
+		if !ok {
+			return ""
+		}
+		return inferred
+	}
+	cacheKey := descendantRawKey{container: container, key: key, nodeType: nodeType}
+	if inferred, found := cache.descendantRaw[cacheKey]; found {
+		return inferred
+	}
+	inferred, ok := inferDescendantRaw(container, key, nodeType)
+	if !ok {
+		inferred = ""
+	}
+	if cache.descendantRaw == nil {
+		cache.descendantRaw = make(map[descendantRawKey]string, 8)
+	}
+	cache.descendantRaw[cacheKey] = inferred
+	return inferred
+}
+
+// inferBlockAfter reuses another block of the same emptiness as a formatting
+// sample for `node`'s closing brace.
+//
+// The sample only depends on the document `node` belongs to and on whether the
+// block is empty: callers reach this path only when `node` itself has no
+// `after` raw, so `node` can never be the sample and the result is shared by
+// every block of the same emptiness in that document. That is what makes the
+// per-document memoization below correct.
+func (cache *renderCache) inferBlockAfter(node ast.Node, childCount int) (string, bool) {
 	origin := node.Root()
 	if origin == nil {
 		origin = node
 	}
-	wantEmpty := childCount == 0
-	var found string
-	ok := false
-	var visit func(ast.Node) bool
-	visit = func(candidate ast.Node) bool {
+	if cache == nil {
+		return scanBlockAfter(origin, node, childCount == 0)
+	}
+	key := blockAfterKey{origin: origin, empty: childCount == 0}
+	if cached, found := cache.blockAfter[key]; found {
+		return cached.value, cached.ok
+	}
+	value, ok := scanBlockAfter(origin, node, childCount == 0)
+	if cache.blockAfter == nil {
+		cache.blockAfter = make(map[blockAfterKey]blockAfterRaw, 2)
+	}
+	cache.blockAfter[key] = blockAfterRaw{value: value, ok: ok}
+	return value, ok
+}
+
+func scanBlockAfter(origin, node ast.Node, wantEmpty bool) (string, bool) {
+	container, isContainer := origin.(ast.Container)
+	if !isContainer {
+		return "", false
+	}
+	return scanChildrenBlockAfter(container.Children(), node, wantEmpty)
+}
+
+func scanChildrenBlockAfter(nodes []ast.Node, node ast.Node, wantEmpty bool) (string, bool) {
+	for _, candidate := range nodes {
 		if candidate == nil {
-			return true
-		}
-		if candidate != node {
-			if container, isContainer := candidate.(ast.Container); isContainer {
-				if _, isRoot := candidate.(*ast.Root); !isRoot {
-					if _, isDocument := candidate.(*ast.Document); !isDocument {
-						empty := len(container.Children()) == 0
-						if empty == wantEmpty {
-							if value, exists := lookupRaw(candidate, "after"); exists {
-								ok = true
-								if text, isString := value.(string); isString {
-									found = text
-								}
-								return false
-							}
-						}
-					}
-				}
-			}
+			continue
 		}
 		container, isContainer := candidate.(ast.Container)
 		if !isContainer {
-			return true
+			continue
 		}
-		for _, child := range container.Children() {
-			if !visit(child) {
-				return false
+		if candidate != node && isBlockContainer(candidate) && (len(container.Children()) == 0) == wantEmpty {
+			if value, exists := lookupRaw(candidate, "after"); exists {
+				text, _ := value.(string)
+				return text, true
 			}
 		}
+		if value, ok := scanChildrenBlockAfter(container.Children(), node, wantEmpty); ok {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// isBlockContainer reports whether the node is written with braces, which is
+// what makes its `after` raw usable as a sample for another block.
+func isBlockContainer(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.Root, *ast.Document:
+		return false
+	default:
 		return true
 	}
-	if container, isContainer := origin.(ast.Container); isContainer && origin != node {
-		for _, child := range container.Children() {
-			if !visit(child) {
-				break
-			}
-		}
-	} else {
-		visit(origin)
-	}
-	return found, ok
 }
 
 func declarationValuePosition(node *ast.Declaration) sourcemap.Position {
@@ -356,7 +521,7 @@ func writeMappedChildren(writer *sourceMapWriter, nodes []ast.Node, depth int) i
 		if !writer.preserveAnnotation && isSourceMapAnnotationNode(child) {
 			continue
 		}
-		writer.writeString(nodeBefore(child, depth, index))
+		writer.writeString(nodeBefore(writer.renderCache(), child, depth, index))
 		writeMappedNode(writer, child, depth)
 		written++
 	}
@@ -378,7 +543,7 @@ func writeChildren(writer cssWriter, nodes []ast.Node, depth int, escapeBefore, 
 		if stripSourceMapAnnotations && isSourceMapAnnotationNode(child) {
 			continue
 		}
-		before := nodeBefore(child, depth, index)
+		before := nodeBefore(writer.renderCache(), child, depth, index)
 		if escapeBefore {
 			before = escapeHTMLInCSS(before)
 		}
@@ -461,8 +626,8 @@ func lookupRaw(node ast.Node, key string) (any, bool) {
 	return value, true
 }
 
-func ruleHeader(node *ast.Rule) string {
-	return escapeHTMLInCSS(rawValue(node, "selector", strings.TrimSpace(node.Selector)) + rawBetween(node, "between", " "))
+func ruleHeader(cache *renderCache, node *ast.Rule) string {
+	return escapeHTMLInCSS(rawValue(node, "selector", strings.TrimSpace(node.Selector)) + rawBetween(cache, node, "between", " "))
 }
 
 func atRuleHeader(node *ast.AtRule) string {
@@ -496,12 +661,12 @@ func atRuleAfterName(node *ast.AtRule, params string) string {
 	return ""
 }
 
-func declarationText(node *ast.Declaration) string {
-	return escapeHTMLInCSS(declarationPrefix(node) + declarationValueText(node))
+func declarationText(cache *renderCache, node *ast.Declaration) string {
+	return escapeHTMLInCSS(declarationPrefix(cache, node) + declarationValueText(node))
 }
 
-func declarationPrefix(node *ast.Declaration) string {
-	return strings.TrimSpace(node.Prop) + rawBetween(node, "between", ": ")
+func declarationPrefix(cache *renderCache, node *ast.Declaration) string {
+	return strings.TrimSpace(node.Prop) + rawBetween(cache, node, "between", ": ")
 }
 
 func declarationValueText(node *ast.Declaration) string {
@@ -516,11 +681,11 @@ func declarationValueText(node *ast.Declaration) string {
 	return text
 }
 
-func commentText(node *ast.Comment) string {
-	return escapeHTMLInCSS("/*" + rawStringDetected(node, "left", " ") + node.Text + rawStringDetected(node, "right", " ") + "*/")
+func commentText(cache *renderCache, node *ast.Comment) string {
+	return escapeHTMLInCSS("/*" + rawStringDetected(cache, node, "left", " ") + node.Text + rawStringDetected(cache, node, "right", " ") + "*/")
 }
 
-func rawStringDetected(node ast.Node, key, fallback string) string {
+func rawStringDetected(cache *renderCache, node ast.Node, key, fallback string) string {
 	if value, ok := lookupRaw(node, key); ok {
 		if stringValue, ok := value.(string); ok {
 			return stringValue
@@ -528,14 +693,14 @@ func rawStringDetected(node ast.Node, key, fallback string) string {
 		return fallback
 	}
 	if parent := node.Parent(); parent != nil {
-		if inferred, ok := inferSiblingRaw(parent, key, node.Type()); ok {
+		if inferred, ok := cache.siblingRawSample(parent, key, node.Type()); ok {
 			return inferred
 		}
 	}
 	return fallback
 }
 
-func nodeBefore(node ast.Node, depth, index int) string {
+func nodeBefore(cache *renderCache, node ast.Node, depth, index int) string {
 	if hasRaw(node, "before") {
 		return rawString(node, "before", "")
 	}
@@ -555,18 +720,18 @@ func nodeBefore(node ast.Node, depth, index int) string {
 		return ""
 	}
 	if parent := node.Parent(); parent != nil {
-		if inferred, ok := rawBeforeDetected(parent, node); ok {
+		if inferred, ok := rawBeforeDetected(cache, parent, node); ok {
 			return inferred
 		}
 		after := rawString(node, "after", "")
-		if indent := inferredContainerIndent(parent); indent != "" && strings.Contains(indent, " ") && !strings.Contains(indent, "\n") && !strings.Contains(after, "\n") {
+		if indent := cache.containerIndentSample(parent); indent != "" && strings.Contains(indent, " ") && !strings.Contains(indent, "\n") && !strings.Contains(after, "\n") {
 			return indent
 		}
 	}
 	if index == 0 && depth == 0 {
 		return ""
 	}
-	return "\n" + strings.Repeat(indentFor(node), depth)
+	return "\n" + strings.Repeat(indentFor(cache, node), depth)
 }
 
 func nodeBeforeDocument(node ast.Node, depth, index int) string {
@@ -588,12 +753,12 @@ func escapeHTMLInCSS(value string) string {
 	return value
 }
 
-func rawBetween(node ast.Node, key, fallback string) string {
+func rawBetween(cache *renderCache, node ast.Node, key, fallback string) string {
 	if value, ok := lookupRaw(node, key); ok {
 		if stringValue, ok := value.(string); ok {
 			if node.Type() == ast.NodeDecl && stringValue == "" {
 				if parent := node.Parent(); parent != nil {
-					if inferred, inferredOK := inferSiblingRaw(parent, key, node.Type()); inferredOK && inferred != "" {
+					if inferred, inferredOK := cache.siblingRawSample(parent, key, node.Type()); inferredOK && inferred != "" {
 						return inferred
 					}
 				}
@@ -604,7 +769,7 @@ func rawBetween(node ast.Node, key, fallback string) string {
 		return fallback
 	}
 	if parent := node.Parent(); parent != nil {
-		if inferred, ok := inferSiblingRaw(parent, key, node.Type()); ok {
+		if inferred, ok := cache.siblingRawSample(parent, key, node.Type()); ok {
 			if node.Type() != ast.NodeDecl || !strings.Contains(inferred, "/*") {
 				return inferred
 			}
@@ -614,7 +779,7 @@ func rawBetween(node ast.Node, key, fallback string) string {
 		}
 		if node.Type() == ast.NodeDecl && node.Source() == nil {
 			for container := parent; container != nil; container = container.Parent() {
-				if inferred, ok := inferDescendantRaw(container, key, node.Type()); ok && inferred != "" {
+				if inferred := cache.descendantRawSample(container, key, node.Type()); inferred != "" {
 					return inferred
 				}
 			}
@@ -642,7 +807,10 @@ func inferDescendantRaw(parent ast.Container, key string, nodeType ast.NodeType)
 	return "", false
 }
 
-func rawBeforeDetected(parent ast.Container, node ast.Node) (string, bool) {
+func rawBeforeDetected(cache *renderCache, parent ast.Container, node ast.Node) (string, bool) {
+	if !cache.hasBeforeRaw(parent) {
+		return "", false
+	}
 	// Prefer an existing sibling's explicit separator, but discard its
 	// non-whitespace content when it is being used as a formatting sample.
 	children := parent.Children()
@@ -696,17 +864,14 @@ func inferSiblingRaw(parent ast.Container, key string, nodeType ast.NodeType) (s
 	return inferred, hasExplicit
 }
 
-func indentFor(node ast.Node) string {
+func indentFor(cache *renderCache, node ast.Node) string {
 	if parent := node.Parent(); parent != nil {
-		if indent := inferredContainerIndent(parent); indent != "" {
+		if indent := cache.containerIndentSample(parent); indent != "" {
 			return indent
 		}
 	}
 	if root := node.Root(); root != nil {
-		if indent := rawString(root, "indent", ""); indent != "" {
-			return indent
-		}
-		if indent := inferredIndent(root); indent != "" {
+		if indent := cache.rootIndentSample(root); indent != "" {
 			return indent
 		}
 	}
