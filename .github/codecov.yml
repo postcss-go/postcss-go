@@ -62,6 +62,7 @@ ignore:
   - 'benchmark/fixtures/**'
   - 'packages/postcss-go/bin/**'
   - 'packages/postcss-go/native/**'
+  - 'internal/nativeaddon/cabi/**'
   - 'packages/postcss-go/src/cli.ts'
   - 'packages/postcss-go/src/wasm/browser.ts'
   - 'packages/postcss-go/src/config.ts'

@@ -59,6 +59,20 @@ func TestNativeErrorMessageMarksOnlySyntaxErrors(t *testing.T) {
 	if got := nativeErrorMessage(plain); got != plain.Error() {
 		t.Fatalf("plain error was changed: %q", got)
 	}
+
+	withInput := csserrors.New("Unknown word", 1, 2, "a{?", "input.css", "plugin")
+	withInput.Input = &csserrors.InputInfo{Source: "a{?", File: "input.css", Line: 1, Column: 2}
+	inputMessage := nativeErrorMessage(withInput)
+	if !strings.HasPrefix(inputMessage, cssSyntaxErrorPrefix) {
+		t.Fatalf("input-backed syntax error missing marker: %q", inputMessage)
+	}
+	var inputDTO jsbridge.ErrorDTO
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(inputMessage, cssSyntaxErrorPrefix)), &inputDTO); err != nil {
+		t.Fatalf("input-backed payload is not JSON: %v", err)
+	}
+	if inputDTO.Input == nil || inputDTO.Input.Source != "" || inputDTO.Input.File != "input.css" {
+		t.Fatalf("native payload must keep input metadata but drop source: %#v", inputDTO.Input)
+	}
 }
 
 func TestWriteErrorReportsRequiredCapacity(t *testing.T) {
@@ -67,5 +81,10 @@ func TestWriteErrorReportsRequiredCapacity(t *testing.T) {
 
 	if got := WriteErrorBytes(nil, err); got != want {
 		t.Fatalf("want required capacity %d, got %d", want, got)
+	}
+
+	out := make([]byte, want+4)
+	if got := WriteErrorBytes(out, err); got != want || string(out[:want]) != err.Error() {
+		t.Fatalf("write: n=%d out=%q", got, out)
 	}
 }

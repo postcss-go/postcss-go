@@ -292,3 +292,70 @@ func TestPublicGoCoreCSSSourceMapContract(t *testing.T) {
 		t.Fatalf("noWork annotation cleanup mismatch: want %q, got %q", contract.NoWorkCleanCSS, noWork.CSS)
 	}
 }
+
+func TestPublicFacadeHelpers(t *testing.T) {
+	root := postcss.NewRoot()
+	doc := postcss.NewDocument()
+	rule := postcss.NewRule(".card")
+	at := postcss.NewAtRule("media", "screen")
+	decl := postcss.NewDeclaration("color", "red")
+	comment := postcss.NewComment("note")
+	rule.Append(decl, comment)
+	root.Append(rule)
+	doc.Append(root)
+
+	if at.Name != "media" || at.Params != "screen" {
+		t.Fatalf("unexpected at-rule: %#v", at)
+	}
+	if got := postcss.Stringify(root); !strings.Contains(got, "color: red") {
+		t.Fatalf("unexpected stringify: %q", got)
+	}
+
+	input, err := postcss.NewInput(".x{}", postcss.ParseOptions{From: "facade.css"})
+	if err != nil || !strings.HasSuffix(input.From(), "facade.css") {
+		t.Fatalf("NewInput failed: input=%#v err=%v", input, err)
+	}
+
+	var walked []string
+	if err := postcss.Walk(root, func(node postcss.Node) error {
+		walked = append(walked, string(node.Type()))
+		return nil
+	}); err != nil {
+		t.Fatalf("Walk failed: %v", err)
+	}
+	if len(walked) < 3 {
+		t.Fatalf("expected walk to visit nodes, got %#v", walked)
+	}
+	if err := postcss.WalkRules(root, func(rule *postcss.Rule) error {
+		if rule.Selector != ".card" {
+			t.Fatalf("unexpected rule: %q", rule.Selector)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkRules failed: %v", err)
+	}
+	if err := postcss.WalkAtRules(doc, func(rule *postcss.AtRule) error { return nil }); err != nil {
+		t.Fatalf("WalkAtRules failed: %v", err)
+	}
+	if err := postcss.WalkDecls(root, func(decl *postcss.Declaration) error {
+		if decl.Prop != "color" {
+			t.Fatalf("unexpected decl: %#v", decl)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkDecls failed: %v", err)
+	}
+	if err := postcss.WalkComments(root, func(c *postcss.Comment) error {
+		if c.Text != "note" {
+			t.Fatalf("unexpected comment: %q", c.Text)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkComments failed: %v", err)
+	}
+
+	stringified, err := postcss.StringifyWithOptions(root, postcss.ProcessOptions{})
+	if err != nil || !strings.Contains(stringified.CSS, ".card") {
+		t.Fatalf("StringifyWithOptions failed: %#v err=%v", stringified, err)
+	}
+}

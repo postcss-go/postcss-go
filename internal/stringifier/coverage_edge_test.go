@@ -821,3 +821,32 @@ func TestRenderCacheSamples(t *testing.T) {
 		t.Fatal("container without before raws must miss")
 	}
 }
+
+func TestAtRuleAfterNameCoverageEdges(t *testing.T) {
+	bare := ast.NewAtRule("charset", "")
+	if got := atRuleAfterName(bare, ""); got != "" {
+		t.Fatalf("empty params without afterName: %q", got)
+	}
+
+	nonString := ast.NewAtRule("media", "screen")
+	nonString.RawFormatting()["afterName"] = 12
+	if got := atRuleAfterName(nonString, "screen"); got != " " {
+		t.Fatalf("non-string afterName: %q", got)
+	}
+
+	root := ast.NewRoot()
+	sample := ast.NewAtRule("media", "print")
+	sample.RawFormatting()["afterName"] = " /*c*/ "
+	emptyParams := ast.NewAtRule("charset", "")
+	skip := ast.NewRule(".not-at")
+	target := ast.NewAtRule("supports", "display: grid")
+	root.Append(emptyParams, skip, sample, target)
+	if got := atRuleAfterName(target, target.Params); got != " /*c*/ " {
+		t.Fatalf("sibling afterName sample: %q", got)
+	}
+
+	orphan := ast.NewAtRule("media", "all")
+	if got := atRuleAfterName(orphan, "all"); got != " " {
+		t.Fatalf("params without parent: %q", got)
+	}
+}
