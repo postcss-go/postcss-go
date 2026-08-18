@@ -7,19 +7,22 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"postcss-go/internal/ast"
 	"postcss-go/internal/codec"
 	"postcss-go/internal/postcss"
 	"postcss-go/internal/result"
+	"postcss-go/internal/stringifier"
 )
 
 // Operation identifies an operation on the private Go/C boundary.
 type Operation uint8
 
 const (
-	Parse     Operation = 0
-	Stringify Operation = 1
-	Process   Operation = 2
-	NoWork    Operation = 3
+	Parse            Operation = 0
+	Stringify        Operation = 1
+	Process          Operation = 2
+	NoWork           Operation = 3
+	StringifyBuilder Operation = 4
 )
 
 type stringifyResult struct {
@@ -55,6 +58,8 @@ func Call(operation Operation, first, second []byte) ([]byte, error) {
 		return process(string(first), second)
 	case NoWork:
 		return noWork(string(first), second)
+	case StringifyBuilder:
+		return stringifyBuilder(first, second)
 	default:
 		return nil, fmt.Errorf("unknown native operation %d", operation)
 	}
@@ -73,7 +78,7 @@ func parse(css, from string) ([]byte, error) {
 }
 
 func stringify(astBytes, optionsJSON []byte) ([]byte, error) {
-	node, err := codec.DecodeAST(astBytes)
+	target, err := decodeIndexedNode(astBytes, optionsJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +88,7 @@ func stringify(astBytes, optionsJSON []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-	stringified, err := postcss.StringifyWithOptions(node, options)
+	stringified, err := postcss.StringifyWithOptions(target, options)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +97,55 @@ func stringify(astBytes, optionsJSON []byte) ([]byte, error) {
 		Map:     stringified.Map,
 		MapFile: stringified.MapFile,
 	})
+}
+
+func stringifyBuilder(astBytes, optionsJSON []byte) ([]byte, error) {
+	target, err := decodeIndexedNode(astBytes, optionsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(stringifier.StringifyWithBuilder(target))
+}
+
+func decodeIndexedNode(astBytes, optionsJSON []byte) (ast.Node, error) {
+	node, err := codec.DecodeAST(astBytes)
+	if err != nil {
+		return nil, err
+	}
+	nodeIndex := 0
+	if len(optionsJSON) > 0 {
+		var extra struct {
+			NodeIndex int `json:"nodeIndex"`
+		}
+		if err := json.Unmarshal(optionsJSON, &extra); err != nil {
+			return nil, err
+		}
+		nodeIndex = extra.NodeIndex
+	}
+	return selectIndexedNode(node, nodeIndex)
+}
+
+func selectIndexedNode(root ast.Node, nodeIndex int) (ast.Node, error) {
+	if nodeIndex <= 0 {
+		return root, nil
+	}
+	nodes := indexAST(root)
+	if nodeIndex > len(nodes) {
+		return nil, fmt.Errorf("stringify nodeIndex %d is out of range", nodeIndex)
+	}
+	return nodes[nodeIndex-1], nil
+}
+
+func indexAST(node ast.Node) []ast.Node {
+	if node == nil {
+		return nil
+	}
+	nodes := make([]ast.Node, 0)
+	_ = ast.Walk(node, func(current ast.Node) error {
+		nodes = append(nodes, current)
+		return nil
+	})
+	return nodes
 }
 
 func process(css string, optionsJSON []byte) ([]byte, error) {

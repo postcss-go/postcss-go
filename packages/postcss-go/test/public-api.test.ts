@@ -6,6 +6,7 @@ import { afterEach, expect, test } from 'vitest';
 
 import postcss, {
   AsyncPluginError,
+  CssSyntaxError,
   Input,
   PreviousMap,
   Processor,
@@ -14,6 +15,7 @@ import postcss, {
   Root,
   SyncBackendUnavailableError,
   UnsupportedSyntaxError,
+  Warning,
   getBackendCapabilities,
   list,
   noWork,
@@ -337,6 +339,12 @@ test('no-work annotation does not force a temporary parse', async () => {
 });
 
 test('plugin helpers expose both flattened API members and helpers.postcss', async () => {
+  expect(postcss.Result).toBe(Result);
+  expect(postcss.Warning).toBe(Warning);
+  expect(postcss.Input).toBe(Input);
+  expect(postcss.CssSyntaxError).toBe(CssSyntaxError);
+  expect(() => postcss.parse('a { color: red')).toThrow(CssSyntaxError);
+
   await postcss({
     postcssPlugin: 'helpers-contract',
     Rule(_rule, helpers) {
@@ -468,10 +476,37 @@ test('Once and OnceExit receive the same root stored on Result', async () => {
   expect(identities).toEqual([true, true]);
 });
 
+test('plugins parse and insert CSS strings through the native backend', async () => {
+  const plugin = {
+    postcssPlugin: 'insert-css',
+    Once(root: Root, helpers: { postcss: typeof postcss }) {
+      root.append('.b{color:green}');
+      expect(helpers.postcss.parse('.c{display:block}').first).toBeInstanceOf(postcss.Rule);
+      expect(root.first?.toString()).toContain('color:red');
+    },
+  };
+
+  const asyncResult = await postcss([plugin]).process('.a{color:red}', { from: 'input.css' });
+  expect(asyncResult.css).toContain('.a{color:red}');
+  expect(asyncResult.css).toContain('.b{color:green}');
+
+  const syncResult = processSync('.a{color:red}', { from: 'input.css' }, [plugin]);
+  expect(syncResult.css).toContain('.b{color:green}');
+});
+
 test('explicit sync APIs use the native backend', () => {
-  const root = parseSync('.a { color: red }', { from: 'input.css' });
+  const css = '@media screen { .a { color: red; --value: fn(a; b) } }';
+  const root = parseSync(css, { from: 'input.css' });
   expect(root).toBeInstanceOf(Root);
-  expect(stringifySync(root)).toContain('color: red');
+  expect(root.toString()).toBe(css);
+  expect(root.first?.source?.input).toBeInstanceOf(Input);
+  expect(stringifySync(root)).toBe(css);
+
+  let built = '';
+  stringifySync(root, (chunk) => {
+    built += chunk;
+  });
+  expect(built).toBe(css);
   expect(processSync('.a{}').css).toBe('.a{}');
   expect(noWorkSync('.a{}').css).toBe('.a{}');
 });

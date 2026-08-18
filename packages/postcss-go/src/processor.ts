@@ -2,13 +2,13 @@ import { createRequire } from 'node:module';
 
 import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
-import { Node, Root } from './ast.js';
-import { stringify as stringifyOwned } from './ast-stringifier.js';
+import { Node, stringifyCssSync, type Root } from './ast.js';
 import { SyncBackendUnavailableError } from './errors.js';
 import {
   createDefaultAsyncService,
   createNativeService,
   getDefaultAsyncBackendCapabilities,
+  installNativeSyncCssRuntime,
   isNativeBridgeAvailable,
   NativePostcssGoService,
 } from './native.js';
@@ -136,6 +136,7 @@ Object.defineProperty(postcss, 'default', {
 });
 
 setProcessorFactory((plugins) => new Processor(plugins));
+installNativeSyncCssRuntime();
 
 export function parseSync(css: CssInput, options: ProcessOptions = {}): Root {
   return dispatchParseSync(requireSyncService(), String(css), options);
@@ -158,7 +159,7 @@ export function stringifySync(
   builderOrOptions?: ((chunk: string, node?: Node, type?: string) => void) | ProcessOptions,
 ): string | void {
   if (typeof builderOrOptions === 'function') {
-    stringifyOwned(node, builderOrOptions as never);
+    stringifyCssSync(node, builderOrOptions);
     return;
   }
   return dispatchStringifySync(requireSyncService(), node, builderOrOptions ?? {});
