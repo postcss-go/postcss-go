@@ -33,10 +33,12 @@ type BuilderPart struct {
 type cssWriter interface {
 	writeString(string)
 	writeByte(byte)
+	blockAfterCache() *blockAfterCache
 }
 
 type builderWriter struct {
 	*strings.Builder
+	cache *blockAfterCache
 }
 
 func (w builderWriter) writeString(text string) {
@@ -45,6 +47,10 @@ func (w builderWriter) writeString(text string) {
 
 func (w builderWriter) writeByte(ch byte) {
 	w.Builder.WriteByte(ch)
+}
+
+func (w builderWriter) blockAfterCache() *blockAfterCache {
+	return w.cache
 }
 
 func Stringify(node ast.Node) string {
@@ -60,13 +66,13 @@ func StringifyWithoutSourceMapAnnotations(node ast.Node) string {
 
 func stringify(node ast.Node, stripSourceMapAnnotations bool) string {
 	var builder strings.Builder
-	writeNode(builderWriter{&builder}, node, 0, stripSourceMapAnnotations)
+	writeNode(builderWriter{Builder: &builder, cache: &blockAfterCache{}}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
 }
 
 func StringifyWithBuilder(node ast.Node) []BuilderPart {
 	parts := make([]BuilderPart, 0)
-	writeBuilderNode(&parts, node, 0, new(int))
+	writeBuilderNode(&parts, node, 0, new(int), &blockAfterCache{})
 	return parts
 }
 
@@ -76,29 +82,29 @@ func appendBuilderPart(parts *[]BuilderPart, css string, node int, kind string) 
 	}
 }
 
-func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int) {
+func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int, cache *blockAfterCache) {
 	(*next)++
 	id := *next
 	switch current := node.(type) {
 	case *ast.Document:
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, nodeBeforeDocument(child, depth, index), 0, "")
-			writeBuilderNode(parts, child, depth, next)
+			writeBuilderNode(parts, child, depth, next, cache)
 		}
 		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
 	case *ast.Root:
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth, index)), 0, "")
-			writeBuilderNode(parts, child, depth, next)
+			writeBuilderNode(parts, child, depth, next, cache)
 		}
 		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
 	case *ast.Rule:
 		appendBuilderPart(parts, ruleHeader(current)+"{", id, "start")
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
-			writeBuilderNode(parts, child, depth+1, next)
+			writeBuilderNode(parts, child, depth+1, next, cache)
 		}
-		close := blockClosePrefix(current, len(current.Nodes), depth) + "}"
+		close := blockClosePrefix(cache, current, len(current.Nodes), depth) + "}"
 		appendBuilderPart(parts, close+rawString(current, "ownSemicolon", ""), id, "end")
 	case *ast.AtRule:
 		if !current.Block {
@@ -112,9 +118,9 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int)
 		appendBuilderPart(parts, atRuleHeader(current)+rawBetween(current, "between", " ")+"{", id, "start")
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(child, depth+1, index)), 0, "")
-			writeBuilderNode(parts, child, depth+1, next)
+			writeBuilderNode(parts, child, depth+1, next, cache)
 		}
-		close := blockClosePrefix(current, len(current.Nodes), depth) + "}"
+		close := blockClosePrefix(cache, current, len(current.Nodes), depth) + "}"
 		appendBuilderPart(parts, close, id, "end")
 	case *ast.Declaration:
 		text := declarationText(current)
@@ -253,15 +259,15 @@ func atRuleHasSemicolon(node *ast.AtRule) bool {
 }
 
 func writeBlockClose(writer cssWriter, node ast.Node, childCount, depth int) {
-	writer.writeString(blockClosePrefix(node, childCount, depth))
+	writer.writeString(blockClosePrefix(writer.blockAfterCache(), node, childCount, depth))
 	writer.writeByte('}')
 }
 
-func blockClosePrefix(node ast.Node, childCount, depth int) string {
+func blockClosePrefix(cache *blockAfterCache, node ast.Node, childCount, depth int) string {
 	if hasRaw(node, "after") {
 		return escapeHTMLInCSS(rawString(node, "after", ""))
 	}
-	if inferred, ok := inferBlockAfter(node, childCount); ok {
+	if inferred, ok := cache.inferBlockAfter(node, childCount); ok {
 		return escapeHTMLInCSS(inferred)
 	}
 	if childCount != 0 {
@@ -270,58 +276,90 @@ func blockClosePrefix(node ast.Node, childCount, depth int) string {
 	return ""
 }
 
-func inferBlockAfter(node ast.Node, childCount int) (string, bool) {
+// blockAfterCache memoizes the document-wide `after` lookup done for blocks that
+// carry no explicit `after` raw. Without it every such block rescans the whole
+// document, which makes stringifying quadratic in the node count.
+type blockAfterCache struct {
+	entries map[blockAfterKey]blockAfterRaw
+}
+
+type blockAfterKey struct {
+	origin ast.Node
+	empty  bool
+}
+
+type blockAfterRaw struct {
+	value string
+	ok    bool
+}
+
+// inferBlockAfter reuses another block of the same emptiness as a formatting
+// sample for `node`'s closing brace.
+//
+// The sample only depends on the document `node` belongs to and on whether the
+// block is empty: callers reach this path only when `node` itself has no
+// `after` raw, so `node` can never be the sample and the result is shared by
+// every block of the same emptiness in that document. That is what makes the
+// per-document memoization below correct.
+func (cache *blockAfterCache) inferBlockAfter(node ast.Node, childCount int) (string, bool) {
 	origin := node.Root()
 	if origin == nil {
 		origin = node
 	}
-	wantEmpty := childCount == 0
-	var found string
-	ok := false
-	var visit func(ast.Node) bool
-	visit = func(candidate ast.Node) bool {
+	if cache == nil {
+		return scanBlockAfter(origin, node, childCount == 0)
+	}
+	key := blockAfterKey{origin: origin, empty: childCount == 0}
+	if cached, found := cache.entries[key]; found {
+		return cached.value, cached.ok
+	}
+	value, ok := scanBlockAfter(origin, node, childCount == 0)
+	if cache.entries == nil {
+		cache.entries = make(map[blockAfterKey]blockAfterRaw, 2)
+	}
+	cache.entries[key] = blockAfterRaw{value: value, ok: ok}
+	return value, ok
+}
+
+func scanBlockAfter(origin, node ast.Node, wantEmpty bool) (string, bool) {
+	container, isContainer := origin.(ast.Container)
+	if !isContainer {
+		return "", false
+	}
+	return scanChildrenBlockAfter(container.Children(), node, wantEmpty)
+}
+
+func scanChildrenBlockAfter(nodes []ast.Node, node ast.Node, wantEmpty bool) (string, bool) {
+	for _, candidate := range nodes {
 		if candidate == nil {
-			return true
-		}
-		if candidate != node {
-			if container, isContainer := candidate.(ast.Container); isContainer {
-				if _, isRoot := candidate.(*ast.Root); !isRoot {
-					if _, isDocument := candidate.(*ast.Document); !isDocument {
-						empty := len(container.Children()) == 0
-						if empty == wantEmpty {
-							if value, exists := lookupRaw(candidate, "after"); exists {
-								ok = true
-								if text, isString := value.(string); isString {
-									found = text
-								}
-								return false
-							}
-						}
-					}
-				}
-			}
+			continue
 		}
 		container, isContainer := candidate.(ast.Container)
 		if !isContainer {
-			return true
+			continue
 		}
-		for _, child := range container.Children() {
-			if !visit(child) {
-				return false
+		if candidate != node && isBlockContainer(candidate) && (len(container.Children()) == 0) == wantEmpty {
+			if value, exists := lookupRaw(candidate, "after"); exists {
+				text, _ := value.(string)
+				return text, true
 			}
 		}
+		if value, ok := scanChildrenBlockAfter(container.Children(), node, wantEmpty); ok {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// isBlockContainer reports whether the node is written with braces, which is
+// what makes its `after` raw usable as a sample for another block.
+func isBlockContainer(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.Root, *ast.Document:
+		return false
+	default:
 		return true
 	}
-	if container, isContainer := origin.(ast.Container); isContainer && origin != node {
-		for _, child := range container.Children() {
-			if !visit(child) {
-				break
-			}
-		}
-	} else {
-		visit(origin)
-	}
-	return found, ok
 }
 
 func declarationValuePosition(node *ast.Declaration) sourcemap.Position {
