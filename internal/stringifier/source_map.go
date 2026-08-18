@@ -31,7 +31,7 @@ type sourceMapWriter struct {
 	sourcesContent     map[string]*string
 	sourceOverride     string
 	preserveAnnotation bool
-	cache              blockAfterCache
+	cache              renderCache
 }
 
 type sourceMapping struct {
@@ -67,7 +67,7 @@ func (w *sourceMapWriter) String() string {
 	return w.builder.String()
 }
 
-func (w *sourceMapWriter) blockAfterCache() *blockAfterCache {
+func (w *sourceMapWriter) renderCache() *renderCache {
 	return &w.cache
 }
 

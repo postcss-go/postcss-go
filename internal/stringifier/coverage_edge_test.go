@@ -756,8 +756,68 @@ func TestInferBlockAfterCoverageEdges(t *testing.T) {
 
 	// Nil cache and nil Root() fall back to a direct scan.
 	detached := nilRootNode{Rule: ast.NewRule(".nil-root")}
-	var cache *blockAfterCache
+	var cache *renderCache
 	if _, ok := cache.inferBlockAfter(detached, 0); ok {
 		t.Fatal("nil-root scan should miss")
+	}
+}
+
+func TestRenderCacheSamples(t *testing.T) {
+	root := ast.NewRoot()
+	root.RawFormatting()["indent"] = "\t\t"
+	sampled := ast.NewRule(".sampled")
+	sampled.RawFormatting()["before"] = "\n  "
+	decl := ast.NewDeclaration("color", "red")
+	decl.RawFormatting()["between"] = ":\t"
+	sampled.Append(decl)
+	root.Append(sampled)
+
+	cache := &renderCache{}
+
+	// Every sample must survive being read twice: the second read comes from
+	// the memo and has to match the direct computation.
+	for pass := 0; pass < 2; pass++ {
+		if indent := cache.containerIndentSample(sampled); indent != "  " {
+			t.Fatalf("container indent sample: %q", indent)
+		}
+		if indent := cache.rootIndentSample(root); indent != "\t\t" {
+			t.Fatalf("root indent sample: %q", indent)
+		}
+		if inferred := cache.descendantRawSample(root, "between", ast.NodeDecl); inferred != ":\t" {
+			t.Fatalf("descendant raw sample: %q", inferred)
+		}
+		if inferred, ok := cache.siblingRawSample(sampled, "between", ast.NodeDecl); !ok || inferred != ":\t" {
+			t.Fatalf("sibling raw sample: %q ok=%v", inferred, ok)
+		}
+		if !cache.hasBeforeRaw(root) {
+			t.Fatal("root child carries a before raw")
+		}
+		if cache.hasBeforeRaw(sampled) {
+			t.Fatal("declaration has no before raw")
+		}
+	}
+
+	// A nil cache computes the same samples without memoizing them.
+	var missing *renderCache
+	if indent := missing.containerIndentSample(sampled); indent != "  " {
+		t.Fatalf("nil cache container indent: %q", indent)
+	}
+	if indent := missing.rootIndentSample(ast.NewRoot()); indent != "" {
+		t.Fatalf("nil cache root indent: %q", indent)
+	}
+	if inferred := missing.descendantRawSample(root, "between", ast.NodeDecl); inferred != ":\t" {
+		t.Fatalf("nil cache descendant raw: %q", inferred)
+	}
+	if inferred, ok := missing.siblingRawSample(sampled, "between", ast.NodeDecl); !ok || inferred != ":\t" {
+		t.Fatalf("nil cache sibling raw: %q ok=%v", inferred, ok)
+	}
+	if !missing.hasBeforeRaw(root) {
+		t.Fatal("nil cache before raw lookup")
+	}
+	if inferred := missing.descendantRawSample(ast.NewRoot(), "between", ast.NodeDecl); inferred != "" {
+		t.Fatalf("nil cache descendant miss: %q", inferred)
+	}
+	if _, ok := rawBeforeDetected(cache, ast.NewRule(".empty"), decl); ok {
+		t.Fatal("container without before raws must miss")
 	}
 }
