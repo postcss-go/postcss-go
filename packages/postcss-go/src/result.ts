@@ -12,6 +12,7 @@ import {
 
 export interface ResultProcessor {
   plugins: unknown[];
+  version?: string;
 }
 
 /** PostCSS-shaped wrapper around the source-map JSON emitted by Go. */
@@ -74,7 +75,7 @@ export class Result<P = unknown> {
   /** Resolved external map path reported by Go, when present. */
   mapFile?: string;
   root: ProcessRoot;
-  messages: Array<Record<string, unknown>> = [];
+  messages: ResultMessage[] = [];
   opts: ProcessFileOptions;
   processor: ResultProcessor;
   lastPlugin?: P;
@@ -96,17 +97,30 @@ export class Result<P = unknown> {
   }
 
   warn(text: string, options: WarningOptions = {}): Warning {
-    const plugin =
-      options.plugin ??
-      (typeof this.lastPlugin === 'object' && this.lastPlugin
+    const lastPluginName =
+      this.lastPlugin && typeof this.lastPlugin !== 'string'
         ? (this.lastPlugin as { postcssPlugin?: string }).postcssPlugin
-        : undefined);
-    const warning = new Warning(text, { ...options, plugin });
+        : undefined;
+    const warning = new Warning(text, { ...options, plugin: options.plugin ?? lastPluginName });
     this.messages.push(warning);
     return warning;
   }
 
   toString(): string {
     return this.css;
+  }
+}
+
+/** Fill omitted `parent` on dependency messages from `opts.from`. */
+export function fillDependencyParents(result: Pick<Result, 'messages' | 'opts'>): void {
+  const parent = result.opts.from;
+  if (typeof parent !== 'string') return;
+  for (const message of result.messages) {
+    if (
+      (message.type === 'dependency' || message.type === 'dir-dependency') &&
+      typeof message.parent !== 'string'
+    ) {
+      message.parent = parent;
+    }
   }
 }

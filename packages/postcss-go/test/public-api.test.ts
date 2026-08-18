@@ -8,12 +8,15 @@ import postcss, {
   AsyncPluginError,
   CssSyntaxError,
   Input,
+  InvalidPluginError,
   PreviousMap,
   Processor,
   Result,
   ResultMap,
   Root,
   SyncBackendUnavailableError,
+  UnknownPluginEventError,
+  UnsupportedPluginFeatureError,
   UnsupportedSyntaxError,
   Warning,
   getBackendCapabilities,
@@ -160,7 +163,7 @@ test('plugin prepare failures and unknown visitor events surface clear errors', 
         WeirdEvent() {},
       } as never,
     ]).process('.a{}', { from: 'input.css' }),
-  ).rejects.toThrow(/Unknown event WeirdEvent/);
+  ).rejects.toBeInstanceOf(UnknownPluginEventError);
 });
 
 test('Processor normalizes plugin packs and rejects invalid plugins eagerly', () => {
@@ -168,7 +171,18 @@ test('Processor normalizes plugin packs and rejects invalid plugins eagerly', ()
     plugins: [{ postcssPlugin: 'one' }, { postcssPlugin: 'two' }],
   });
   expect(packed.plugins).toHaveLength(2);
-  expect(() => postcss().use(null as never)).toThrow(/is not a PostCSS plugin/);
+  expect(() => postcss().use(null as never)).toThrow(InvalidPluginError);
+});
+
+test('syntax objects used as plugins throw a stable unsupported-feature error', () => {
+  const syntax = {
+    parse() {
+      return new Root();
+    },
+    stringify() {},
+  };
+  expect(() => postcss().use(syntax as never)).toThrow(UnsupportedPluginFeatureError);
+  expect(() => postcss().use(syntax as never)).toThrow(/cannot be used as plugins/);
 });
 
 test('explicit async parse and stringify use live postcss-go nodes', async () => {

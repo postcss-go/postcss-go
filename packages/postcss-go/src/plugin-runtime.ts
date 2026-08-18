@@ -19,13 +19,20 @@ import {
   type Parser,
   type ProcessRoot,
 } from './ast.js';
-import { AsyncPluginError, CssSyntaxError, isThenable, observeThenable } from './errors.js';
+import {
+  AsyncPluginError,
+  CssSyntaxError,
+  UnknownPluginEventError,
+  isThenable,
+  observeThenable,
+} from './errors.js';
 import { attachInputMetadata, Input } from './input.js';
 import { list } from './list.js';
+import { throwInvalidPlugin } from './plugin-normalize.js';
 import type { PostcssGoService } from './service.js';
 import type { AstNode as AstDTO, ProcessOptions } from './types.js';
-import type { AcceptedPlugin, Plugin } from './plugin-types.js';
-import { hydrateResultMap, Result } from './result.js';
+import type { AcceptedPlugin, Plugin, Transformer } from './plugin-types.js';
+import { fillDependencyParents, hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
 import { prepareStringifyOptions } from './source-map-output.js';
@@ -73,7 +80,8 @@ export type RuntimePlugin = {
   [key: string]: unknown;
 };
 
-export type PluginResult = Result<RuntimePlugin>;
+export type PluginResult = Result<RuntimePlugin | Transformer>;
+export type ActivePlugin = RuntimePlugin | Transformer;
 
 export interface PostcssPublic {
   (...plugins: [AcceptedPlugin[]] | AcceptedPlugin[]): Processor;
@@ -125,6 +133,7 @@ export interface ProcessorFacade {
 
 export interface ResultProcessorFacade {
   plugins: AcceptedPlugin[];
+  version?: string;
 }
 
 let processorFactory: ((plugins: AcceptedPlugin[]) => ProcessorFacade) | undefined;
@@ -215,8 +224,12 @@ async function runPluginsWithBridgeBody(
 
   const result = createResult(hydrated, options, normalized, processor);
   result.backend = service.capabilities?.backend;
-  const activePlugins: RuntimePlugin[] = [];
+  const activePlugins: ActivePlugin[] = [];
   for (const plugin of normalized) {
+    if (typeof plugin === 'function') {
+      activePlugins.push(plugin);
+      continue;
+    }
     const prepared = await preparePlugin(plugin, result);
     activePlugins.push(prepared ? { ...plugin, ...prepared } : plugin);
   }
@@ -228,25 +241,30 @@ async function runPluginsWithBridgeBody(
   const listeners = prepareVisitors(activePlugins);
 
   for (const plugin of activePlugins) {
-    await runRootListeners(plugin, plugin.Once, hydrated, helpers);
+    await runOnRoot(plugin, helpers, result);
   }
 
-  while (!hydrated.isClean) {
-    hydrated.markClean();
-    await visitNode(hydrated, listeners, helpers);
+  let current = asProcessRoot(result.root);
+  while (!current.isClean) {
+    current.markClean();
+    await visitNode(current, listeners, helpers);
+    current = asProcessRoot(result.root);
   }
 
   for (const plugin of activePlugins) {
-    await runRootListeners(plugin, plugin.OnceExit, hydrated, helpers);
+    if (typeof plugin === 'function') continue;
+    await runRootListeners(plugin, plugin.OnceExit, asProcessRoot(result.root), helpers);
   }
 
+  fillDependencyParents(result);
+  const outputRoot = asProcessRoot(result.root);
   const stringifyOptions = prepareStringifyOptions(
-    hydrated,
-    (await resolveAnnotation(options, hydrated)) as ProcessOptions,
+    outputRoot,
+    (await resolveAnnotation(options, outputRoot)) as ProcessOptions,
   );
   const stringified = liveService
-    ? await liveService.stringifyResultLive(hydrated, stringifyOptions as ProcessOptions)
-    : await service.stringifyResult(toAst(hydrated), stringifyOptions as ProcessOptions);
+    ? await liveService.stringifyResultLive(outputRoot, stringifyOptions as ProcessOptions)
+    : await service.stringifyResult(toAst(outputRoot), stringifyOptions as ProcessOptions);
   result.css = stringified.css;
   result.map = hydrateResultMap(stringified.map);
   result.mapFile = stringified.mapFile;
@@ -284,7 +302,8 @@ export function runPluginsWithBridgeSync(
 
   const result = createResult(hydrated, options, normalized, processor);
   result.backend = service.capabilities?.backend;
-  const activePlugins = normalized.map((plugin) => {
+  const activePlugins: ActivePlugin[] = normalized.map((plugin) => {
+    if (typeof plugin === 'function') return plugin;
     const prepared = preparePluginSync(plugin, result);
     return prepared ? { ...plugin, ...prepared } : plugin;
   });
@@ -296,21 +315,26 @@ export function runPluginsWithBridgeSync(
   const listeners = prepareVisitors(activePlugins);
 
   for (const plugin of activePlugins) {
-    runRootListenersSync(plugin, plugin.Once, hydrated, helpers, 'Once');
+    runOnRootSync(plugin, helpers, result);
   }
-  while (!hydrated.isClean) {
-    hydrated.markClean();
-    visitNodeSync(hydrated, listeners, helpers);
+  let current = asProcessRoot(result.root);
+  while (!current.isClean) {
+    current.markClean();
+    visitNodeSync(current, listeners, helpers);
+    current = asProcessRoot(result.root);
   }
   for (const plugin of activePlugins) {
-    runRootListenersSync(plugin, plugin.OnceExit, hydrated, helpers, 'OnceExit');
+    if (typeof plugin === 'function') continue;
+    runRootListenersSync(plugin, plugin.OnceExit, asProcessRoot(result.root), helpers, 'OnceExit');
   }
 
+  fillDependencyParents(result);
+  const outputRoot = asProcessRoot(result.root);
   const stringifyOptions = prepareStringifyOptions(
-    hydrated,
-    resolveAnnotationSync(options, hydrated) as ProcessOptions,
+    outputRoot,
+    resolveAnnotationSync(options, outputRoot) as ProcessOptions,
   );
-  const stringified = service.stringifyResultSync(hydrated, stringifyOptions as ProcessOptions);
+  const stringified = service.stringifyResultSync(outputRoot, stringifyOptions as ProcessOptions);
   result.css = stringified.css;
   result.map = hydrateResultMap(stringified.map);
   result.mapFile = stringified.mapFile;
@@ -320,10 +344,10 @@ export function runPluginsWithBridgeSync(
 function createResult(
   root: ProcessRoot,
   opts: ProcessFileOptions,
-  plugins: RuntimePlugin[],
+  plugins: ActivePlugin[],
   processor?: ResultProcessorFacade,
 ): PluginResult {
-  return new Result<RuntimePlugin>(processor ?? { plugins }, root, opts);
+  return new Result<RuntimePlugin | Transformer>(processor ?? { plugins }, root, opts);
 }
 
 async function preparePlugin(
@@ -335,7 +359,7 @@ async function preparePlugin(
   try {
     return await plugin.prepare(result);
   } catch (error) {
-    attachPluginToError(error, plugin);
+    attachPluginToError(error, plugin, result.processor);
     throw error;
   }
 }
@@ -351,21 +375,21 @@ function preparePluginSync(
     assertSynchronous(prepared, 'prepare', plugin);
     return prepared as Record<string, unknown> | void;
   } catch (error) {
-    attachPluginToError(error, plugin);
+    attachPluginToError(error, plugin, result.processor);
     throw error;
   }
 }
 
-async function normalizePlugins(plugins: AcceptedPlugin[]): Promise<RuntimePlugin[]> {
-  const normalized: RuntimePlugin[] = [];
+async function normalizePlugins(plugins: AcceptedPlugin[]): Promise<ActivePlugin[]> {
+  const normalized: ActivePlugin[] = [];
   for (const accepted of plugins) {
     normalized.push(...(await normalizeOnePlugin(accepted)));
   }
   return normalized;
 }
 
-function normalizePluginsSync(plugins: AcceptedPlugin[]): RuntimePlugin[] {
-  const normalized: RuntimePlugin[] = [];
+function normalizePluginsSync(plugins: AcceptedPlugin[]): ActivePlugin[] {
+  const normalized: ActivePlugin[] = [];
   for (const accepted of plugins) {
     normalized.push(...normalizeOnePluginSync(accepted));
   }
@@ -373,7 +397,7 @@ function normalizePluginsSync(plugins: AcceptedPlugin[]): RuntimePlugin[] {
 }
 
 /** Unwrap `{ postcss }` wrappers, then invoke creators before classifying the plugin. */
-async function normalizeOnePlugin(accepted: AcceptedPlugin): Promise<RuntimePlugin[]> {
+async function normalizeOnePlugin(accepted: AcceptedPlugin): Promise<ActivePlugin[]> {
   let plugin: unknown = unwrapPostcssProperty(accepted);
 
   if (typeof plugin === 'function' && (plugin as { postcss?: unknown }).postcss === true) {
@@ -388,18 +412,12 @@ async function normalizeOnePlugin(accepted: AcceptedPlugin): Promise<RuntimePlug
     return [plugin as RuntimePlugin];
   }
   if (typeof plugin === 'function') {
-    const transformer = plugin as (root: Node, result: PluginResult) => unknown;
-    return [
-      {
-        postcssPlugin: plugin.name || 'anonymous',
-        Once: (root, helpers) => transformer(root, helpers.result),
-      },
-    ];
+    return [plugin as Transformer];
   }
-  throw new Error(`${String(plugin)} is not a PostCSS plugin`);
+  throwInvalidPlugin(plugin);
 }
 
-function normalizeOnePluginSync(accepted: AcceptedPlugin): RuntimePlugin[] {
+function normalizeOnePluginSync(accepted: AcceptedPlugin): ActivePlugin[] {
   let plugin: unknown = unwrapPostcssProperty(accepted);
 
   if (typeof plugin === 'function' && (plugin as { postcss?: unknown }).postcss === true) {
@@ -415,15 +433,9 @@ function normalizeOnePluginSync(accepted: AcceptedPlugin): RuntimePlugin[] {
     return [plugin as RuntimePlugin];
   }
   if (typeof plugin === 'function') {
-    const transformer = plugin as (root: Node, result: PluginResult) => unknown;
-    return [
-      {
-        postcssPlugin: plugin.name || 'anonymous',
-        Once: (root, helpers) => transformer(root, helpers.result),
-      },
-    ];
+    return [plugin as Transformer];
   }
-  throw new Error(`${String(plugin)} is not a PostCSS plugin`);
+  throwInvalidPlugin(plugin);
 }
 
 function unwrapPostcssProperty(value: unknown): unknown {
@@ -472,20 +484,18 @@ const NOT_VISITORS = new Set([
 type ListenerEntry = [RuntimePlugin, Listener];
 type Listeners = Record<string, ListenerEntry[]>;
 
-function prepareVisitors(plugins: RuntimePlugin[]): Listeners {
+function prepareVisitors(plugins: ActivePlugin[]): Listeners {
   const listeners: Listeners = {};
   const add = (plugin: RuntimePlugin, type: string, callback: Listener): void => {
     (listeners[type] ??= []).push([plugin, callback]);
   };
 
   for (const plugin of plugins) {
+    if (typeof plugin === 'function') continue;
     for (const event of Object.keys(plugin)) {
       if (NOT_VISITORS.has(event)) continue;
       if (!PLUGIN_PROPS.has(event) && /^[A-Z]/.test(event)) {
-        throw new Error(
-          `Unknown event ${event} in ${plugin.postcssPlugin ?? 'anonymous'}. ` +
-            'Try to update PostCSS or postcss-go.',
-        );
+        throw new UnknownPluginEventError(event, plugin.postcssPlugin);
       }
       if (!PLUGIN_PROPS.has(event)) continue;
 
@@ -591,6 +601,39 @@ function visitNodeSync(node: Node, listeners: Listeners, helpers: PluginHelpers)
   }
 }
 
+async function runOnRoot(
+  plugin: ActivePlugin,
+  helpers: PluginHelpers,
+  result: PluginResult,
+): Promise<void> {
+  result.lastPlugin = plugin;
+  try {
+    if (typeof plugin === 'function') {
+      await plugin(asProcessRoot(result.root), result);
+      return;
+    }
+    await runRootListeners(plugin, plugin.Once, asProcessRoot(result.root), helpers);
+  } catch (error) {
+    attachPluginToError(error, plugin, result.processor);
+    throw error;
+  }
+}
+
+function runOnRootSync(plugin: ActivePlugin, helpers: PluginHelpers, result: PluginResult): void {
+  result.lastPlugin = plugin;
+  try {
+    if (typeof plugin === 'function') {
+      const returned = plugin(asProcessRoot(result.root), result);
+      assertSynchronous(returned, 'plugin', plugin);
+      return;
+    }
+    runRootListenersSync(plugin, plugin.Once, asProcessRoot(result.root), helpers, 'Once');
+  } catch (error) {
+    attachPluginToError(error, plugin, result.processor);
+    throw error;
+  }
+}
+
 async function runListener(
   plugin: RuntimePlugin,
   listener: Listener | undefined,
@@ -605,7 +648,7 @@ async function runListener(
   } catch (error) {
     if (error && typeof error === 'object') {
       node.addToError(error as Error);
-      attachPluginToError(error, plugin);
+      attachPluginToError(error, plugin, helpers.result.processor);
     }
     throw error;
   }
@@ -627,7 +670,7 @@ function runListenerSync(
   } catch (error) {
     if (error && typeof error === 'object') {
       node.addToError(error as Error);
-      attachPluginToError(error, plugin);
+      attachPluginToError(error, plugin, helpers.result.processor);
     }
     throw error;
   }
@@ -666,7 +709,11 @@ function runRootListenersSync(
   }
 }
 
-function attachPluginToError(error: unknown, plugin: RuntimePlugin): void {
+function attachPluginToError(
+  error: unknown,
+  plugin: ActivePlugin,
+  processor?: { version?: string },
+): void {
   if (!error || typeof error !== 'object') return;
   if ((error as { plugin?: unknown }).plugin === undefined) {
     Object.defineProperty(error, 'plugin', {
@@ -675,10 +722,33 @@ function attachPluginToError(error: unknown, plugin: RuntimePlugin): void {
       value: pluginName(plugin),
     });
   }
-  if (error instanceof CssSyntaxError) error.setMessage();
+  if (error instanceof CssSyntaxError) {
+    error.setMessage();
+    return;
+  }
+  const pluginVersion = pluginPostcssVersion(plugin);
+  if (
+    !pluginVersion ||
+    !processor?.version ||
+    typeof process === 'undefined' ||
+    process.env.NODE_ENV === 'production'
+  ) {
+    return;
+  }
+  const [pluginMajor = '0', pluginMinor = '0'] = pluginVersion.split('.');
+  const [runtimeMajor = '0', runtimeMinor = '0'] = processor.version.split('.');
+  if (
+    pluginMajor === runtimeMajor &&
+    Number.parseInt(pluginMinor, 10) <= Number.parseInt(runtimeMinor, 10)
+  ) {
+    return;
+  }
+  console.error(
+    `Unknown error from PostCSS plugin. Your current postcss-go version is ${processor.version}, but ${pluginName(plugin) ?? 'plugin'} uses ${pluginVersion}. Perhaps this is the source of the error below.`,
+  );
 }
 
-function assertSynchronous(value: unknown, extensionPoint: string, plugin?: RuntimePlugin): void {
+function assertSynchronous(value: unknown, extensionPoint: string, plugin?: ActivePlugin): void {
   if (isThenable(value)) {
     observeThenable(value);
     throw new AsyncPluginError(extensionPoint, pluginName(plugin));
@@ -703,6 +773,15 @@ function resolveAnnotationSync(options: ProcessFileOptions, root: ProcessRoot): 
   return { ...options, map: { ...map, annotation: annotation as string } };
 }
 
-function pluginName(plugin: RuntimePlugin | undefined): string | undefined {
-  return plugin?.postcssPlugin;
+function pluginName(plugin: ActivePlugin | undefined): string | undefined {
+  if (!plugin) return undefined;
+  if (typeof plugin === 'function') {
+    return plugin.postcssPlugin || plugin.name || 'anonymous';
+  }
+  return plugin.postcssPlugin;
+}
+
+function pluginPostcssVersion(plugin: ActivePlugin): string | undefined {
+  const version = (plugin as { postcssVersion?: unknown }).postcssVersion;
+  return typeof version === 'string' ? version : undefined;
 }

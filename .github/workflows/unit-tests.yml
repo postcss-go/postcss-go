@@ -54,7 +54,7 @@ permissions:
 
 jobs:
   node-tests:
-    name: Node / TypeScript Tests (${{ matrix.os }})
+    name: TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       GOFLAGS: -mod=mod

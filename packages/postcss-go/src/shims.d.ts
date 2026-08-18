@@ -1,3 +1,17 @@
+declare module 'postcss-import' {
+  interface PostcssImportOptions {
+    root?: string;
+    path?: string | string[];
+    skipDuplicates?: boolean;
+    warnOnEmpty?: boolean;
+  }
+
+  const atImport: ((options?: PostcssImportOptions) => { postcssPlugin: string }) & {
+    postcss: true;
+  };
+  export default atImport;
+}
+
 declare module 'pretty-hrtime' {
   export default function prettyHrtime(
     hrtime: [number, number],

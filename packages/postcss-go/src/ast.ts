@@ -23,7 +23,7 @@ import { defaultRaw } from './ast-stringifier.js';
 import { CssSyntaxError, SyncBackendUnavailableError } from './errors.js';
 import { hydrateInput } from './input.js';
 import { list } from './list.js';
-import { Warning } from './warning.js';
+import { Warning, type WarningOptions } from './warning.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
 
@@ -600,12 +600,16 @@ export class Node {
 
   warn(
     result: {
+      warn?(text: string, options?: WarningOptions): unknown;
       messages?: Array<Record<string, unknown>>;
       lastPlugin?: { postcssPlugin?: string } | string;
     },
     text: string,
-    options: { plugin?: string; index?: number; word?: string } = {},
+    options: WarningOptions = {},
   ): Record<string, unknown> {
+    if (typeof result.warn === 'function') {
+      return result.warn(text, { node: this, ...options }) as Record<string, unknown>;
+    }
     const lastPlugin =
       typeof result.lastPlugin === 'string' ? result.lastPlugin : result.lastPlugin?.postcssPlugin;
     const warning = new Warning(text, {
@@ -1359,7 +1363,8 @@ function cloneNode<T extends Node>(node: T, parent?: Container<any>): T {
       name === 'indexes' ||
       name === 'lastEach' ||
       name === 'proxyCache' ||
-      name === 'parentNode'
+      name === 'parentNode' ||
+      name === 'clean'
     ) {
       continue;
     }
@@ -1376,6 +1381,7 @@ function cloneNode<T extends Node>(node: T, parent?: Container<any>): T {
   if (node instanceof Container) {
     Object.assign(cloned, { indexes: new Map<number, number>(), lastEach: 0 });
   }
+  (cloned as unknown as { clean: boolean }).clean = false;
   cloned.setParent(parent);
   return cloned;
 }

@@ -2,7 +2,7 @@ import postcss from 'postcss';
 import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { expect, test, vi } from 'vitest';
 
-import { Document, fromAst, Node, Root, type Declaration } from '../src/ast.ts';
+import { Document, fromAst, Node, Root, type Declaration, type ProcessRoot } from '../src/ast.ts';
 import { stringifyNode } from './helpers/stringify.ts';
 import { Processor } from '../src/processor.ts';
 import {
@@ -526,6 +526,32 @@ test('AST map stringifier covers at-rules, comments, and helpers extras', async 
   expect(result.map?.toJSON().sourcesContent).toEqual([original]);
 });
 
+test('cloneBefore during a visitor rewalks the inserted node', async () => {
+  const seen: string[] = [];
+  await runPluginsWithBridge(
+    bridge(),
+    [
+      {
+        postcssPlugin: 'clone-rewalk',
+        Declaration(decl) {
+          seen.push(decl.prop);
+          if (decl.prop !== 'will-change' || !decl.parent) return;
+          const already = decl.parent.some(
+            (child) =>
+              child.type === 'decl' && (child as Declaration).prop === 'backface-visibility',
+          );
+          if (already) return;
+          decl.cloneBefore({ prop: 'backface-visibility', value: 'hidden' });
+        },
+      },
+    ],
+    'a { will-change: transform }',
+    { from: 'input.css', map: false },
+  );
+
+  expect(seen).toEqual(['will-change', 'backface-visibility']);
+});
+
 test('property mutations dirty the tree and trigger rewalk', async () => {
   const seen: string[] = [];
   await runPluginsWithBridge(
@@ -681,10 +707,112 @@ test('sync runtime accepts transformer functions and Document Once listeners', (
     { from: 'input.css', map: false },
   );
 
-  expect(events).toEqual(['transform:root', 'once:root']);
+  expect(events).toEqual(['transform:document', 'once:root']);
   expect(result.messages).toEqual([{ type: 'custom', text: 'ok' }]);
+  expect(result.lastPlugin).toEqual(expect.objectContaining({ postcssPlugin: 'doc-once' }));
 
   setProcessorFactory(undefined as never);
   expect(() => postcssApi([])).toThrow(/not been initialized/);
   setProcessorFactory((plugins) => new Processor(plugins));
+});
+
+test('transformer lastPlugin identity is the original function', async () => {
+  const transformer = Object.assign(
+    (root: ProcessRoot, result: PluginResult) => {
+      expect(result.lastPlugin).toBe(transformer);
+      expect(result.opts.from).toBe('input.css');
+      expect(result.opts.to).toBe('output.css');
+      expect(result.root).toBe(root);
+      expect(root.source?.input?.css).toContain('color: red');
+      result.messages.push({ type: 'custom', text: 'from-transformer' });
+    },
+    { postcssPlugin: 'named-transformer' },
+  );
+
+  const result = await runPluginsWithBridge(bridge(), [transformer], '.a { color: red }', {
+    from: 'input.css',
+    to: 'output.css',
+    map: false,
+  });
+
+  expect(result.lastPlugin).toBe(transformer);
+  expect(result.messages).toEqual([{ type: 'custom', text: 'from-transformer' }]);
+});
+
+test('plugins can replace result.root and stringify uses the new tree', async () => {
+  const result = await runPluginsWithBridge(
+    bridge(),
+    [
+      {
+        postcssPlugin: 'replace-root',
+        Once(_root, helpers) {
+          helpers.result.root = helpers.root();
+        },
+      },
+    ],
+    '.a { color: red }',
+    { from: 'input.css', map: false },
+  );
+
+  expect(result.css.replace(/\s+/g, '')).toBe('');
+  expect(result.root.nodes).toEqual([]);
+});
+
+test('dependency messages inherit opts.from when parent is omitted', async () => {
+  const result = await runPluginsWithBridge(
+    bridge(),
+    [
+      {
+        postcssPlugin: 'deps',
+        Once(_root, { result: pluginResult }) {
+          pluginResult.messages.push({ type: 'dependency', file: 'tokens.css' });
+          pluginResult.messages.push({
+            type: 'dir-dependency',
+            dir: 'components',
+            glob: '**/*.css',
+          });
+          pluginResult.messages.push({
+            type: 'dependency',
+            file: 'explicit.css',
+            parent: 'other.css',
+          });
+        },
+      },
+    ],
+    '.a{}',
+    { from: 'input.css', map: false },
+  );
+
+  expect(result.messages).toEqual([
+    { type: 'dependency', file: 'tokens.css', parent: 'input.css' },
+    { type: 'dir-dependency', dir: 'components', glob: '**/*.css', parent: 'input.css' },
+    { type: 'dependency', file: 'explicit.css', parent: 'other.css' },
+  ]);
+});
+
+test('node.warn delegates to result.warn so plugin and location metadata stay complete', async () => {
+  const result = await runPluginsWithBridge(
+    bridge(),
+    [
+      {
+        postcssPlugin: 'warner',
+        Declaration(decl, { result: pluginResult }) {
+          decl.warn(pluginResult, 'avoid', { word: 'red' });
+        },
+      },
+    ],
+    '.a { color: red }',
+    { from: 'input.css', map: false },
+  );
+
+  const warning = result.warnings()[0];
+  expect(warning).toMatchObject({
+    type: 'warning',
+    text: 'avoid',
+    plugin: 'warner',
+    word: 'red',
+  });
+  expect(warning.line).toBe(1);
+  expect(warning.node?.type).toBe('decl');
+  expect(warning.toString()).toContain('input.css');
 });

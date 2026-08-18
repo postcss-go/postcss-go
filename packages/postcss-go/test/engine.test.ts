@@ -221,7 +221,7 @@ test('runPluginChain preserves async lifecycle and plugin messages', async () =>
   expect(result.css).toContain('color: blue');
   expect(result.messages).toEqual(
     expect.arrayContaining([
-      { type: 'dependency', file: 'tokens.css' },
+      { type: 'dependency', file: 'tokens.css', parent: 'input.css' },
       expect.objectContaining({ type: 'warning', text: 'checked declaration' }),
     ]),
   );

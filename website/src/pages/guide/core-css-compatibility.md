@@ -35,8 +35,10 @@ and inline source maps, decoded mapping positions, `sourcesContent`, previous-ma
 composition, no-work annotation cleanup, and syntax-error positions and reasons.
 They run through the public Go facade, public Node async and sync APIs, the Node
 native service, the executable CLI (with an identity plugin so the parse path
-runs), the real Go WASM binary, and a real browser Worker. Plugin-context parity
-beyond the shared mutation and visitor-ordering cases is tracked separately.
+runs), the real Go WASM binary, and a real browser Worker. Plugin context,
+warnings, dependency messages, mutation-heavy visitors, and asynchronous plugins
+are covered by the shared plugin contract suite against native, WASM Worker, and
+upstream PostCSS.
 
 The CLI uses the shared `noWork` path when no plugins are configured. That
 path updates map annotations without parsing or re-stringifying otherwise

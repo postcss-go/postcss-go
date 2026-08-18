@@ -64,13 +64,13 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 - [x] Support synchronous and asynchronous plugin callbacks and Promise rejection on the asynchronous path.
 - [x] Preserve baseline AST mutation, dirty rewalk, traversal, and visitor ordering semantics.
 - [x] Implement `helpers.postcss` entirely with postcss-go-owned classes and services.
-- [ ] Preserve complete plugin context: `result`, `root`, `opts`, `from`, `to`, source/input data, custom messages, and `lastPlugin`.
-- [ ] Complete warning, dependency message, directory-dependency message, and plugin error behavior.
+- [x] Preserve complete plugin context: `result`, `root`, `opts`, `from`, `to`, source/input data, custom messages, and `lastPlugin`.
+- [x] Complete warning, dependency message, directory-dependency message, and plugin error behavior.
 - [x] Detect thenables returned by supported synchronous extension points: plugin creators, `prepare`, visitors, `Once`, `OnceExit`, and annotation callbacks.
 - [x] Throw a stable asynchronous-plugin error from `processSync()` instead of waiting or switching execution modes.
-- [ ] Provide stable diagnostics for unsupported plugin features without loading PostCSS.
-- [ ] Validate representative real plugins, including mutation-heavy and asynchronous plugins.
-- [ ] Run the same plugin contract suite against native, WASM Worker, and upstream PostCSS reference behavior.
+- [x] Provide stable diagnostics for unsupported plugin features without loading PostCSS.
+- [x] Validate representative real plugins, including mutation-heavy and asynchronous plugins.
+- [x] Run the same plugin contract suite against native, WASM Worker, and upstream PostCSS reference behavior.
 
 ### Node N-API and synchronous execution
 
@@ -151,7 +151,7 @@ N-API synchronous API.
 - [ ] Pack `@postcss-go/core` and all platform packages into tarballs.
 - [ ] Install the tarballs in clean projects without workspace links.
 - [ ] Verify the packed dependency tree contains no `postcss`, `postcss-load-config`, or `postcss-reporter`.
-- [ ] Verify async processing with synchronous and asynchronous plugins.
+- [x] Verify async processing with synchronous and asynchronous plugins.
 - [x] Verify N-API `parseSync`, `processSync`, `stringifySync`, and `noWorkSync`.
 - [x] Verify `processSync()` rejects every Promise-returning extension point.
 - [x] Verify missing native artifacts produce stable async and sync diagnostics without changing transports.
@@ -168,8 +168,8 @@ N-API synchronous API.
 - [x] Remove all production and published-package dependencies on PostCSS.
 - [x] Implement the explicit synchronous service and plugin execution path.
 - [x] Export and test the complete sync and async public APIs.
-- [ ] Complete result, input, warning, error, plugin-context, and custom-syntax compatibility.
-- [ ] Run real-plugin and cross-backend contract suites.
+- [x] Complete result, input, warning, error, plugin-context, and custom-syntax compatibility.
+- [x] Run real-plugin and cross-backend contract suites.
 - [ ] Complete the native build, packaging, installation, and publication matrix.
 - [ ] Update public compatibility and migration documentation.
 - [ ] Evaluate opaque AST handles only after the required replacement target is complete and benchmarked.

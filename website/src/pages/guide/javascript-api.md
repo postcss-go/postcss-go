@@ -42,8 +42,26 @@ console.log(result.css);
 ```
 
 Plugins receive live postcss-go `Root`, `Rule`, `Declaration`, and other node
-instances. `result`, `result.opts`, messages, warnings, `lastPlugin`, and
-`helpers.postcss` are implemented by this package.
+instances. `result`, `result.root`, `result.opts` (`from`, `to`, and other process
+options), source/input metadata, custom `result.messages`, warnings,
+`lastPlugin`, and `helpers.postcss` are implemented by this package.
+
+`result.warn()` and `node.warn(result, text)` record `Warning` objects with
+plugin, node, source, input, line, and column metadata. File and directory
+dependency messages (`type: 'dependency'` / `type: 'dir-dependency'`) are
+preserved; omitted `parent` values are filled from `opts.from`. Plugin callback
+errors are attributed to the active plugin and, for `CssSyntaxError`, refresh
+the `plugin:` message prefix.
+
+Unsupported plugin values fail with named errors without loading PostCSS:
+`InvalidPluginError` for non-plugins, `UnknownPluginEventError` for unknown
+visitor events, and `UnsupportedPluginFeatureError` when a syntax object is
+used as a plugin. Custom parser, syntax, and stringifier _process options_
+still throw `UnsupportedSyntaxError`.
+
+The plugin contract suite in `packages/postcss-go/test/plugin-contract.test.ts`
+runs the same lifecycle, mutation, warning, message, and async-visitor cases
+against the native Node backend, the browser WASM Worker, and upstream PostCSS.
 
 ## Parse and stringify
 
