@@ -1,11 +1,123 @@
 package postcss
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+type coreCSSContract struct {
+	CSS            string          `json:"css"`
+	From           string          `json:"from"`
+	To             string          `json:"to"`
+	InvalidCSS     string          `json:"invalidCss"`
+	PreviousMap    json.RawMessage `json:"previousMap"`
+	PreviousSource string          `json:"previousSource"`
+	PreviousMapURL string          `json:"previousMapUrl"`
+	Error          struct {
+		Line   int    `json:"line"`
+		Column int    `json:"column"`
+		Reason string `json:"reason"`
+	} `json:"error"`
+}
+
+func loadCoreCSSContract(t *testing.T) coreCSSContract {
+	t.Helper()
+	data, err := os.ReadFile("../../packages/postcss-go/test/testdata/core-css-contract.json")
+	if err != nil {
+		t.Fatalf("read Core CSS contract: %v", err)
+	}
+	var contract coreCSSContract
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatalf("decode Core CSS contract: %v", err)
+	}
+	return contract
+}
+
+func assertUnchangedCoreCSS(t *testing.T, css string, want string) {
+	t.Helper()
+	if css != want {
+		t.Fatalf("Core CSS contract output diverged from input\nwant:\n%s\ngot:\n%s", want, css)
+	}
+}
+
+func TestCoreCSSCompatibilityContract(t *testing.T) {
+	contract := loadCoreCSSContract(t)
+	root, err := ParseWithOptions(contract.CSS, ParseOptions{From: contract.From})
+	if err != nil {
+		t.Fatalf("parse contract CSS: %v", err)
+	}
+	assertUnchangedCoreCSS(t, Stringify(root), contract.CSS)
+
+	inline := false
+	processed, err := New().Process(contract.CSS, ProcessOptions{
+		From:                  contract.From,
+		To:                    contract.To,
+		Map:                   true,
+		MapInline:             &inline,
+		MapAnnotationDisabled: true,
+	})
+	if err != nil {
+		t.Fatalf("process contract CSS: %v", err)
+	}
+	assertUnchangedCoreCSS(t, processed.CSS, contract.CSS)
+	var sourceMap struct {
+		Version  int      `json:"version"`
+		Sources  []string `json:"sources"`
+		Mappings string   `json:"mappings"`
+	}
+	if err := json.Unmarshal([]byte(processed.Map), &sourceMap); err != nil {
+		t.Fatalf("decode contract source map: %v", err)
+	}
+	if sourceMap.Version != 3 || sourceMap.Mappings == "" {
+		t.Fatalf("unexpected contract source map: %#v", sourceMap)
+	}
+	if len(sourceMap.Sources) == 0 || !strings.HasSuffix(sourceMap.Sources[0], "input.css") {
+		t.Fatalf("unexpected contract map sources: %#v", sourceMap.Sources)
+	}
+
+	composed, err := New().Process(contract.CSS, ProcessOptions{
+		From:                  contract.From,
+		To:                    contract.To,
+		Map:                   true,
+		MapInline:             &inline,
+		MapAnnotationDisabled: true,
+		PreviousMap:           string(contract.PreviousMap),
+		PreviousMapURL:        contract.PreviousMapURL,
+	})
+	if err != nil {
+		t.Fatalf("process contract CSS with previous map: %v", err)
+	}
+	assertUnchangedCoreCSS(t, composed.CSS, contract.CSS)
+	if err := json.Unmarshal([]byte(composed.Map), &sourceMap); err != nil {
+		t.Fatalf("decode composed contract source map: %v", err)
+	}
+	if sourceMap.Version != 3 || sourceMap.Mappings == "" {
+		t.Fatalf("unexpected composed contract source map: %#v", sourceMap)
+	}
+	foundPrevious := false
+	for _, source := range sourceMap.Sources {
+		if strings.HasSuffix(source, contract.PreviousSource) {
+			foundPrevious = true
+			break
+		}
+	}
+	if !foundPrevious {
+		t.Fatalf("composed contract map is missing %q: %#v", contract.PreviousSource, sourceMap.Sources)
+	}
+
+	_, err = ParseWithOptions(contract.InvalidCSS, ParseOptions{From: contract.From})
+	var syntaxErr *CssSyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("expected CssSyntaxError, got %T (%v)", err, err)
+	}
+	if syntaxErr.Line != contract.Error.Line || syntaxErr.Column != contract.Error.Column || syntaxErr.Reason != contract.Error.Reason {
+		t.Fatalf("unexpected contract error: %d:%d %q", syntaxErr.Line, syntaxErr.Column, syntaxErr.Reason)
+	}
+}
 
 func TestParseStringify(t *testing.T) {
 	css := `

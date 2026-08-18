@@ -14,6 +14,7 @@ on:
       - pnpm-workspace.yaml
       - tsconfig.base.json
       - 'internal/**'
+      - 'pkg/**'
       - 'cmd/**'
       - 'benchmark/fixtures/**'
       - 'packages/**'
@@ -33,6 +34,7 @@ on:
       - pnpm-workspace.yaml
       - tsconfig.base.json
       - 'internal/**'
+      - 'pkg/**'
       - 'cmd/**'
       - 'benchmark/fixtures/**'
       - 'packages/**'
@@ -52,7 +54,7 @@ permissions:
 
 jobs:
   node-tests:
-    name: Node / TypeScript Tests (${{ matrix.os }})
+    name: TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       GOFLAGS: -mod=mod
@@ -89,7 +91,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test
+        run: pnpm test:js
 
   upstream-tests:
     name: Upstream PostCSS Test Suite

@@ -26,7 +26,7 @@ flowchart LR
 CSS → tokenizer → parser → AST → plugins → stringifier → Result
 ```
 
-`postcss.New(...).Process(css, options)` parses input, runs plugin hooks (`Prepare` → `Once` → enter/exit visitors → `OnceExit`), then stringifies. Source-map generation, previous-map composition, and annotation emission are Go-owned. Errors stop the run; warnings accumulate on `Result.Messages`.
+`api.New(...).Process(css, options)` parses input, runs plugin hooks (`Prepare` → `Once` → enter/exit visitors → `OnceExit`), then stringifies. Source-map generation, previous-map composition, and annotation emission are Go-owned. Errors stop the run; warnings accumulate on `Result.Messages`.
 
 ## AST model
 
@@ -34,16 +34,17 @@ Five node kinds: `Root`, `Rule`, `AtRule`, `Declaration`, `Comment`. Nodes share
 
 ## Go packages
 
-| Package       | Responsibility                     |
-| ------------- | ---------------------------------- |
-| `tokenizer`   | Lexical scanning                   |
-| `parser`      | AST construction                   |
-| `ast`         | Node types, mutation, traversal    |
-| `processor`   | Plugin lifecycle and orchestration |
-| `sourcemap`   | Inputs, locations, previous maps   |
-| `stringifier` | CSS output and generated maps      |
-| `result`      | CSS, root, maps, warnings          |
-| `postcss`     | Public Go facade                   |
+| Package            | Responsibility                                 |
+| ------------------ | ---------------------------------------------- |
+| `pkg/api`          | Public Go library facade                       |
+| `tokenizer`        | Lexical scanning                               |
+| `parser`           | AST construction                               |
+| `ast`              | Node types, mutation, traversal                |
+| `processor`        | Plugin lifecycle and orchestration             |
+| `sourcemap`        | Inputs, locations, previous maps               |
+| `stringifier`      | CSS output and generated maps                  |
+| `result`           | CSS, root, maps, warnings                      |
+| `internal/postcss` | Assembled core used by native, WASM, and codec |
 
 The tokenizer never builds AST nodes; the parser never runs plugins; the processor coordinates without owning tokenization or serialization.
 

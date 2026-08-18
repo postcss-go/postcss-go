@@ -32,7 +32,10 @@ export interface Plugin {
   [key: string]: unknown;
 }
 
-export type Transformer = (root: Root, result: PluginResult) => void | Promise<void>;
+export type Transformer = ((
+  root: Root | Document,
+  result: PluginResult,
+) => void | Promise<void>) & { postcssPlugin?: string };
 export type PluginCreator = (() => Plugin | Promise<Plugin>) & { postcss?: true };
 export type AcceptedPlugin =
   | Plugin

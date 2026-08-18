@@ -16,6 +16,28 @@ export interface RangePosition {
   column: number;
 }
 
+/** Wire shape for Go `CssSyntaxError` metadata across native and WASM transports. */
+export interface CssSyntaxErrorDTO {
+  name?: string;
+  message?: string;
+  reason?: string;
+  line?: number;
+  column?: number;
+  endLine?: number;
+  endColumn?: number;
+  source?: string;
+  file?: string;
+  plugin?: string;
+  input?: {
+    source?: string;
+    file?: string;
+    line?: number;
+    column?: number;
+    offset?: number;
+    sourceMapPresent?: boolean;
+  };
+}
+
 /** A PostCSS-compatible syntax error owned by postcss-go. */
 export class CssSyntaxError extends Error {
   reason: string;
@@ -169,26 +191,37 @@ export class UnsupportedAstNodeError extends Error {
   }
 }
 
-/** Wire shape for Go syntax errors (WASM ErrorDTO and native N-API prefix+JSON). */
-export interface CssSyntaxErrorDTO {
-  name?: string;
-  message?: string;
-  reason?: string;
-  line?: number;
-  column?: number;
-  endLine?: number;
-  endColumn?: number;
-  source?: string;
-  file?: string;
-  plugin?: string;
-  input?: {
-    source?: string;
-    file?: string;
-    line?: number;
-    column?: number;
-    offset?: number;
-    sourceMapPresent?: boolean;
-  };
+/** Raised when a value passed to the processor is not a PostCSS plugin. */
+export class InvalidPluginError extends Error {
+  constructor(plugin: unknown) {
+    super(`${String(plugin)} is not a PostCSS plugin`);
+    this.name = 'InvalidPluginError';
+  }
+}
+
+/** Raised when a plugin registers a visitor event the runtime does not implement. */
+export class UnknownPluginEventError extends Error {
+  constructor(event: string, plugin?: string) {
+    super(
+      `Unknown event ${event} in ${plugin ?? 'anonymous'}. Try to update PostCSS or postcss-go.`,
+    );
+    this.name = 'UnknownPluginEventError';
+  }
+}
+
+/**
+ * Raised for plugin-shaped values the runtime will not execute, without loading
+ * PostCSS. Custom parser/syntax/stringifier process options still use
+ * `UnsupportedSyntaxError`.
+ */
+export class UnsupportedPluginFeatureError extends Error {
+  constructor(
+    feature: string,
+    detail = `${feature} are not supported by the postcss-go plugin runtime`,
+  ) {
+    super(detail);
+    this.name = 'UnsupportedPluginFeatureError';
+  }
 }
 
 /** Rebuild a structured `CssSyntaxError` from a Go DTO. */
@@ -207,8 +240,8 @@ export function cssSyntaxErrorFromDto(
     plugin: dto.plugin,
     input: dto.input
       ? {
-          source: dto.input.source,
-          file: dto.input.file,
+          source: dto.input.source ?? fallback.source,
+          file: dto.input.file ?? fallback.file,
           line: dto.input.line,
           column: dto.input.column,
           offset: dto.input.offset,

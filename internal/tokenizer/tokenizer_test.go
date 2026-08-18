@@ -127,6 +127,19 @@ func TestTokenizerCategoriesAndRanges(t *testing.T) {
 			{Kind: "word", Start: 4, End: 4},
 		}},
 		{name: "utf8", input: "中🔥", want: []Token{{Kind: "word", Start: 0, End: len("中🔥") - 1}}},
+		{name: "quoted-url", input: `url(")")`, want: []Token{
+			{Kind: "word", Start: 0, End: 2},
+			{Kind: "(", Start: 3, End: 3},
+			{Kind: "string", Start: 4, End: 6},
+			{Kind: ")", Start: 7, End: 7},
+		}},
+		{name: "hex-escape", input: `\0a \09 \z `, want: []Token{
+			{Kind: "word", Start: 0, End: 3},
+			{Kind: "word", Start: 4, End: 7},
+			{Kind: "word", Start: 8, End: 9},
+			{Kind: "space", Start: 10, End: 10},
+		}},
+		{name: "unclosed-paren", input: "(", want: []Token{{Kind: "(", Start: 0, End: 0}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -165,6 +178,38 @@ func TestTokenizerPositionUsesByteOffsets(t *testing.T) {
 		}
 		if got := tok.Position(); got != want {
 			t.Fatalf("position() = %d, want %d", got, want)
+		}
+	}
+}
+
+func TestTokenizerIgnoreUnclosedPerToken(t *testing.T) {
+	input := "How's it going ("
+	got := tokenizeAll(t, input, Options{}, NextOptions{IgnoreUnclosed: true})
+	want := []Token{
+		{Kind: "word", Start: 0, End: 2},
+		{Kind: "string", Start: 3, End: 4},
+		{Kind: "space", Start: 5, End: 5},
+		{Kind: "word", Start: 6, End: 7},
+		{Kind: "space", Start: 8, End: 8},
+		{Kind: "word", Start: 9, End: 13},
+		{Kind: "space", Start: 14, End: 14},
+		{Kind: "(", Start: 15, End: 15},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tokens = %#v, want %#v", got, want)
+	}
+}
+
+func TestTokenizerComplicatedBrackets(t *testing.T) {
+	input := "(())(\"\")(/**/)(\\\\)(\n)("
+	got := tokenizeAll(t, input, Options{}, NextOptions{})
+	wantKinds := []string{"(", "(", ")", ")", "(", "string", ")", "(", "comment", ")", "(", "word", ")", "(", "space", ")", "("}
+	if len(got) != len(wantKinds) {
+		t.Fatalf("token count = %d (%#v), want %d", len(got), got, len(wantKinds))
+	}
+	for index, kind := range wantKinds {
+		if got[index].Kind != kind {
+			t.Fatalf("token[%d] = %#v, want kind %q", index, got[index], kind)
 		}
 	}
 }

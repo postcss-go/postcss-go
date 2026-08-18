@@ -30,7 +30,21 @@ export interface ResultMessage {
   type: string;
   text?: string;
   plugin?: string;
+  parent?: string;
+  file?: string;
+  dir?: string;
+  glob?: string;
   [property: string]: unknown;
+}
+
+export interface DependencyMessage extends ResultMessage {
+  type: 'dependency';
+  file: string;
+}
+
+export interface DirDependencyMessage extends ResultMessage {
+  type: 'dir-dependency';
+  dir: string;
 }
 
 export interface RawValue {

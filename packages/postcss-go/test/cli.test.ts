@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
 import cli from './helpers/cli.ts';
+import {
+  coreCssContract,
+  expectCoreCssSourceMap,
+  expectUnchangedCoreCss,
+  stripSourceMapAnnotation,
+} from './helpers/core-css-contract.ts';
 import tmp from './helpers/tmp.ts';
 import read from './helpers/read.ts';
 
@@ -96,6 +102,41 @@ test('works with defaults', async () => {
 
   expect(error, stderr).toBeFalsy();
   expect((await read(output)).trim()).toBe((await read('test/fixtures/a.css')).trim());
+});
+
+test('the executable CLI follows the shared Core CSS contract', async () => {
+  const directory = tmp('core-cli');
+  const input = path.join(directory, 'input.css');
+  const output = path.join(directory, 'output.css');
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(input, coreCssContract.css);
+
+  const valid = await cli([
+    input,
+    '-o',
+    output,
+    '--map',
+    '-u',
+    path.resolve('test/fixtures/plugins/identity.mjs'),
+  ]);
+  expect(valid.error, valid.stderr).toBeFalsy();
+  expectUnchangedCoreCss(stripSourceMapAnnotation(await read(output)));
+  expectCoreCssSourceMap(await read(`${output}.map`));
+
+  await fs.writeFile(input, coreCssContract.errors[0].css);
+  const invalid = await cli([
+    input,
+    '-o',
+    output,
+    '--no-map',
+    '-u',
+    path.resolve('test/fixtures/plugins/identity.mjs'),
+  ]);
+  expect(invalid.error).toBeTruthy();
+  expect(invalid.stderr).toContain(
+    `input.css:${coreCssContract.errors[0].line}:${coreCssContract.errors[0].column}`,
+  );
+  expect(invalid.stderr).toContain(coreCssContract.errors[0].reason);
 });
 
 test('writes to stdout by default', async () => {

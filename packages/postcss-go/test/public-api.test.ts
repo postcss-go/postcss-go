@@ -8,12 +8,15 @@ import postcss, {
   AsyncPluginError,
   CssSyntaxError,
   Input,
+  InvalidPluginError,
   PreviousMap,
   Processor,
   Result,
   ResultMap,
   Root,
   SyncBackendUnavailableError,
+  UnknownPluginEventError,
+  UnsupportedPluginFeatureError,
   UnsupportedSyntaxError,
   Warning,
   getBackendCapabilities,
@@ -32,6 +35,7 @@ import postcss, {
   toResult,
 } from '../src/index.ts';
 import { dispatchProcess } from '../src/dispatch.ts';
+import { installNativeSyncCssRuntime } from '../src/native.ts';
 
 afterEach(() => {
   setPreviousMapFileLoader((file) => {
@@ -52,6 +56,37 @@ test('default entry point creates a reusable Processor', () => {
   expect(postcss.default).toBe(postcss);
   expect(postcss.parse('.a{}')).toBeInstanceOf(Root);
   expect(postcss({ postcssPlugin: 'one' }, { postcssPlugin: 'two' }).plugins).toHaveLength(2);
+});
+
+test('Node compatibility parse, string insertion, and default stringify require the Go runtime', () => {
+  const previous = globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE;
+  globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE = '1';
+  try {
+    installNativeSyncCssRuntime();
+    expect(() => postcss.parse('.a{}')).toThrow(SyncBackendUnavailableError);
+    expect(() => new Root().append('.a{}')).toThrow(SyncBackendUnavailableError);
+    expect(() => new Root().toString()).toThrow(SyncBackendUnavailableError);
+  } finally {
+    if (previous === undefined) delete globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE;
+    else globalThis.process.env.POSTCSS_GO_DISABLE_NATIVE = previous;
+    installNativeSyncCssRuntime();
+  }
+});
+
+test('Node builder adapter replays Go chunks with live node identities', () => {
+  const css = '.a { color: red; }';
+  const root = postcss.parse(css);
+  const chunks: string[] = [];
+  const boundaries: Array<{ node?: unknown; type?: string }> = [];
+
+  postcss.stringify(root, (chunk, node, type) => {
+    chunks.push(chunk);
+    if (type) boundaries.push({ node, type });
+  });
+
+  expect(chunks.join('')).toBe(css);
+  expect(boundaries).toContainEqual({ node: root.first, type: 'start' });
+  expect(boundaries).toContainEqual({ node: root.first, type: 'end' });
 });
 
 test('postcss.plugin creates named plugin creators', async () => {
@@ -128,7 +163,7 @@ test('plugin prepare failures and unknown visitor events surface clear errors', 
         WeirdEvent() {},
       } as never,
     ]).process('.a{}', { from: 'input.css' }),
-  ).rejects.toThrow(/Unknown event WeirdEvent/);
+  ).rejects.toBeInstanceOf(UnknownPluginEventError);
 });
 
 test('Processor normalizes plugin packs and rejects invalid plugins eagerly', () => {
@@ -136,7 +171,18 @@ test('Processor normalizes plugin packs and rejects invalid plugins eagerly', ()
     plugins: [{ postcssPlugin: 'one' }, { postcssPlugin: 'two' }],
   });
   expect(packed.plugins).toHaveLength(2);
-  expect(() => postcss().use(null as never)).toThrow(/is not a PostCSS plugin/);
+  expect(() => postcss().use(null as never)).toThrow(InvalidPluginError);
+});
+
+test('syntax objects used as plugins throw a stable unsupported-feature error', () => {
+  const syntax = {
+    parse() {
+      return new Root();
+    },
+    stringify() {},
+  };
+  expect(() => postcss().use(syntax as never)).toThrow(UnsupportedPluginFeatureError);
+  expect(() => postcss().use(syntax as never)).toThrow(/cannot be used as plugins/);
 });
 
 test('explicit async parse and stringify use live postcss-go nodes', async () => {

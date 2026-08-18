@@ -632,15 +632,33 @@ func ruleHeader(cache *renderCache, node *ast.Rule) string {
 
 func atRuleHeader(node *ast.AtRule) string {
 	params := rawValue(node, "params", strings.TrimSpace(node.Params))
-	afterName := ""
-	if hasRaw(node, "afterName") {
-		afterName = rawString(node, "afterName", "")
-	} else if params != "" {
-		afterName = " "
-	} else {
-		return "@" + node.Name
+	return escapeHTMLInCSS("@" + node.Name + atRuleAfterName(node, params) + params)
+}
+
+func atRuleAfterName(node *ast.AtRule, params string) string {
+	if value, ok := lookupRaw(node, "afterName"); ok {
+		if text, ok := value.(string); ok {
+			return text
+		}
+		return " "
 	}
-	return escapeHTMLInCSS("@" + node.Name + afterName + params)
+	if params != "" {
+		if parent := node.Parent(); parent != nil {
+			for _, sibling := range parent.Children() {
+				other, ok := sibling.(*ast.AtRule)
+				if !ok || other == node || strings.TrimSpace(other.Params) == "" {
+					continue
+				}
+				if value, ok := lookupRaw(other, "afterName"); ok {
+					if text, ok := value.(string); ok {
+						return text
+					}
+				}
+			}
+		}
+		return " "
+	}
+	return ""
 }
 
 func declarationText(cache *renderCache, node *ast.Declaration) string {

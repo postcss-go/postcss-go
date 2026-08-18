@@ -87,7 +87,7 @@ jobs:
         run: pnpm build
 
   browser-wasm:
-    name: Browser WASM Smoke
+    name: Core CSS Contract / Browser WASM
     runs-on: ubuntu-latest
     env:
       GOFLAGS: -mod=mod
@@ -121,3 +121,6 @@ jobs:
 
       - name: Test browser WASM
         run: pnpm --filter @postcss-go/core test:browser-wasm
+
+      - name: Test cross-surface Core CSS contract
+        run: pnpm test:core-css-contract

@@ -1,9 +1,19 @@
 import { afterAll, expect, test } from 'vitest';
 
-import { createNativeService, isNativeBridgeAvailable } from '../src/native.ts';
+import { createNativeService } from '../src/native.ts';
 import { Processor } from '../src/processor.ts';
 import { createBrowserProcessor, type BrowserPostcssGoService } from '../src/wasm/browser.ts';
 import type { PostcssGoService } from '../src/service.ts';
+import {
+  coreCssContract,
+  coreCssMapOptions,
+  coreCssPreviousMapOptions,
+  expectCoreCssPreviousMap,
+  expectCoreCssSourceMap,
+  expectUnchangedCoreCss,
+  normalizeContractAst,
+  stripSourceMapAnnotation,
+} from './helpers/core-css-contract.ts';
 import { RealWasmWorker } from './helpers/real-wasm-worker.ts';
 
 type OwnedService = {
@@ -31,8 +41,7 @@ function createNativeOwnedService(): OwnedService {
   };
 }
 
-const owned: OwnedService[] = [createWasmService()];
-if (isNativeBridgeAvailable()) owned.unshift(createNativeOwnedService());
+const owned: OwnedService[] = [createNativeOwnedService(), createWasmService()];
 
 afterAll(async () => {
   for (const entry of owned) await entry.close();
@@ -40,69 +49,98 @@ afterAll(async () => {
 
 for (const entry of owned) {
   test(`${entry.name}: shared parse / process / stringify / noWork contract`, async () => {
-    const { service, name } = entry;
-    const css = '.card { color: tomato; }';
+    const { service } = entry;
+    const css = coreCssContract.css;
 
-    const parsed = await service.parse(css, { from: `${name}.css` });
-    expect(parsed.root).toMatchObject({ type: 'root' });
+    for (const scenario of coreCssContract.roundTrips) {
+      const parsed = await service.parse(scenario.css, { from: coreCssContract.from });
+      expect(normalizeContractAst(parsed.root), scenario.name).toEqual(scenario.ast);
+      const stringified = await service.stringifyResult(parsed.root, {
+        from: coreCssContract.from,
+        map: false,
+      });
+      expect(stringified.css, scenario.name).toBe(scenario.css);
+    }
 
     const processed = await service.process(css, {
-      from: `${name}.css`,
-      map: { inline: false, annotation: false },
+      from: coreCssContract.from,
+      map: coreCssMapOptions,
     });
-    expect(processed.css).toContain('tomato');
+    expectUnchangedCoreCss(processed.css);
     expect(processed.root).toMatchObject({ type: 'root' });
-
-    const stringified = await service.stringifyResult(parsed.root, {
-      from: `${name}.css`,
-      map: false,
-    });
-    expect(stringified.css).toContain('.card');
 
     const noWork = await service.noWork(css, { map: false });
     expect(noWork.css).toBe(css);
+    const staleAnnotation = `${css}/*# sourceMappingURL=stale.css.map */\n`;
+    expect(
+      stripSourceMapAnnotation((await service.noWork(staleAnnotation, { map: false })).css),
+    ).toBe(coreCssContract.noWorkCleanCss);
+
+    const roots = await Promise.all([
+      service.parse('a { color: red; }\n', { from: 'contract/a.css' }),
+      service.parse('b { color: blue; }\n', { from: 'contract/b.css' }),
+    ]);
+    const document = {
+      type: 'document',
+      raws: {},
+      nodes: roots.map((result) => result.root),
+    } as never;
+    expect((await service.stringifyResult(document, { map: false })).css).toBe(
+      coreCssContract.documentCss,
+    );
   });
 
   test(`${entry.name}: shared source-map contract`, async () => {
-    const { service, name } = entry;
-    const css = '.hero { color: crimson; }\n';
+    const { service } = entry;
+    const css = coreCssContract.css;
 
     const withMap = await service.process(css, {
-      from: `${name}-map.css`,
-      to: `${name}-map.out.css`,
-      map: { inline: false, annotation: false },
+      from: coreCssContract.from,
+      to: coreCssContract.to,
+      map: coreCssMapOptions,
     });
-    expect(withMap.css).toContain('crimson');
-    expect(typeof withMap.map).toBe('string');
-    const map = JSON.parse(String(withMap.map)) as {
-      version: number;
-      sources?: string[];
-      mappings?: string;
-    };
-    expect(map.version).toBe(3);
-    expect(map.mappings).toEqual(expect.any(String));
-    expect(map.mappings!.length).toBeGreaterThan(0);
-    expect(map.sources?.some((source) => source.includes(`${name}-map`))).toBe(true);
+    expectUnchangedCoreCss(withMap.css);
+    expectCoreCssSourceMap(withMap.map);
+
+    const withPrev = await service.process(css, {
+      from: coreCssContract.from,
+      to: coreCssContract.to,
+      map: coreCssPreviousMapOptions,
+    });
+    expectUnchangedCoreCss(withPrev.css);
+    expectCoreCssPreviousMap(withPrev.map);
 
     const stringified = await service.stringifyResult(
-      (await service.parse(css, { from: `${name}-map.css` })).root,
+      (await service.parse(css, { from: coreCssContract.from })).root,
       {
-        from: `${name}-map.css`,
-        to: `${name}-map.out.css`,
-        map: { inline: false, annotation: false },
+        from: coreCssContract.from,
+        to: coreCssContract.to,
+        map: coreCssMapOptions,
       },
     );
-    expect(typeof stringified.map).toBe('string');
-    expect(JSON.parse(String(stringified.map)).version).toBe(3);
+    expectCoreCssSourceMap(stringified.map);
+
+    const inline = await service.process(css, {
+      from: coreCssContract.from,
+      to: coreCssContract.to,
+      map: { inline: true },
+    });
+    expect(inline.css).toContain('sourceMappingURL=data:application/json;base64,');
   });
 
   test(`${entry.name}: shared syntax-error contract`, async () => {
-    const { service, name } = entry;
-    await expect(service.process('{', { from: `${name}-broken.css` })).rejects.toMatchObject({
-      name: 'CssSyntaxError',
-      line: expect.any(Number),
-      column: expect.any(Number),
-    });
+    const { service } = entry;
+    for (const error of coreCssContract.errors) {
+      await expect(
+        service.process(error.css, { from: coreCssContract.from }),
+        error.name,
+      ).rejects.toMatchObject({
+        name: 'CssSyntaxError',
+        line: error.line,
+        column: error.column,
+        reason: error.reason,
+      });
+    }
   });
 }
 
@@ -120,8 +158,6 @@ test('native Node and browser WASM Worker share the async plugin contract', asyn
   expect(wasmResult.css).toContain('navy');
   expect(wasmResult.backend).toBe('wasm-worker');
   await wasm.close();
-
-  if (!isNativeBridgeAvailable()) return;
 
   const native = createNativeService();
   try {
@@ -158,27 +194,25 @@ test('native Node and browser WASM Worker share visitor mutation + OnceExit orde
   const wasmProc = createBrowserProcessor([createOrderingPlugin(wasmEvents)], {
     worker: new RealWasmWorker(),
   });
-  const wasmResult = await wasmProc.process('.box { color: red; display: block }', {
+  const wasmResult = await wasmProc.process(coreCssContract.mutation.css, {
     from: 'wasm-order.css',
   });
-  expect(wasmResult.css).toContain('teal');
+  expect(wasmResult.css).toBe(coreCssContract.mutation.expectedCss);
   expect(wasmEvents[0]).toBe('once');
   expect(wasmEvents.at(-1)).toBe('once-exit');
   expect(wasmEvents).toContain('decl:color');
   expect(wasmEvents).toContain('decl:display');
   await wasmProc.close();
 
-  if (!isNativeBridgeAvailable()) return;
-
   const nativeEvents: string[] = [];
   const native = createNativeService();
   try {
     const nativeResult = await new Processor([createOrderingPlugin(nativeEvents)]).process(
-      '.box { color: red; display: block }',
+      coreCssContract.mutation.css,
       { from: 'native-order.css' },
       { service: native },
     );
-    expect(nativeResult.css).toContain('teal');
+    expect(nativeResult.css).toBe(coreCssContract.mutation.expectedCss);
     expect(nativeEvents).toEqual(wasmEvents);
   } finally {
     await native.close();

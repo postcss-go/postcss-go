@@ -52,6 +52,7 @@
     "build:wasm": "node ../../scripts/build-wasm.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.types.json",
     "test": "pnpm run build && vitest run",
+    "test:core-css-contract": "pnpm run build && vitest run test/core-css-contract.test.ts test/wasm-backend-contract.test.ts test/plugin-contract.test.ts test/cli.test.ts",
     "test:browser-wasm": "pnpm run build:js && pnpm run build:wasm && node ../../scripts/browser-wasm-smoke.mjs",
     "test:coverage": "pnpm run build && vitest run --coverage"
   },
@@ -78,6 +79,7 @@
     "node-api-headers": "^1.9.0",
     "node-gyp": "13.0.1",
     "postcss": "^8.5.15",
+    "postcss-import": "16.1.1",
     "unplugin-dts": "^1.0.3",
     "vite": "^8.1.5",
     "vitest": "^3.2.4"

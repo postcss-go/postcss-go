@@ -22,6 +22,29 @@ test('WasmWorkerError preserves its stable name', async () => {
   expect(error.message).toBe('classic Worker required');
 });
 
+test('cssSyntaxErrorFromDto prefers DTO fields and fills source from the fallback', async () => {
+  const { cssSyntaxErrorFromDto, CssSyntaxError } = await import('../src/errors.ts');
+  const error = cssSyntaxErrorFromDto(
+    {
+      name: 'CssSyntaxError',
+      reason: 'Unknown word: expected declaration',
+      line: 2,
+      column: 3,
+      file: 'input.css',
+    },
+    { source: 'a {\n  color red;\n}' },
+  );
+
+  expect(error).toBeInstanceOf(CssSyntaxError);
+  expect(error).toMatchObject({
+    reason: 'Unknown word: expected declaration',
+    line: 2,
+    column: 3,
+    file: 'input.css',
+    source: 'a {\n  color red;\n}',
+  });
+});
+
 test('errorFromWasmDto rebuilds CssSyntaxError metadata from the Worker DTO', async () => {
   const { errorFromWasmDto } = await import('../src/wasm/errors.ts');
   const { CssSyntaxError } = await import('../src/errors.ts');

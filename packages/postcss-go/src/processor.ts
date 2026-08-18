@@ -4,6 +4,7 @@ import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
 import { Node, stringifyCssSync, type Root } from './ast.js';
 import { SyncBackendUnavailableError } from './errors.js';
+import { throwInvalidPlugin } from './plugin-normalize.js';
 import {
   createDefaultAsyncService,
   createNativeService,
@@ -16,10 +17,9 @@ import {
   postcssApi,
   setProcessorFactory,
   type PostcssPublic,
-  type RuntimePlugin,
+  type PluginResult,
 } from './plugin-runtime.js';
 import type { AcceptedPlugin, Plugin } from './plugin-types.js';
-import { Result } from './result.js';
 import { NATIVE_BACKEND_CAPABILITIES, type PostcssGoService } from './service.js';
 import type { ProcessOptions } from './types.js';
 import {
@@ -35,7 +35,7 @@ const { version: packageVersion } = createRequire(import.meta.url)('../package.j
 };
 
 export type CssInput = string | { toString(): string };
-export type PublicResult = Result<RuntimePlugin>;
+export type PublicResult = PluginResult;
 
 export interface ProcessorOptions {
   /** Reuse an existing transport. The caller remains responsible for closing it. */
@@ -85,7 +85,7 @@ export class Processor {
       ) {
         normalized.push(plugin);
       } else {
-        throw new Error(`${String(plugin)} is not a PostCSS plugin`);
+        throwInvalidPlugin(plugin);
       }
     }
     return normalized;
