@@ -43,7 +43,8 @@
   "files": [
     "README.md",
     "dist",
-    "bin"
+    "!dist/**/*.map",
+    "bin/postcss-go.js"
   ],
   "scripts": {
     "build": "pnpm run build:js && pnpm run build:native && pnpm run build:wasm",
