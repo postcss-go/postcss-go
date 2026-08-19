@@ -254,6 +254,7 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 		if len(header) == 0 {
 			node := ast.NewRule("")
 			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
+			ast.SetRawString(node, "between", "")
 			if p.trackSource {
 				p.attachSource(node, last.Start, last.End+1)
 			}
@@ -617,12 +618,8 @@ func (p *Parser) makeAtRule(tokens []tokenizer.Token) *ast.AtRule {
 		}
 	}
 	node := ast.NewAtRule(name, params)
-	if afterName != "" {
-		ast.SetRawString(node, "afterName", afterName)
-	}
-	if between != "" {
-		ast.SetRawString(node, "between", between)
-	}
+	ast.SetRawString(node, "afterName", afterName)
+	ast.SetRawString(node, "between", between)
 	if hasParamsRaw {
 		ast.SetRawValue(node, "params", paramsRaw)
 	}

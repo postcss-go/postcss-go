@@ -40,7 +40,7 @@ import {
   isHandleDeclarationPluginRun,
   runHandleDeclarationPlugins,
 } from './handle-plugin-runtime.js';
-import { type NativeHandleAddon } from './handle-session.js';
+import { HandleDeclarationUnsupportedError, type NativeHandleAddon } from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -222,28 +222,9 @@ async function runPluginsWithBridgeBody(
   options = materializePreviousMap(options);
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
-  if (
-    liveService &&
-    service.handleAddon &&
-    typeof service.parseSync === 'function' &&
-    isHandleDeclarationPluginRun(normalized as AcceptedPlugin[]) &&
-    !hasMapAnnotationCallback(options)
-  ) {
-    const outputCss = runHandleDeclarationPlugins(
-      service.handleAddon,
-      css,
-      normalized as AcceptedPlugin[],
-    );
-    const result = createResult(
-      () => hydrateHandleOutputRoot(service, outputCss, css, options),
-      options,
-      normalized,
-      processor,
-    );
-    result.backend = service.capabilities?.backend;
-    result.css = outputCss;
-    fillDependencyParents(result);
-    return result;
+  if (liveService) {
+    const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+    if (handled) return handled;
   }
   const parsed = liveService
     ? await liveService.parseLive(css, { from: options.from })
@@ -300,12 +281,6 @@ async function runPluginsWithBridgeBody(
   return result;
 }
 
-function hasMapAnnotationCallback(options: ProcessFileOptions): boolean {
-  return (
-    !!options.map && typeof options.map === 'object' && typeof options.map.annotation === 'function'
-  );
-}
-
 function hasLiveAsyncPluginBridge(
   service: PluginBridgeService,
 ): service is LiveAsyncPluginBridgeService {
@@ -314,6 +289,50 @@ function hasLiveAsyncPluginBridge(
     typeof service.parseLive === 'function' &&
     typeof service.stringifyResultLive === 'function'
   );
+}
+
+/**
+ * Fast path for declaration-only plugins that only rewrite prop/value.
+ * Returns undefined when the run needs the live AST (source maps, cloneAfter,
+ * parent, async visitors, helpers, …).
+ */
+function tryHandleDeclarationResult(
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon'> & {
+    parseSync?: PluginBridgeService['parseSync'];
+  },
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor?: ResultProcessorFacade,
+): PluginResult | undefined {
+  if (
+    !service.handleAddon ||
+    typeof service.parseSync !== 'function' ||
+    !isHandleDeclarationPluginRun(plugins as AcceptedPlugin[]) ||
+    options.map
+  ) {
+    return undefined;
+  }
+  try {
+    const outputCss = runHandleDeclarationPlugins(
+      service.handleAddon,
+      css,
+      plugins as AcceptedPlugin[],
+    );
+    const result = createResult(
+      () => hydrateHandleOutputRoot(service, outputCss, css, options),
+      options,
+      plugins,
+      processor,
+    );
+    result.backend = service.capabilities?.backend;
+    result.css = outputCss;
+    fillDependencyParents(result);
+    return result;
+  } catch (error) {
+    if (error instanceof HandleDeclarationUnsupportedError) return undefined;
+    throw error;
+  }
 }
 
 /**
@@ -331,27 +350,8 @@ export function runPluginsWithBridgeSync(
 ): PluginResult {
   options = materializePreviousMap(options);
   const normalized = normalizePluginsSync(plugins);
-  if (
-    service.handleAddon &&
-    isHandleDeclarationPluginRun(normalized as AcceptedPlugin[]) &&
-    !hasMapAnnotationCallback(options)
-  ) {
-    const outputCss = runHandleDeclarationPlugins(
-      service.handleAddon,
-      css,
-      normalized as AcceptedPlugin[],
-    );
-    const result = createResult(
-      () => hydrateHandleOutputRoot(service, outputCss, css, options),
-      options,
-      normalized,
-      processor,
-    );
-    result.backend = service.capabilities?.backend;
-    result.css = outputCss;
-    fillDependencyParents(result);
-    return result;
-  }
+  const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+  if (handled) return handled;
   const parsed = service.parseSync(css, { from: options.from });
   const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
   attachInputMetadata(hydrated, css, options as ProcessOptions);

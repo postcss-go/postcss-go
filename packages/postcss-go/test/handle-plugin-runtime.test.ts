@@ -37,6 +37,40 @@ test('isHandleDeclarationPluginRun accepts declaration-only plugins', () => {
       },
     ]),
   ).toBe(false);
+  expect(
+    isHandleDeclarationPluginRun([
+      {
+        postcssPlugin: 'async-decl',
+        async Declaration(decl) {
+          decl.value = 'navy';
+        },
+      },
+    ]),
+  ).toBe(false);
+  expect(
+    isHandleDeclarationPluginRun([
+      {
+        postcssPlugin: 'with-exit',
+        Declaration(decl) {
+          decl.value = 'navy';
+        },
+        DeclarationExit() {},
+      },
+    ]),
+  ).toBe(false);
+  expect(
+    isHandleDeclarationPluginRun([
+      {
+        postcssPlugin: 'with-prepare',
+        prepare() {
+          return {};
+        },
+        Declaration(decl) {
+          decl.value = 'navy';
+        },
+      },
+    ]),
+  ).toBe(false);
 });
 
 test.skipIf(!isNativeBridgeAvailable())(
@@ -83,4 +117,37 @@ test('Processor uses the handle path for declaration-only native plugins', async
   const result = await new Processor([colorPlugin]).process(css, { from: 'btn.css', map: false });
   expect(result.css).toContain('color: navy');
   expect(result.backend).toBe('native');
+});
+
+test('Processor falls back from the handle path for structural declaration mutations', async () => {
+  if (!isNativeBridgeAvailable()) return;
+  const plugin: AcceptedPlugin = {
+    postcssPlugin: 'clone-border',
+    Declaration(decl) {
+      if (decl.prop === 'color') {
+        decl.cloneAfter({ prop: 'border-color', value: 'black' });
+      }
+    },
+  };
+  const result = await new Processor([plugin]).process('a { color: red; }', {
+    from: 'clone.css',
+    map: false,
+  });
+  expect(result.css).toContain('border-color: black');
+});
+
+test('Processor falls back from the handle path for async declaration visitors', async () => {
+  if (!isNativeBridgeAvailable()) return;
+  const plugin: AcceptedPlugin = {
+    postcssPlugin: 'async-to-navy',
+    async Declaration(decl) {
+      await Promise.resolve();
+      if (decl.prop === 'color') decl.value = 'navy';
+    },
+  };
+  const result = await new Processor([plugin]).process('.x { color: red }', {
+    from: 'async.css',
+    map: false,
+  });
+  expect(result.css).toContain('navy');
 });

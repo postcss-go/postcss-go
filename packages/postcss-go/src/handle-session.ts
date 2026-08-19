@@ -114,6 +114,33 @@ export type HandleDeclarationStub = {
   important: boolean;
 };
 
+/** Thrown when a declaration-only handle stub is used beyond prop/value writes. */
+export class HandleDeclarationUnsupportedError extends Error {
+  readonly property: string;
+
+  constructor(property: string) {
+    super(`handle declaration stub does not support '${property}'`);
+    this.name = 'HandleDeclarationUnsupportedError';
+    this.property = property;
+  }
+}
+
+const HANDLE_DECLARATION_STUB_KEYS = new Set(['prop', 'value']);
+
 export function createHandleDeclarationStub(prop: string, value: string): HandleDeclarationStub {
-  return { prop, value, important: false };
+  const target: HandleDeclarationStub = { prop, value, important: false };
+  return new Proxy(target, {
+    get(obj, key) {
+      if (typeof key === 'symbol') return Reflect.get(obj, key);
+      if (HANDLE_DECLARATION_STUB_KEYS.has(key)) return obj[key as 'prop' | 'value'];
+      throw new HandleDeclarationUnsupportedError(key);
+    },
+    set(obj, key, next) {
+      if (typeof key === 'string' && HANDLE_DECLARATION_STUB_KEYS.has(key)) {
+        obj[key as 'prop' | 'value'] = String(next);
+        return true;
+      }
+      throw new HandleDeclarationUnsupportedError(String(key));
+    },
+  });
 }

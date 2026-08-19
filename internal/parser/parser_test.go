@@ -110,6 +110,12 @@ func TestParseAtRuleWithoutSemicolonAtEOF(t *testing.T) {
 	if atRule.Name != "import" || atRule.Params != `"test.css"` || atRule.Block {
 		t.Fatalf("unexpected at-rule: %#v", atRule)
 	}
+	if afterName, ok := ast.LookupRawString(atRule, "afterName"); !ok || afterName != "" {
+		t.Fatalf("expected empty afterName, got %q ok=%v", afterName, ok)
+	}
+	if between, ok := ast.LookupRawString(atRule, "between"); !ok || between != "" {
+		t.Fatalf("expected empty between, got %q ok=%v", between, ok)
+	}
 }
 
 func TestParseEmptyRule(t *testing.T) {
@@ -119,6 +125,21 @@ func TestParseEmptyRule(t *testing.T) {
 	}
 	if len(root.Children()) != 1 || root.Children()[0].Type() != ast.NodeRule {
 		t.Fatalf("expected empty rule, got %#v", root.Children())
+	}
+	rule := root.Children()[0].(*ast.Rule)
+	if between, ok := ast.LookupRawString(rule, "between"); !ok || between != "" {
+		t.Fatalf("expected empty between on empty rule, got %q ok=%v", between, ok)
+	}
+}
+
+func TestParseAtRuleEmptyAfterName(t *testing.T) {
+	root, err := Parse("@media(min-width: 0){a{}}", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	atRule := root.Children()[0].(*ast.AtRule)
+	if afterName, ok := ast.LookupRawString(atRule, "afterName"); !ok || afterName != "" {
+		t.Fatalf("expected empty afterName, got %q ok=%v", afterName, ok)
 	}
 }
 
