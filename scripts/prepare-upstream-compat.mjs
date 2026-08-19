@@ -49,7 +49,7 @@ switch (mode) {
   case 'go': {
     if (!fs.existsSync(goDistDir) || !fs.statSync(goDistDir).isDirectory()) {
       console.error(`Missing Go compat build output at ${goDistDir}`);
-      console.error('Run `pnpm --filter @postcss-go/compat build` first.');
+      console.error('Run `pnpm --filter postcss-go-compat build` first.');
       process.exit(1);
     }
     applyOverridesFrom(goDistDir);

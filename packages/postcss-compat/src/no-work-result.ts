@@ -2,8 +2,8 @@ import {
   applyMapAnnotation,
   normalizeProcessOptions,
   type MapOptions,
-} from '@postcss-go/shared/map-options';
-import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
+} from 'postcss-go-shared/map-options';
+import { joinMapAnnotationPath } from 'postcss-go-shared/map-path';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { call } from './bridge';

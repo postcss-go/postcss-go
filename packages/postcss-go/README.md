@@ -15,7 +15,7 @@ This package is the primary JS/TS integration point for:
 npm i -D postcss-go
 ```
 
-A compatible `@postcss-go/native-*` platform package is required at runtime.
+A compatible `postcss-go-native-*` platform package is required at runtime.
 Missing native artifacts are reported as backend-unavailable errors; there is
 no child-process transport fallback.
 

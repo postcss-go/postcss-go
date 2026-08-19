@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 
-import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
+import { type ProcessFileOptions } from 'postcss-go-shared/map-options';
 
 import { Node, stringifyCssSync, type Root } from './ast.js';
 import { SyncBackendUnavailableError } from './errors.js';

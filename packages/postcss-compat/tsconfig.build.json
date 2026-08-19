@@ -12,8 +12,8 @@
     "declaration": false,
     "types": ["node"],
     "paths": {
-      "@postcss-go/shared/map-options": ["../shared/dist/map-options.d.ts"],
-      "@postcss-go/shared/map-path": ["../shared/dist/map-path.d.ts"]
+      "postcss-go-shared/map-options": ["../shared/dist/map-options.d.ts"],
+      "postcss-go-shared/map-path": ["../shared/dist/map-path.d.ts"]
     }
   },
   "include": ["src/**/*.ts"]

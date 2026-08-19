@@ -12,8 +12,8 @@ import { glob } from 'tinyglobby';
 
 import { parseCliArgs } from './args.js';
 import createDependencyGraph, { type GraphMessage } from './create-dependency-graph.js';
-import { isExternalSourceMap } from '@postcss-go/shared/map-options';
-import { getMapfile } from '@postcss-go/shared/map-path';
+import { isExternalSourceMap } from 'postcss-go-shared/map-options';
+import { getMapfile } from 'postcss-go-shared/map-path';
 import {
   createGoEngine,
   getEffectiveMapOption,

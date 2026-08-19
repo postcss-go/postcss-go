@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
+import type { ProcessFileOptions } from 'postcss-go-shared/map-options';
 import type { AcceptedPlugin } from './plugin-types.js';
 
 /** Per-input metadata supplied to function configuration files. */

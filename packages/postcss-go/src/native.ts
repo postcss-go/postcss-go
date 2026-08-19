@@ -6,8 +6,8 @@ import {
   materializePreviousMap,
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
-} from '@postcss-go/shared/map-options';
-import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
+} from 'postcss-go-shared/map-options';
+import { joinMapAnnotationPath } from 'postcss-go-shared/map-path';
 
 import { Node, asProcessRoot, fromAst, setSyncCssRuntime, type Builder, type Root } from './ast.js';
 import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
@@ -58,7 +58,7 @@ const CSS_SYNTAX_ERROR_PREFIX = 'postcss-go:css-syntax:';
 
 let cachedAddon: NativeAddon | null | undefined;
 
-/** Platform package tuples to try, matching `@postcss-go/native-<tuple>`. */
+/** Platform package tuples to try, matching `postcss-go-native-<tuple>`. */
 function hostTuples(): string[] {
   const { platform, arch } = process;
   if (platform === 'linux') {
@@ -83,7 +83,7 @@ function loadAddon(): NativeAddon | null {
     const tuples = hostTuples();
     for (const tuple of tuples) {
       try {
-        cachedAddon = require(`@postcss-go/native-${tuple}`) as NativeAddon;
+        cachedAddon = require(`postcss-go-native-${tuple}`) as NativeAddon;
         return cachedAddon;
       } catch {
         // try next tuple or local fallback

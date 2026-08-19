@@ -24,7 +24,7 @@ function nativeTuple() {
   return `${process.platform}-${process.arch}`;
 }
 
-const expectedNativePackage = `@postcss-go/native-${nativeTuple()}`;
+const expectedNativePackage = `postcss-go-native-${nativeTuple()}`;
 const installedRequire = createRequire(resolve(process.cwd(), 'package.json'));
 try {
   installedRequire(expectedNativePackage);
