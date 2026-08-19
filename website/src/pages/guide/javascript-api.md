@@ -6,7 +6,7 @@ section: javascript-api
 
 # JavaScript API
 
-`@postcss-go/core` is the Node.js and TypeScript integration surface. It owns
+`postcss-go` is the Node.js and TypeScript integration surface. It owns
 the public classes, plugin runtime, and explicit asynchronous and synchronous
 processing APIs.
 
@@ -27,7 +27,7 @@ postcss-go-owned `Processor`; processing resolves to a postcss-go-owned
 `Result`, never to a PostCSS `LazyResult`.
 
 ```ts
-import postcss from '@postcss-go/core';
+import postcss from 'postcss-go';
 
 const result = await postcss([
   {
@@ -70,7 +70,7 @@ separate single-pass API and are not this runtime.
 ## Parse and stringify
 
 ```ts
-import { parse, stringify } from '@postcss-go/core';
+import { parse, stringify } from 'postcss-go';
 
 const root = await parse('.button { color: red; }');
 root.walkDecls((decl) => {
@@ -156,9 +156,9 @@ implicitly.
 
 Public Promise-returning APIs and the CLI share the same worker-backed native
 backend. Node has no transport-selection environment variable. The
-browser-compatible service is exposed through `@postcss-go/core/wasm`
+browser-compatible service is exposed through `postcss-go/wasm`
 (`BrowserPostcssGoService`, `createBrowserProcessor`, and the WASM assets), not
-the main Node entry. The lower-level `@postcss-go/core/browser` module is also
+the main Node entry. The lower-level `postcss-go/browser` module is also
 available. See [Browser and WASM](./browser-wasm/) for CSP, asset loading, and
 the async-only contract.
 
@@ -166,7 +166,7 @@ the async-only contract.
 
 JavaScript plugins, configuration loading, AST helpers, warnings, errors,
 inputs, previous maps, and result objects are implemented by
-`@postcss-go/core`; the production package does not load `postcss`.
+`postcss-go`; the production package does not load `postcss`.
 
 postcss-go deliberately does not reproduce implicit `LazyResult` execution:
 `process()` always returns a `Promise<Result>`, while `processSync()` returns a

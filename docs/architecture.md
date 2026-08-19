@@ -85,7 +85,7 @@ sequenceDiagram
 - **service** — shared async contract
 - **native** — addon loading, async-work and sync surfaces; map-option normalization via the private shared helpers bundled into core
 - **browser / wasm** — Worker-backed async WASM service lives in
-  `@postcss-go/core/browser` and `@postcss-go/core/wasm`; `createBrowserProcessor`
+  `postcss-go/browser` and `postcss-go/wasm`; `createBrowserProcessor`
   runs JavaScript plugins on the calling thread while parse/stringify stay in the
   Worker. Sync APIs, `helpers.postcss.parse`, AST string insertion, and
   `Node#toString()` / `helpers.postcss.stringify` are Node N-API only; the WASM

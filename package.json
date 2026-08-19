@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm",
+    "build:release": "pnpm --filter postcss-go build:js && pnpm --filter postcss-go build:wasm",
     "check": "pnpm -r check",
     "check:all": "pnpm format:check && pnpm lint && pnpm check && pnpm check:upstream && pnpm test && pnpm test:upstream && pnpm test:upstream:go && pnpm build",
     "check:upstream": "node ./scripts/check-upstream-postcss-sync.mjs",
@@ -43,7 +43,7 @@
     "sync:upstream": "node ./scripts/sync-upstream-postcss-tests.mjs",
     "sync:benchmark-fixtures": "node ./benchmark/sync-fixtures.mjs",
     "test": "pnpm test:js && pnpm test:go",
-    "test:core-css-contract": "go test -mod=mod ./pkg/api -run CoreCSS && pnpm --filter @postcss-go/core test:core-css-contract",
+    "test:core-css-contract": "go test -mod=mod ./pkg/api -run CoreCSS && pnpm --filter postcss-go test:core-css-contract",
     "test:js": "pnpm --filter './packages/**' --if-present test",
     "test:go": "go test -mod=mod ./...",
     "test:coverage": "pnpm test:coverage:js && pnpm test:coverage:go",

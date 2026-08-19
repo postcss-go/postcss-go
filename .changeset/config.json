@@ -4,7 +4,7 @@
   "commit": false,
   "fixed": [
     [
-      "@postcss-go/core",
+      "postcss-go",
       "@postcss-go/native-darwin-arm64",
       "@postcss-go/native-darwin-x64",
       "@postcss-go/native-linux-arm64-gnu",

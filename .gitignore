@@ -32,7 +32,7 @@ dist/
 coverage/
 **/coverage/
 
-# Local Go bridge binary for @postcss-go/core
+# Local Go bridge binary for postcss-go
 packages/postcss-go/bin/postcss-go
 packages/postcss-go/bin/postcss-go.exe
 # Native addon build artifacts

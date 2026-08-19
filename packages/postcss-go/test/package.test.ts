@@ -90,7 +90,7 @@ function assertPackageAbsent(cwd: string, name: string): void {
   expect(status, `npm ls ${name} exit code`).not.toBe(0);
 }
 
-test('@postcss-go/core lists platform packages as optionalDependencies', () => {
+test('postcss-go lists platform packages as optionalDependencies', () => {
   const pkg = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
     optionalDependencies?: Record<string, string>;
     files?: string[];
@@ -112,8 +112,8 @@ test('release builds JavaScript and WASM without rebuilding validated native add
   const rootPackage = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
   };
-  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:js');
-  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:wasm');
+  expect(rootPackage.scripts['build:release']).toContain('postcss-go build:js');
+  expect(rootPackage.scripts['build:release']).toContain('postcss-go build:wasm');
   expect(rootPackage.scripts['build:release']).not.toContain('build:native');
   expect(rootPackage.scripts.release).toBe('node ./scripts/release.mjs');
 
@@ -154,7 +154,7 @@ test('@postcss-go/shared stays private and is bundled into core', () => {
   ) as {
     fixed: string[][];
   };
-  const coreReleaseGroup = changesets.fixed.find((group) => group.includes('@postcss-go/core'));
+  const coreReleaseGroup = changesets.fixed.find((group) => group.includes('postcss-go'));
   expect(coreReleaseGroup).not.toContain('@postcss-go/shared');
 
   expect(npmPackFiles(packageRoot)).toEqual(
@@ -226,7 +226,7 @@ test('companion-library packages keep their runtime library beside the addon', (
   expect(workflow).toContain('npm/postcss-go/${{ matrix.tuple }}/libpostcssgo.dll');
 });
 
-test('@postcss-go/core has no production PostCSS dependency', () => {
+test('postcss-go has no production PostCSS dependency', () => {
   const pkg = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
     dependencies?: Record<string, string>;
     optionalDependencies?: Record<string, string>;
@@ -243,7 +243,7 @@ test('@postcss-go/core has no production PostCSS dependency', () => {
   }
 });
 
-test('@postcss-go/core package contains only the JavaScript CLI launcher', () => {
+test('postcss-go package contains only the JavaScript CLI launcher', () => {
   const files = npmPackFiles(packageRoot);
   expect(files).toContain('README.md');
   expect(files).toContain('bin/postcss-go.js');
@@ -251,7 +251,7 @@ test('@postcss-go/core package contains only the JavaScript CLI launcher', () =>
   expect(files).not.toContain('bin/postcss-go.exe');
 });
 
-test('@postcss-go/core does not expose native implementation internals', () => {
+test('postcss-go does not expose native implementation internals', () => {
   for (const name of [
     'createDefaultAsyncService',
     'createNativeService',
@@ -307,7 +307,7 @@ test('@postcss-go/core does not expose native implementation internals', () => {
   }
 });
 
-test('@postcss-go/core browser entry exports BrowserPostcssGoService and createBrowserProcessor', async () => {
+test('postcss-go browser entry exports BrowserPostcssGoService and createBrowserProcessor', async () => {
   const browserApi = await import('../src/wasm/index.ts');
   expect(browserApi).toHaveProperty('BrowserPostcssGoService');
   expect(browserApi).toHaveProperty('createBrowserProcessor');
@@ -319,7 +319,7 @@ test('@postcss-go/core browser entry exports BrowserPostcssGoService and createB
   expect(browserApi).not.toHaveProperty('PostcssGoService');
 });
 
-test('@postcss-go/core wasm entry re-exports the browser API and declares asset subpaths', async () => {
+test('postcss-go wasm entry re-exports the browser API and declares asset subpaths', async () => {
   const wasmApi = await import('../src/wasm/index.ts');
   expect(wasmApi).toHaveProperty('createBrowserProcessor');
   expect(wasmApi).toHaveProperty('BrowserPostcssGoService');
@@ -420,7 +420,7 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
           private: true,
           type: 'module',
           dependencies: {
-            '@postcss-go/core': `file:${coreTarball}`,
+            'postcss-go': `file:${coreTarball}`,
             '@types/node': '^22.10.1',
           },
         },
@@ -437,7 +437,7 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
 
     writeFileSync(
       resolve(consumer, 'smoke.ts'),
-      `import type { ProcessFileOptions } from '@postcss-go/core';\n` +
+      `import type { ProcessFileOptions } from 'postcss-go';\n` +
         `const options: ProcessFileOptions = { from: 'input.css' };\n` +
         `void options;\n`,
     );
@@ -462,7 +462,7 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
 
     writeFileSync(
       resolve(consumer, 'smoke.mjs'),
-      `import postcss from '@postcss-go/core';\n` +
+      `import postcss from 'postcss-go';\n` +
         `const root = postcss.parse('a{color:red}');\n` +
         `if (root.type !== 'root' || root.toString() !== 'a{color:red}') {\n` +
         `  throw new Error('packed package smoke failed');\n` +

@@ -18,10 +18,10 @@
 
 ## Packages
 
-| Package              | Path                      | Role                                                   |
-| -------------------- | ------------------------- | ------------------------------------------------------ |
-| `@postcss-go/core`   | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `core/wasm` |
-| `@postcss-go/compat` | `packages/postcss-compat` | Upstream compatibility harness                         |
+| Package              | Path                      | Role                                                         |
+| -------------------- | ------------------------- | ------------------------------------------------------------ |
+| `postcss-go`         | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `postcss-go/wasm` |
+| `@postcss-go/compat` | `packages/postcss-compat` | Upstream compatibility harness                               |
 
 ## Documentation
 

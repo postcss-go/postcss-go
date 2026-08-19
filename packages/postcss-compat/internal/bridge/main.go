@@ -1,5 +1,5 @@
 // Command bridge is a private upstream-compatibility test harness. It is not
-// built, shipped, or selected by @postcss-go/core.
+// built, shipped, or selected by postcss-go.
 package main
 
 import (
