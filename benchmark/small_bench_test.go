@@ -1,5 +1,3 @@
-//go:build !codspeed
-
 package benchmark_test
 
 import (
@@ -8,11 +6,11 @@ import (
 	"postcss-go/benchmark"
 )
 
-// Small synthetic fixtures finish in tens of microseconds. CodSpeed walltime on
-// shared GitHub runners routinely false-trips the default ~10% threshold on
-// these with no Go engine change, so they are compiled out of CodSpeed CI via
-// the `codspeed` build tag (see .github/workflows/codspeed.yml). Local runs
-// without that tag still include them: go test -bench=. ./benchmark/
+// Small synthetic fixtures finish in tens of microseconds. They used to be
+// compiled out of CodSpeed CI because walltime on shared GitHub runners
+// false-tripped the default ~10% threshold with no Go engine change; CodSpeed
+// now runs on the dedicated `codspeed-macro` bare-metal runner (see
+// .github/workflows/codspeed.yml), so they are measured in CI as well.
 
 func BenchmarkParse_Small(b *testing.B) { benchmarkParse(b, benchmark.SmallRules) }
 

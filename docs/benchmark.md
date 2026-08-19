@@ -60,9 +60,9 @@ Vendored stylesheets from common CSS sources (see `benchmark/fixtures/manifest.j
 | UIkit             | [UIkit](https://github.com/uikit/uikit)                              | 391 KB |
 | Materialize       | [Materialize](https://github.com/Dogfalo/materialize)                | 175 KB |
 
-Bulma / Pure / UIkit / Materialize are included in the local Go suite and the JS
-cross-engine table; their Go `Benchmark*Real_*` cases live in
-`extended_real_bench_test.go` and are compiled out of CodSpeed CI (see below).
+Bulma / Pure / UIkit / Materialize are included in the local Go suite, the JS
+cross-engine table, and CodSpeed CI; their Go `Benchmark*Real_*` cases live in
+`extended_real_bench_test.go`.
 
 Refresh fixtures:
 
@@ -141,28 +141,32 @@ node benchmark/run.mjs
 
 ### Continuous tracking in CI
 
-The Go engine benchmarks (`benchmark/bench_test.go` and
-`benchmark/stages_bench_test.go`) also run on every push to `main` and on every
-pull request through [CodSpeed](https://codspeed.io), in
+The whole Go engine suite (`benchmark/bench_test.go`,
+`benchmark/small_bench_test.go`, `benchmark/extended_real_bench_test.go` and
+`benchmark/stages_bench_test.go`) runs on every push to `main` and on every pull
+request through [CodSpeed](https://codspeed.io), in
 `.github/workflows/codspeed.yml`:
 
 ```bash
-GOFLAGS='-tags=codspeed' go test ./benchmark/ -bench=.
+go test ./benchmark/ -bench=.
 ```
 
 CodSpeed measures them with the
 [walltime instrument](https://codspeed.io/docs/instruments/walltime) — the only
 instrument supported for Go — and reports per-benchmark differences against the
-pull request base. CI builds with `-tags=codspeed`, which excludes
-`benchmark/small_bench_test.go` (`*_Small` / `*_small`) and
-`benchmark/extended_real_bench_test.go` (Bulma / Pure / UIkit / Materialize).
-Small cases finish in tens of microseconds and false-trip the default ~10%
-threshold with no Go engine change; the extended real-world set adds ~1.4 MB of
-CSS and interleaves with existing Bootstrap benches in one walltime process,
-which similarly false-trips baselines. The CodSpeed Go runner discovers
-`Benchmark*` from source, so a `-bench` regex alone is not enough to drop them.
-Local `go test -bench=. ./benchmark/` (no `codspeed` tag) still runs the full
-suite.
+pull request base. The job runs on
+[`codspeed-macro`](https://codspeed.io/docs/features/macro-runners), a dedicated
+16-core ARM64 bare-metal runner, so base and head are measured on identical
+hardware. That is what makes the full suite trackable: the `codspeed` build tag
+that used to compile `small_bench_test.go` and `extended_real_bench_test.go` out
+of CI existed only because shared GitHub runners could not measure them
+reliably.
+
+Authentication uses
+[OIDC](https://codspeed.io/docs/integrations/ci/github-actions/configuration#oidc-recommended)
+(`id-token: write` on the benchmark job), so no long-lived CodSpeed token is
+stored in the repository.
+
 Only the Go engine suite is tracked in CI. The cross-engine comparison table
 (`pnpm bench`) and the boundary suite stay local / opt-in.
 
@@ -170,30 +174,28 @@ To reproduce a CodSpeed run locally:
 
 ```bash
 curl -fsSL https://codspeed.io/install.sh | sh
-GOFLAGS='-tags=codspeed' codspeed run --mode walltime --skip-upload -- go test ./benchmark/ -bench=.
+codspeed run --mode walltime --skip-upload -- go test ./benchmark/ -bench=.
 ```
 
 #### Reading a walltime report
 
-Walltime is the only instrument available for Go, and this repository runs it on
-`ubuntu-latest` (`codspeed-macro` runners require an organization account). Base
-and head therefore land on whichever CPU GitHub allocates — EPYC 7763, 9V74 and
-9V45 have all been observed — and the _same_ benchmark binary can be more than
-1.5x slower on the older generation. A report where every benchmark moves by a
-similar large amount, together with CodSpeed's "Different runtime environments
-detected" warning, is that situation and not a code change.
+Walltime is the only instrument available for Go. On `codspeed-macro` both sides
+of a comparison run on the same dedicated machine, so a report that moves every
+benchmark by a similar large amount is unusual; when CodSpeed still flags
+"Different runtime environments detected", treat the report as environmental
+rather than as a code change.
 
-Two checks separate the two cases before touching any code:
+Two checks separate a real regression from noise before touching any code:
 
 ```bash
 # 1. Does the branch even change benchmarked code?
-go list -deps -test -tags=codspeed ./benchmark/ | grep postcss-go
+go list -deps -test ./benchmark/ | grep postcss-go
 
 # 2. Compare the compiled suite against the base branch. `-trimpath` removes
 #    the checkout path, so identical inputs give identical hashes.
 git worktree add /tmp/base-tree origin/main
-go test -tags=codspeed -trimpath -c -o /tmp/head.test ./benchmark/
-(cd /tmp/base-tree && go test -tags=codspeed -trimpath -c -o /tmp/base.test ./benchmark/)
+go test -trimpath -c -o /tmp/head.test ./benchmark/
+(cd /tmp/base-tree && go test -trimpath -c -o /tmp/base.test ./benchmark/)
 sha256sum /tmp/head.test /tmp/base.test
 ```
 

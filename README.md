@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/eryue0220/postcss-go/actions/workflows/ci.yml/badge.svg)](https://github.com/eryue0220/postcss-go/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/eryue0220/postcss-go/graph/badge.svg)](https://codecov.io/gh/eryue0220/postcss-go)
-[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/eryue0220/postcss-go)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/postcss-go/postcss-go?utm_source=badge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Experimental:** `postcss-go` is not production-ready. APIs and behavior may change.
