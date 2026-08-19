@@ -1,4 +1,4 @@
-# @postcss-go/core
+# postcss-go
 
 Node.js API and CLI for `postcss-go`.
 
@@ -12,7 +12,7 @@ This package is the primary JS/TS integration point for:
 ## Install
 
 ```bash
-npm i -D @postcss-go/core
+npm i -D postcss-go
 ```
 
 A compatible `@postcss-go/native-*` platform package is required at runtime.
@@ -41,7 +41,7 @@ equivalent `.postcssrc.*` names without `postcss-load-config`. JSON config is
 also supported when it does not need executable plugins.
 
 ```ts
-import type { PostcssGoConfigExport } from '@postcss-go/core';
+import type { PostcssGoConfigExport } from 'postcss-go';
 
 const config: PostcssGoConfigExport = (ctx) => ({
   // Prefer CLI `--map` / `--no-map` when present; otherwise choose by env.
@@ -71,7 +71,7 @@ parser, syntax, or stringifier implementations currently throw
 ## Backend reporting
 
 ```ts
-import postcss, { getBackendCapabilities } from '@postcss-go/core';
+import postcss, { getBackendCapabilities } from 'postcss-go';
 
 const installed = getBackendCapabilities();
 console.log(installed.asynchronous?.backend); // "native" or null
@@ -82,11 +82,11 @@ console.log(result.backend); // backend used for this operation: "native"
 
 ## Browser / WASM
 
-For browsers, use the `@postcss-go/core/wasm` entry. It re-exports the browser
+For browsers, use the `postcss-go/wasm` entry. It re-exports the browser
 API and ships the classic Worker plus WASM assets:
 
 ```ts
-import { createBrowserProcessor } from '@postcss-go/core/wasm';
+import { createBrowserProcessor } from 'postcss-go/wasm';
 
 const processor = createBrowserProcessor([], {
   // Copy these three package assets to your application's public directory.
@@ -118,7 +118,7 @@ child-process, WASM, or PostCSS fallback in Node.
 
 ## Migrating from PostCSS
 
-1. Install `@postcss-go/core` and remove the runtime `postcss`,
+1. Install `postcss-go` and remove the runtime `postcss`,
    `postcss-load-config`, and `postcss-reporter` dependencies if nothing else
    uses them.
 2. Replace the CLI command with `postcss-go`; keep a supported
@@ -134,6 +134,6 @@ child-process, WASM, or PostCSS fallback in Node.
 ## Development
 
 ```bash
-pnpm --filter @postcss-go/core test
-pnpm --filter @postcss-go/core test:cli
+pnpm --filter postcss-go test
+pnpm --filter postcss-go test:cli
 ```

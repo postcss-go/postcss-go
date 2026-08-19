@@ -34,7 +34,7 @@ must produce a stable diagnostic; it must never silently fall back to PostCSS.
 ### Zero PostCSS production dependency
 
 - [x] Remove every production `import`, `require`, and type reference to `postcss`.
-- [x] Remove the `postcss` runtime, peer, optional, and transitive dependency from `@postcss-go/core`.
+- [x] Remove the `postcss` runtime, peer, optional, and transitive dependency from `postcss-go`.
 - [x] Replace `postcss-load-config` and `postcss-reporter` with postcss-go-owned configuration loading and reporting.
 - [x] Implement plugin helpers, AST classes, parsing, stringifying, results, warnings, and errors without loading PostCSS.
 - [x] Remove PostCSS class `Symbol.hasInstance` patches and other runtime coupling.
@@ -166,7 +166,7 @@ part of a release.
 
 - [ ] Re-run the complete Go, TypeScript, package, CLI, WASM, and upstream differential suites.
 - [ ] Re-run the shared plugin and AST contract suite across every supported backend.
-- [ ] Pack `@postcss-go/core` and all platform packages into tarballs.
+- [ ] Pack `postcss-go` and all platform packages into tarballs.
 - [ ] Install the tarballs in clean projects without workspace links.
 - [ ] Verify the packed dependency tree contains no `postcss`, `postcss-load-config`, or `postcss-reporter`.
 - [x] Verify async processing with synchronous and asynchronous plugins.

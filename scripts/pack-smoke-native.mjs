@@ -75,7 +75,7 @@ try {
   // npm installs into staging/node_modules; run the smoke there so package-name
   // imports exercise the exact packed dependency layout.
   const installedEntry = pathToFileURL(
-    resolve(staging, 'node_modules/@postcss-go/core/dist/index.js'),
+    resolve(staging, 'node_modules/postcss-go/dist/index.js'),
   ).href;
   run(process.execPath, [resolve(repoRoot, 'scripts/smoke-native-package.mjs'), installedEntry], {
     cwd: staging,

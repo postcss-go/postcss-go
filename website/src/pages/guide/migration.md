@@ -6,13 +6,13 @@ section: migration
 
 # Migration and compatibility
 
-`@postcss-go/core` keeps the familiar plugin and configuration shapes while
+`postcss-go` keeps the familiar plugin and configuration shapes while
 making execution explicit and removing PostCSS from the production dependency
 graph.
 
 ## Migration checklist
 
-1. Install `@postcss-go/core`. Remove `postcss`, `postcss-load-config`, and
+1. Install `postcss-go`. Remove `postcss`, `postcss-load-config`, and
    `postcss-reporter` if no other tool in the project uses them.
 2. Replace `postcss` CLI commands with `postcss-go`. Existing JS, MJS, or CJS
    config files can stay when they use the supported contract below.
@@ -43,7 +43,7 @@ graph.
 ## Typed standalone config
 
 ```ts
-import type { PostcssGoConfigExport } from '@postcss-go/core';
+import type { PostcssGoConfigExport } from 'postcss-go';
 
 const config: PostcssGoConfigExport = (ctx) => ({
   // Prefer CLI `--map` / `--no-map` when present; otherwise choose by env.

@@ -173,7 +173,7 @@ export function createNativeService(): NativePostcssGoService {
   const addon = loadAddon();
   if (!addon) {
     throw new Error(
-      'postcss-go native addon is unavailable; run `pnpm --filter @postcss-go/core build:native`',
+      'postcss-go native addon is unavailable; run `pnpm --filter postcss-go build:native`',
     );
   }
   return new NativePostcssGoService(addon);

@@ -3,10 +3,10 @@ import {
   CssSyntaxError,
   createBrowserProcessor,
   WasmWorkerError,
-} from '@postcss-go/core/wasm';
-import wasmUrl from '@postcss-go/core/wasm/postcss-go.wasm?url';
-import wasmExecUrl from '@postcss-go/core/wasm/wasm_exec.js?url';
-import workerUrl from '@postcss-go/core/wasm/worker?url';
+} from 'postcss-go/wasm';
+import wasmUrl from 'postcss-go/wasm/postcss-go.wasm?url';
+import wasmExecUrl from 'postcss-go/wasm/wasm_exec.js?url';
+import workerUrl from 'postcss-go/wasm/worker?url';
 import { SourceMapConsumer } from 'source-map-js';
 
 import contract from '../testdata/core-css-contract.json';

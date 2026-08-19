@@ -6,7 +6,7 @@ section: browser-wasm
 
 # Browser and WASM
 
-`@postcss-go/core/wasm` ships a classic Web Worker, Go's `wasm_exec.js`, and the
+`postcss-go/wasm` ships a classic Web Worker, Go's `wasm_exec.js`, and the
 `postcss-go.wasm` binary. Parsing and stringifying run off the page main thread.
 JavaScript plugins still run on the calling thread through
 `createBrowserProcessor`.
@@ -14,7 +14,7 @@ JavaScript plugins still run on the calling thread through
 ## Quick start
 
 ```ts
-import { createBrowserProcessor } from '@postcss-go/core/wasm';
+import { createBrowserProcessor } from 'postcss-go/wasm';
 
 const processor = createBrowserProcessor(
   [
@@ -68,7 +68,7 @@ stringify stays in the Worker.
 
 Bundlers must emit three assets as fetchable URLs:
 
-1. `worker.js` — classic Worker entry (`@postcss-go/core/wasm/worker`)
+1. `worker.js` — classic Worker entry (`postcss-go/wasm/worker`)
 2. `postcss-go.wasm` — Go runtime binary
 3. `wasm_exec.js` — Go's JavaScript WASM glue
 
@@ -77,23 +77,23 @@ public directory before building:
 
 ```sh
 mkdir -p public/postcss-go
-cp node_modules/@postcss-go/core/dist/wasm/worker.js public/postcss-go/
-cp node_modules/@postcss-go/core/dist/wasm/postcss-go.wasm public/postcss-go/
-cp node_modules/@postcss-go/core/dist/wasm/wasm_exec.js public/postcss-go/
+cp node_modules/postcss-go/dist/wasm/worker.js public/postcss-go/
+cp node_modules/postcss-go/dist/wasm/postcss-go.wasm public/postcss-go/
+cp node_modules/postcss-go/dist/wasm/wasm_exec.js public/postcss-go/
 ```
 
 The package subpath exports can also be fed into a bundler-specific URL loader.
 For example, Vite supports:
 
 ```ts
-import workerUrl from '@postcss-go/core/wasm/worker?url';
-import wasmUrl from '@postcss-go/core/wasm/postcss-go.wasm?url';
-import wasmExecUrl from '@postcss-go/core/wasm/wasm_exec.js?url';
+import workerUrl from 'postcss-go/wasm/worker?url';
+import wasmUrl from 'postcss-go/wasm/postcss-go.wasm?url';
+import wasmExecUrl from 'postcss-go/wasm/wasm_exec.js?url';
 
 const processor = createBrowserProcessor([], { workerUrl, wasmUrl, wasmExecUrl });
 ```
 
-Do not use `new URL('@postcss-go/core/...', import.meta.url)`: the URL
+Do not use `new URL('postcss-go/...', import.meta.url)`: the URL
 constructor does not resolve npm package exports.
 
 Pass absolute or same-origin URLs through `workerUrl`, `wasmUrl`, and

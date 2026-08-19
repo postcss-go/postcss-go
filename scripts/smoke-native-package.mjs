@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { Worker } from 'node:worker_threads';
 
-const packageName = process.argv[2] ?? '@postcss-go/core';
+const packageName = process.argv[2] ?? 'postcss-go';
 const api = await import(packageName);
 
 function nativeTuple() {

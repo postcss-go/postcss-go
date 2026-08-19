@@ -1,6 +1,6 @@
 # Node native lifecycle contract
 
-The `@postcss-go/core` Node backend is a context-aware Node-API addon. Each
+The `postcss-go` Node backend is a context-aware Node-API addon. Each
 Node.js main thread or Worker Thread loads and owns its own JavaScript addon
 instance. The Go runtime and compiled code may be shared by the process, but no
 JavaScript values, AST nodes, callbacks, deferred values, or service state cross
@@ -50,7 +50,7 @@ source location and input metadata.
 The native build workflow produces one package for each declared tuple:
 macOS arm64/x64, Linux glibc arm64/x64, and Windows MSVC arm64/x64. On every
 runner it packs the platform package and
-`@postcss-go/core`, installs both tarballs into a clean project, exercises all
+`postcss-go`, installs both tarballs into a clean project, exercises all
 four synchronous and asynchronous operations, and repeats native work inside a
 Worker Thread. Platforms that cannot link the Go archive directly include a
 validated shared-library companion beside the addon. Publication consumes only

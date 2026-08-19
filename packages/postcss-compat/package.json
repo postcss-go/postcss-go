@@ -14,7 +14,7 @@
     "test:coverage": "pnpm build && vitest run --coverage"
   },
   "dependencies": {
-    "@postcss-go/core": "workspace:*",
+    "postcss-go": "workspace:*",
     "@postcss-go/shared": "workspace:*",
     "nanoid": "^3.3.12",
     "picocolors": "^1.1.1",
