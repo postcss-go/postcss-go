@@ -1,4 +1,4 @@
-# postcss-go
+# @postcss-go/core
 
 ## 0.0.1
 

@@ -1,8 +1,8 @@
 # postcss-go
 
-[![CI](https://github.com/eryue0220/postcss-go/actions/workflows/ci.yml/badge.svg)](https://github.com/eryue0220/postcss-go/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/eryue0220/postcss-go/graph/badge.svg)](https://codecov.io/gh/eryue0220/postcss-go)
-[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/postcss-go/postcss-go?utm_source=badge)
+[![CI](https://github.com/postcss-go/postcss-go/actions/workflows/ci.yml/badge.svg)](https://github.com/postcss-go/postcss-go/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/postcss-go/postcss-go/graph/badge.svg)](https://codecov.io/gh/postcss-go/postcss-go)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/postcss-go/postcss-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Experimental:** `postcss-go` is not production-ready. APIs and behavior may change.
@@ -18,13 +18,14 @@
 
 ## Packages
 
-| Package             | Path                      | Role                                                         |
-| ------------------- | ------------------------- | ------------------------------------------------------------ |
-| `postcss-go`        | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `postcss-go/wasm` |
-| `postcss-go-compat` | `packages/postcss-compat` | Upstream compatibility harness                               |
+| Package              | Path                      | Role                                                               |
+| -------------------- | ------------------------- | ------------------------------------------------------------------ |
+| `@postcss-go/core`   | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
+| `@postcss-go/compat` | `packages/postcss-compat` | Upstream compatibility harness                                     |
 
 ## Documentation
 
+- [Website](https://postcss-go.github.io/)
 - [Architecture](docs/architecture.md)
 - [Contributing](docs/contributing.md)
 

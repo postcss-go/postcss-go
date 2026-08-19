@@ -1,4 +1,4 @@
-# postcss-go-native-linux-x64-gnu
+# @postcss-go/native-linux-x64-gnu
 
 ## 0.0.1
 

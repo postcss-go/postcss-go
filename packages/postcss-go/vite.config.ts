@@ -77,10 +77,13 @@ export default defineConfig({
         return {
           content: content
             .replaceAll(
-              'postcss-go-shared/map-options',
+              '@postcss-go/shared/map-options',
               bundledSharedSpecifier(filePath, 'map-options'),
             )
-            .replaceAll('postcss-go-shared/map-path', bundledSharedSpecifier(filePath, 'map-path')),
+            .replaceAll(
+              '@postcss-go/shared/map-path',
+              bundledSharedSpecifier(filePath, 'map-path'),
+            ),
         };
       },
     }),

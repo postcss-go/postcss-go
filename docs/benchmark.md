@@ -181,9 +181,13 @@ codspeed run --mode walltime --skip-upload -- go test ./benchmark/ -bench=.
 
 Walltime is the only instrument available for Go. On `codspeed-macro` both sides
 of a comparison run on the same dedicated machine, so a report that moves every
-benchmark by a similar large amount is unusual; when CodSpeed still flags
-"Different runtime environments detected", treat the report as environmental
-rather than as a code change.
+benchmark by a similar large amount is unusual. The GitHub organization must
+allow public repositories in **Actions → Runner groups → Default**, or the job
+will wait for a runner that never appears.
+
+If a report still shows "Different runtime environments detected", treat a
+uniform large move across every benchmark as an environment change, not a code
+change.
 
 Two checks separate a real regression from noise before touching any code:
 

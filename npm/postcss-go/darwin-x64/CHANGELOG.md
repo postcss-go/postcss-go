@@ -1,4 +1,4 @@
-# postcss-go-native-darwin-x64
+# @postcss-go/native-darwin-x64
 
 ## 0.0.1
 

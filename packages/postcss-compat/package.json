@@ -1,5 +1,5 @@
 {
-  "name": "postcss-go-compat",
+  "name": "@postcss-go/compat",
   "version": "0.0.0",
   "private": true,
   "description": "PostCSS upstream test harness and Go-backed compat overrides.",
@@ -7,15 +7,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/prepare-upstream-compat.mjs",
-    "prepare:go": "pnpm --filter postcss-go-shared build && pnpm build && echo 'Go overrides are applied to a temp copy by test:upstream:go; not written to vendor.'",
+    "prepare:go": "pnpm --filter @postcss-go/shared build && pnpm build && echo 'Go overrides are applied to a temp copy by test:upstream:go; not written to vendor.'",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/run-upstream-tests.mjs",
-    "test:upstream:go": "pnpm --filter postcss-go-shared build && pnpm build && POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='\\.test\\.(ts|js)$' node ../../scripts/run-upstream-tests.mjs",
+    "test:upstream:go": "pnpm --filter @postcss-go/shared build && pnpm build && POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='\\.test\\.(ts|js)$' node ../../scripts/run-upstream-tests.mjs",
     "test": "pnpm build && vitest run",
     "test:coverage": "pnpm build && vitest run --coverage"
   },
   "dependencies": {
-    "postcss-go": "workspace:*",
-    "postcss-go-shared": "workspace:*",
+    "@postcss-go/core": "workspace:*",
+    "@postcss-go/shared": "workspace:*",
     "nanoid": "^3.3.12",
     "picocolors": "^1.1.1",
     "source-map-js": "^1.2.1"

@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, expect, test } from 'vitest';
+import { afterAll, beforeAll, expect, test } from 'vitest';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 process.env.POSTCSS_GO_COMPAT_BRIDGE_CLIENT = path.resolve(here, '../bridge-client.cjs');
@@ -77,6 +77,11 @@ function drain(
   }
   return { tokens, eof: tokenizer.endOfFile(), pos: tokenizer.position() };
 }
+
+beforeAll(() => {
+  // First RPC compiles and spawns the Go bridge; keep that off Vitest's 5s per-test budget.
+  drain(goTokenizer, 'a');
+}, 60_000);
 
 function unclosedReason(factory: TokenizerFactory, css: string) {
   try {

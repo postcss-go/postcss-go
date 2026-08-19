@@ -25,7 +25,7 @@ class FakeWorker {
   }
 }
 
-test('postcss-go/wasm exports createBrowserProcessor and stable error types', async () => {
+test('@postcss-go/core/wasm exports createBrowserProcessor and stable error types', async () => {
   const api = await import('../src/wasm/index.ts');
   expect(api).toHaveProperty('createBrowserProcessor');
   expect(api).toHaveProperty('WasmWorkerError');

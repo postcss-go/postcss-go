@@ -21,7 +21,7 @@ classes, preserving the normal upstream node API.
 `noWork` RPC for identity-map generation, previous-map composition, annotation
 cleanup, and annotation emission without parsing CSS. Map helpers
 (`applyMapAnnotation`, `normalizeProcessOptions`, `joinMapAnnotationPath`) come
-from `postcss-go-shared` (CJS-compatible for the vendored PostCSS tree). Lazy
+from `@postcss-go/shared` (CJS-compatible for the vendored PostCSS tree). Lazy
 `.root` access still uses the Go-backed `parse` override.
 
 See `docs/architecture.md` (Source maps) for the JS↔Go ownership split and the
@@ -45,5 +45,5 @@ metadata, which the compatibility layer forwards to the PostCSS callback contrac
 ## Validation
 
 - Go engine: `go test ./...`
-- Build overrides: `pnpm --filter postcss-go-compat build`
+- Build overrides: `pnpm --filter @postcss-go/compat build`
 - Full upstream compatibility suite with this override applied: `pnpm test:upstream:go`
