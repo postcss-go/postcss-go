@@ -1,6 +1,6 @@
 {
   "name": "postcss-go-native-win32-x64-msvc",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "license": "MIT",
   "description": "postcss-go native addon for win32-x64-msvc",
   "bugs": "https://github.com/eryue0220/postcss-go/issues",
