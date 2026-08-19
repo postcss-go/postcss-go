@@ -52,10 +52,11 @@ function passCost(row, backend) {
   );
 }
 
-console.log('# Part D — verdict: current design vs a handle-based AST\n');
+console.log('# Part D — projected handle cost vs current design\n');
 console.log(
   'Projected, not measured: per-crossing costs from Parts B and C multiplied by\n' +
-    'the operation counts from Part A. Treat it as sizing, not as a result.\n',
+    'the operation counts from Part A. Part E measures real plugin pipelines on\n' +
+    'the prototype handle ABI; use that for the adopt/keep-binary decision.\n',
 );
 
 console.log('## Cost of one plugin pass\n');

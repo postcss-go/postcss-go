@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"postcss-go/internal/ast"
 	"postcss-go/internal/sourcemap"
@@ -23,23 +24,21 @@ func isURI(value string) bool { return utils.IsURI(value) }
 
 type sourceMapWriter struct {
 	builder            strings.Builder
+	mapBuilder         strings.Builder
 	line               int
 	column             int
-	mappings           []sourceMapping
+	mapLine            int
+	lastGenColumn      int
+	lastSource         int
+	lastSourceLine     int
+	lastSourceCol      int
+	needComma          bool
 	sourceIndexes      map[string]int
 	sources            []string
 	sourcesContent     map[string]*string
 	sourceOverride     string
 	preserveAnnotation bool
 	cache              renderCache
-}
-
-type sourceMapping struct {
-	genLine    int
-	genColumn  int
-	source     int
-	sourceLine int
-	sourceCol  int
 }
 
 type sourceMapPayload struct {
@@ -83,13 +82,22 @@ func (w *sourceMapWriter) writeByte(ch byte) {
 
 func (w *sourceMapWriter) writeString(text string) {
 	w.builder.WriteString(text)
-	for _, ch := range text {
-		if ch == '\n' {
+	for i := 0; i < len(text); {
+		c := text[i]
+		if c == '\n' {
 			w.line++
 			w.column = 0
+			i++
 			continue
 		}
-		w.column += utf16.RuneLen(ch)
+		if c < utf8.RuneSelf {
+			w.column++
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(text[i:])
+		w.column += utf16.RuneLen(r)
+		i += size
 	}
 }
 
@@ -164,13 +172,24 @@ func (w *sourceMapWriter) addMappingAtGenerated(source string, content *string, 
 	} else if w.sourcesContent[source] == nil && content != nil {
 		w.sourcesContent[source] = content
 	}
-	w.mappings = append(w.mappings, sourceMapping{
-		genLine:    genLine,
-		genColumn:  genColumn,
-		source:     sourceIndex,
-		sourceLine: sourceLine,
-		sourceCol:  sourceCol,
-	})
+	for w.mapLine < genLine {
+		w.mapBuilder.WriteByte(';')
+		w.mapLine++
+		w.lastGenColumn = 0
+		w.needComma = false
+	}
+	if w.needComma {
+		w.mapBuilder.WriteByte(',')
+	}
+	writeVLQ(&w.mapBuilder, genColumn-w.lastGenColumn)
+	writeVLQ(&w.mapBuilder, sourceIndex-w.lastSource)
+	writeVLQ(&w.mapBuilder, sourceLine-w.lastSourceLine)
+	writeVLQ(&w.mapBuilder, sourceCol-w.lastSourceCol)
+	w.lastGenColumn = genColumn
+	w.lastSource = sourceIndex
+	w.lastSourceLine = sourceLine
+	w.lastSourceCol = sourceCol
+	w.needComma = true
 }
 
 func (w *sourceMapWriter) addMapping(source string, content *string, sourceLine, sourceCol int) {
@@ -208,7 +227,7 @@ func (w *sourceMapWriter) sourceMap(opts SourceMapOptions) (string, error) {
 		Sources:        sources,
 		SourcesContent: sourcesContent,
 		Names:          []string{},
-		Mappings:       encodeMappings(w.mappings),
+		Mappings:       w.mapBuilder.String(),
 	}
 
 	encoded, err := json.Marshal(payload)
@@ -284,46 +303,11 @@ func relativePath(baseDir, target string) string {
 	return (&url.URL{Path: path}).EscapedPath()
 }
 
-func encodeMappings(mappings []sourceMapping) string {
-	var builder strings.Builder
-	currentLine := 0
-	lastGenColumn := 0
-	lastSource := 0
-	lastSourceLine := 0
-	lastSourceCol := 0
-	needComma := false
-
-	for _, mapping := range mappings {
-		for currentLine < mapping.genLine {
-			builder.WriteByte(';')
-			currentLine++
-			lastGenColumn = 0
-			needComma = false
-		}
-		if needComma {
-			builder.WriteByte(',')
-		}
-		builder.WriteString(encodeVLQ(mapping.genColumn - lastGenColumn))
-		builder.WriteString(encodeVLQ(mapping.source - lastSource))
-		builder.WriteString(encodeVLQ(mapping.sourceLine - lastSourceLine))
-		builder.WriteString(encodeVLQ(mapping.sourceCol - lastSourceCol))
-
-		lastGenColumn = mapping.genColumn
-		lastSource = mapping.source
-		lastSourceLine = mapping.sourceLine
-		lastSourceCol = mapping.sourceCol
-		needComma = true
-	}
-	return builder.String()
-}
-
-func encodeVLQ(value int) string {
+func writeVLQ(builder *strings.Builder, value int) {
 	vlq := value << 1
 	if value < 0 {
 		vlq = ((-value) << 1) | 1
 	}
-
-	var builder strings.Builder
 	for {
 		digit := vlq & 31
 		vlq >>= 5
@@ -332,8 +316,7 @@ func encodeVLQ(value int) string {
 		}
 		builder.WriteByte(vlqChars[digit])
 		if vlq == 0 {
-			break
+			return
 		}
 	}
-	return builder.String()
 }

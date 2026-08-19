@@ -110,6 +110,12 @@ func TestParseAtRuleWithoutSemicolonAtEOF(t *testing.T) {
 	if atRule.Name != "import" || atRule.Params != `"test.css"` || atRule.Block {
 		t.Fatalf("unexpected at-rule: %#v", atRule)
 	}
+	if afterName, ok := ast.LookupRawString(atRule, "afterName"); !ok || afterName != "" {
+		t.Fatalf("expected empty afterName, got %q ok=%v", afterName, ok)
+	}
+	if between, ok := ast.LookupRawString(atRule, "between"); !ok || between != "" {
+		t.Fatalf("expected empty between, got %q ok=%v", between, ok)
+	}
 }
 
 func TestParseEmptyRule(t *testing.T) {
@@ -119,6 +125,21 @@ func TestParseEmptyRule(t *testing.T) {
 	}
 	if len(root.Children()) != 1 || root.Children()[0].Type() != ast.NodeRule {
 		t.Fatalf("expected empty rule, got %#v", root.Children())
+	}
+	rule := root.Children()[0].(*ast.Rule)
+	if between, ok := ast.LookupRawString(rule, "between"); !ok || between != "" {
+		t.Fatalf("expected empty between on empty rule, got %q ok=%v", between, ok)
+	}
+}
+
+func TestParseAtRuleEmptyAfterName(t *testing.T) {
+	root, err := Parse("@media(min-width: 0){a{}}", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	atRule := root.Children()[0].(*ast.AtRule)
+	if afterName, ok := ast.LookupRawString(atRule, "afterName"); !ok || afterName != "" {
+		t.Fatalf("expected empty afterName, got %q ok=%v", afterName, ok)
 	}
 }
 
@@ -586,19 +607,21 @@ func TestHelperSplitImportantAndTrailingSpaces(t *testing.T) {
 	if len(body) != 1 || len(trailing) != 2 {
 		t.Fatalf("splitTrailingSpaces: body=%d trailing=%d", len(body), len(trailing))
 	}
+}
 
-	raws := ast.Raws{}
-	appendRawString(raws, "between", "")
-	if _, ok := raws["between"]; ok {
+func TestAppendRawStringHelper(t *testing.T) {
+	node := ast.NewAtRule("media", "")
+	appendRawString(node, "between", "")
+	if _, ok := ast.LookupRaw(node, "between"); ok {
 		t.Fatal("empty suffix should not set")
 	}
-	appendRawString(raws, "between", " ")
-	if raws["between"] != " " {
-		t.Fatalf("expected between set, got %#v", raws["between"])
+	appendRawString(node, "between", " ")
+	if value, ok := ast.LookupRaw(node, "between"); !ok || value != " " {
+		t.Fatalf("expected between set, got %#v", value)
 	}
-	appendRawString(raws, "between", "!")
-	if raws["between"] != " !" {
-		t.Fatalf("expected append, got %#v", raws["between"])
+	appendRawString(node, "between", "!")
+	if value, ok := ast.LookupRaw(node, "between"); !ok || value != " !" {
+		t.Fatalf("expected append, got %#v", value)
 	}
 }
 
@@ -793,6 +816,16 @@ func TestParseParamsRawAndSetBetweenHelper(t *testing.T) {
 		{Kind: "word", Start: 1, End: 6},
 		{Kind: "space", Start: 7, End: 7},
 	})
+
+	nonString := ast.NewAtRule("media", "screen")
+	ast.ApplyRaw(nonString, "between", true)
+	setAtRuleBetween(nonString, " screen ", []tokenizer.Token{
+		{Kind: "word", Start: 1, End: 7},
+		{Kind: "space", Start: 7, End: 8},
+	})
+	if got, ok := ast.LookupRawString(nonString, "between"); !ok || got == "" {
+		t.Fatalf("expected suffix between after non-string raw, got %q %v", got, ok)
+	}
 }
 
 func TestParseSpacesOnlyAndUnknownEmptyProp(t *testing.T) {

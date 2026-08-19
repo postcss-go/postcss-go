@@ -2,10 +2,7 @@
 import '../styles/global.css';
 import PageHead from '../components/PageHead.astro';
 import SiteNav from '../components/SiteNav.astro';
-import { parseRequiredProgress } from '../lib/progress';
-import progressSource from './progress.md?raw';
-
-const progress = parseRequiredProgress(progressSource);
+import BenchmarkChart from '../components/BenchmarkChart.astro';
 ---
 
 <html lang="en">
@@ -40,12 +37,12 @@ const progress = parseRequiredProgress(progressSource);
           <div class="mt-10 flex flex-wrap items-center gap-4">
             <a
               class="rounded-full bg-acid px-6 py-3 text-sm font-bold text-ink! transition hover:bg-white"
-              href={`${import.meta.env.BASE_URL}progress/`}>See the progress</a
+              href={`${import.meta.env.BASE_URL}guide/get-started/`}>Get started</a
             >
             <button
               id="copy-command"
               class="group flex items-center gap-3 rounded-full border border-white/15 bg-white/[.04] px-5 py-3 font-mono text-xs text-white/75 transition hover:border-acid/60"
-              ><span class="text-acid">$</span> pnpm add @postcss-go/core <span
+              ><span class="text-acid">$</span> pnpm add -D @postcss-go/core <span
                 id="copy-state"
                 class="text-white/30 transition group-hover:text-white/70">⧉</span
               ></button
@@ -59,59 +56,19 @@ const progress = parseRequiredProgress(progressSource);
         </div>
       </section>
 
-      <section id="progress" class="mx-auto max-w-7xl px-6 py-24 lg:px-10 lg:py-32">
-        <div class="mb-12 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
-          <div>
-            <p class="mb-4 font-mono text-xs uppercase tracking-[.25em] text-violet">
-              Compatibility progress
-            </p>
-            <h2 class="text-4xl font-bold tracking-tighter md:text-6xl">
-              {progress.percent}% of required work complete.
-            </h2>
-          </div>
-          <p class="max-w-md text-sm leading-6 text-white/45">
-            Calculated from the required completion criteria for a PostCSS-free runtime, explicit
-            sync and async APIs, and supported release backends.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-acid/30 bg-white/[.035] p-[clamp(1.25rem,4vw,2rem)]">
-          <div
-            class="flex items-center justify-between gap-4 font-mono text-[.68rem] tracking-[.14em] text-white/50"
-          >
-            <span>FULL POSTCSS JS PARITY</span><strong
-              class="text-[clamp(2.5rem,7vw,4.5rem)] leading-[.8] tracking-[-.08em] text-acid"
-              >{progress.percent}<span class="text-[.45em] opacity-70">%</span></strong
-            >
-          </div>
-          <div
-            class="my-6 h-[.65rem] overflow-hidden rounded-full border border-white/10 bg-black/25"
-          >
-            <div
-              class="h-full rounded-[inherit] bg-gradient-to-r from-acid to-[#e5ff9a]"
-              style={`width: ${progress.percent}%`}
-            >
-            </div>
-          </div>
-          <div
-            class="flex items-center justify-between gap-4 font-mono text-[.68rem] text-white/40"
-          >
-            <span>{progress.completed} / {progress.total} required criteria complete</span><a
-              class="text-acid transition-colors duration-150 hover:text-white"
-              href={`${import.meta.env.BASE_URL}progress/`}>View module breakdown ↗</a
-            >
-          </div>
-        </div>
-      </section>
+      <BenchmarkChart />
 
       <footer class="border-t border-white/10">
         <div
           class="mx-auto flex max-w-7xl flex-col justify-between gap-6 px-6 py-10 text-xs text-white/35 md:flex-row md:items-center lg:px-10"
         >
-          <div class="flex gap-6">
-            <a class="hover:text-acid" href="https://github.com/eryue0220/postcss-go">GitHub ↗</a><a
-              class="hover:text-acid"
-              href={`${import.meta.env.BASE_URL}progress/`}>Compatibility progress ↗</a
-            ><span>MIT licensed</span>
+          <div class="flex flex-wrap gap-6">
+            <a class="hover:text-acid" href="https://github.com/eryue0220/postcss-go">GitHub ↗</a>
+            <a class="hover:text-acid" href={`${import.meta.env.BASE_URL}guide/get-started/`}
+              >Get started</a
+            >
+            <a class="hover:text-acid" href={`${import.meta.env.BASE_URL}progress/`}>Progress</a>
+            <span>MIT licensed</span>
           </div>
         </div>
       </footer>
@@ -120,7 +77,7 @@ const progress = parseRequiredProgress(progressSource);
       const copyButton = document.querySelector('#copy-command');
       const copyState = document.querySelector('#copy-state');
       copyButton?.addEventListener('click', async () => {
-        await navigator.clipboard?.writeText('pnpm add @postcss-go/core postcss');
+        await navigator.clipboard?.writeText('pnpm add -D @postcss-go/core');
         if (copyState) copyState.textContent = 'copied';
         setTimeout(() => {
           if (copyState) copyState.textContent = '⧉';

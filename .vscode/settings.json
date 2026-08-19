@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "*.acss": "css",
+    "*.go": "go",
+    "**/.ssh/config": "ssh_config",
+    "node_api.h": "c"
+  }
+}

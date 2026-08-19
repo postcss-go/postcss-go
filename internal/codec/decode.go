@@ -62,7 +62,7 @@ func decodeASTNode(src []byte, offset *int, inherited *postcss.Input) (ast.Node,
 	switch tag {
 	case tagRoot:
 		node := ast.NewRoot()
-		if node.Raws, err = decodeRaws(src, offset); err != nil {
+		if err = decodeAndApplyRaws(src, offset, node); err != nil {
 			return nil, err
 		}
 		input, source, sourceErr := decodeASTSource(src, offset, inherited)
@@ -78,7 +78,7 @@ func decodeASTNode(src []byte, offset *int, inherited *postcss.Input) (ast.Node,
 		return node, nil
 	case tagDocument:
 		node := ast.NewDocument()
-		if node.Raws, err = decodeRaws(src, offset); err != nil {
+		if err = decodeAndApplyRaws(src, offset, node); err != nil {
 			return nil, err
 		}
 		input, source, sourceErr := decodeASTSource(src, offset, inherited)
@@ -98,7 +98,7 @@ func decodeASTNode(src []byte, offset *int, inherited *postcss.Input) (ast.Node,
 			return nil, selErr
 		}
 		node := ast.NewRule(selector)
-		if node.Raws, err = decodeRaws(src, offset); err != nil {
+		if err = decodeAndApplyRaws(src, offset, node); err != nil {
 			return nil, err
 		}
 		input, source, sourceErr := decodeASTSource(src, offset, inherited)
@@ -127,7 +127,7 @@ func decodeASTNode(src []byte, offset *int, inherited *postcss.Input) (ast.Node,
 		}
 		node := ast.NewAtRule(name, params)
 		node.Block = flag == 1
-		if node.Raws, err = decodeRaws(src, offset); err != nil {
+		if err = decodeAndApplyRaws(src, offset, node); err != nil {
 			return nil, err
 		}
 		input, source, sourceErr := decodeASTSource(src, offset, inherited)
@@ -156,7 +156,7 @@ func decodeASTNode(src []byte, offset *int, inherited *postcss.Input) (ast.Node,
 		}
 		node := ast.NewDeclaration(prop, value)
 		node.Important = flag == 1
-		if node.Raws, err = decodeRaws(src, offset); err != nil {
+		if err = decodeAndApplyRaws(src, offset, node); err != nil {
 			return nil, err
 		}
 		_, source, sourceErr := decodeASTSource(src, offset, inherited)
@@ -171,7 +171,7 @@ func decodeASTNode(src []byte, offset *int, inherited *postcss.Input) (ast.Node,
 			return nil, textErr
 		}
 		node := ast.NewComment(text)
-		if node.Raws, err = decodeRaws(src, offset); err != nil {
+		if err = decodeAndApplyRaws(src, offset, node); err != nil {
 			return nil, err
 		}
 		_, source, sourceErr := decodeASTSource(src, offset, inherited)
@@ -209,11 +209,34 @@ func decodeASTSource(
 	offset *int,
 	inherited *postcss.Input,
 ) (*postcss.Input, *postcss.SourceLocation, error) {
-	dto, err := decodeSource(src, offset)
+	var dto jsbridge.SourceLocationDTO
+	present, err := decodeSourceInto(src, offset, &dto)
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsbridge.SourceFromBridgeDTO(dto, inherited)
+	if !present {
+		return jsbridge.SourceFromBridgeDTO(nil, inherited)
+	}
+	return jsbridge.SourceFromBridgeDTO(&dto, inherited)
+}
+
+func decodeAndApplyRaws(src []byte, offset *int, node ast.Node) error {
+	count, err := readUvarint(src, offset)
+	if err != nil {
+		return err
+	}
+	for i := uint64(0); i < count; i++ {
+		key, keyErr := readString(src, offset)
+		if keyErr != nil {
+			return keyErr
+		}
+		value, valueErr := decodeRawValue(src, offset)
+		if valueErr != nil {
+			return valueErr
+		}
+		ast.ApplyRaw(node, key, value)
+	}
+	return nil
 }
 
 func decodeDTONode(src []byte, offset *int) (*jsbridge.NodeDTO, error) {
@@ -300,45 +323,56 @@ func decodeDTONode(src []byte, offset *int) (*jsbridge.NodeDTO, error) {
 }
 
 func decodeSource(src []byte, offset *int) (*jsbridge.SourceLocationDTO, error) {
-	flag, err := readByte(src, offset)
+	var source jsbridge.SourceLocationDTO
+	present, err := decodeSourceInto(src, offset, &source)
 	if err != nil {
 		return nil, err
 	}
-	if flag == 0 {
+	if !present {
 		return nil, nil
 	}
-	source := &jsbridge.SourceLocationDTO{}
+	return &source, nil
+}
+
+func decodeSourceInto(src []byte, offset *int, source *jsbridge.SourceLocationDTO) (bool, error) {
+	flag, err := readByte(src, offset)
+	if err != nil {
+		return false, err
+	}
+	if flag == 0 {
+		return false, nil
+	}
 	if source.Start.Line, err = readInt(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.Start.Column, err = readInt(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.Start.Offset, err = readInt(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.End.Line, err = readInt(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.End.Column, err = readInt(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.End.Offset, err = readInt(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.File, err = readString(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.CSS, err = readString(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.Map, err = readString(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
 	if source.MapURL, err = readString(src, offset); err != nil {
-		return nil, err
+		return false, err
 	}
-	return source, nil
+	return true, nil
 }
 
 func decodeRaws(src []byte, offset *int) (ast.Raws, error) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"postcss-go/benchmark"
+	"postcss-go/internal/ast"
 	"postcss-go/internal/codec"
 	"postcss-go/internal/jsbridge"
 	"postcss-go/internal/parser"
@@ -45,6 +46,40 @@ func TestCodecRoundTripFixtures(t *testing.T) {
 				len(fixture.CSS), len(jsonBytes), len(encoded),
 				100*float64(len(encoded))/float64(len(jsonBytes)))
 		})
+	}
+}
+
+func TestDecodeASTKeepsCompactRaws(t *testing.T) {
+	css := ".a {\n  color: red;\n}\n"
+	root, err := parser.Parse(css, sourcemap.Options{From: "x.css", TrackSource: true})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	encoded, err := codec.EncodeAST(root)
+	if err != nil {
+		t.Fatalf("EncodeAST: %v", err)
+	}
+	decoded, err := codec.DecodeAST(encoded)
+	if err != nil {
+		t.Fatalf("DecodeAST: %v", err)
+	}
+	decodedRoot, ok := decoded.(*ast.Root)
+	if !ok {
+		t.Fatalf("expected root, got %T", decoded)
+	}
+	rule, ok := decodedRoot.First().(*ast.Rule)
+	if !ok {
+		t.Fatalf("expected rule, got %T", decodedRoot.First())
+	}
+	decl, ok := rule.First().(*ast.Declaration)
+	if !ok {
+		t.Fatalf("expected decl, got %T", rule.First())
+	}
+	if decl.Raws != nil {
+		t.Fatalf("expected compact raws after DecodeAST, got %#v", decl.Raws)
+	}
+	if text, ok := ast.LookupRawString(decl, "before"); !ok || text == "" {
+		t.Fatalf("expected compact before raw, got %q %v", text, ok)
 	}
 }
 

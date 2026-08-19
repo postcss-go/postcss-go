@@ -246,7 +246,25 @@ func SourceToBridgeDTO(
 	loc *postcss.SourceLocation,
 	nodeEnd, block, preserveEndColumn, includeInput bool,
 ) *SourceLocationDTO {
-	return sourceToDTO(loc, nodeEnd, block, preserveEndColumn, includeInput)
+	var dto SourceLocationDTO
+	if !FillSourceDTO(&dto, loc, nodeEnd, block, preserveEndColumn, includeInput) {
+		return nil
+	}
+	return &dto
+}
+
+// FillSourceDTO writes PostCSS-facing source-column adjustments into dst without
+// allocating a DTO. It reports false when loc is nil.
+func FillSourceDTO(
+	dst *SourceLocationDTO,
+	loc *postcss.SourceLocation,
+	nodeEnd, block, preserveEndColumn, includeInput bool,
+) bool {
+	if loc == nil {
+		return false
+	}
+	sourceToDTOInto(dst, loc, nodeEnd, block, preserveEndColumn, includeInput)
+	return true
 }
 
 // SourceFromBridgeDTO rebuilds a Go source location from a bridge DTO, sharing
@@ -440,10 +458,16 @@ func childrenFromDTO(nodes []*NodeDTO, input *postcss.Input) ([]ast.Node, error)
 }
 
 func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool) *SourceLocationDTO {
+	var dto SourceLocationDTO
 	if loc == nil {
 		return nil
 	}
-	dto := &SourceLocationDTO{
+	sourceToDTOInto(&dto, loc, nodeEnd, block, preserveEndColumn, includeInput)
+	return &dto
+}
+
+func sourceToDTOInto(dto *SourceLocationDTO, loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool) {
+	*dto = SourceLocationDTO{
 		Start: SourcePositionDTO{
 			Line:   loc.Start.Line,
 			Column: loc.Start.Column,
@@ -486,7 +510,6 @@ func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn,
 	if nodeEnd && !preserveEndColumn && !adjustedEndColumn && dto.End.Offset > dto.Start.Offset && dto.End.Column > 1 {
 		dto.End.Column--
 	}
-	return dto
 }
 
 func findBlockEnd(css string, start int) (int, bool) {

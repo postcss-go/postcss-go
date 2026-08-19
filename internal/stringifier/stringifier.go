@@ -64,8 +64,19 @@ func StringifyWithoutSourceMapAnnotations(node ast.Node) string {
 	return stringify(node, true)
 }
 
+// DirectEligible reports whether node can use the allocation-light stringifier path.
+func DirectEligible(node ast.Node) bool {
+	return directEligible(node)
+}
+
 func stringify(node ast.Node, stripSourceMapAnnotations bool) string {
+	if directEligible(node) {
+		return directStringify(node, stripSourceMapAnnotations)
+	}
 	var builder strings.Builder
+	if rng := node.Range(); rng.End > rng.Start {
+		builder.Grow(rng.End - rng.Start + 64)
+	}
 	writeNode(builderWriter{Builder: &builder, cache: &renderCache{}}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
 }
@@ -137,7 +148,7 @@ func StringifyWithSourceMap(node ast.Node, opts SourceMapOptions) (StringifyResu
 	writer := newSourceMapWriter(opts.SourceMapFrom)
 	writer.preserveAnnotation = opts.PreserveAnnotation
 	writeMappedNode(writer, node, 0)
-	if len(writer.mappings) == 0 {
+	if writer.mapBuilder.Len() == 0 {
 		writer.AddMapping(node)
 	}
 	sourceMap, err := writer.sourceMap(opts)
@@ -555,31 +566,21 @@ func writeChildren(writer cssWriter, nodes []ast.Node, depth int, escapeBefore, 
 }
 
 func hasRaw(node ast.Node, key string) bool {
-	_, ok := lookupRaw(node, key)
-	return ok
+	return ast.HasRaw(node, key)
 }
 
 func rawString(node ast.Node, key, fallback string) string {
-	value, ok := lookupRaw(node, key)
-	if !ok {
-		return fallback
-	}
-	if stringValue, ok := value.(string); ok {
-		return stringValue
+	if text, ok := ast.LookupRawString(node, key); ok {
+		return text
 	}
 	return fallback
 }
 
 func rawBool(node ast.Node, key string, fallback bool) bool {
-	value, ok := lookupRaw(node, key)
-	if !ok {
-		return fallback
+	if value, ok := ast.LookupRawBool(node, key); ok {
+		return value
 	}
-	boolean, ok := value.(bool)
-	if !ok {
-		return fallback
-	}
-	return boolean
+	return fallback
 }
 
 func rawValue(node ast.Node, key, fallback string) string {
@@ -615,15 +616,7 @@ func rawValue(node ast.Node, key, fallback string) string {
 }
 
 func lookupRaw(node ast.Node, key string) (any, bool) {
-	raws := node.RawFormattingReadOnly()
-	if raws == nil {
-		return nil, false
-	}
-	value, ok := raws[key]
-	if !ok || value == nil {
-		return nil, false
-	}
-	return value, true
+	return ast.LookupRaw(node, key)
 }
 
 func ruleHeader(cache *renderCache, node *ast.Rule) string {
@@ -636,11 +629,8 @@ func atRuleHeader(node *ast.AtRule) string {
 }
 
 func atRuleAfterName(node *ast.AtRule, params string) string {
-	if value, ok := lookupRaw(node, "afterName"); ok {
-		if text, ok := value.(string); ok {
-			return text
-		}
-		return " "
+	if text, ok := ast.LookupRawString(node, "afterName"); ok {
+		return text
 	}
 	if params != "" {
 		if parent := node.Parent(); parent != nil {
@@ -649,10 +639,8 @@ func atRuleAfterName(node *ast.AtRule, params string) string {
 				if !ok || other == node || strings.TrimSpace(other.Params) == "" {
 					continue
 				}
-				if value, ok := lookupRaw(other, "afterName"); ok {
-					if text, ok := value.(string); ok {
-						return text
-					}
+				if text, ok := ast.LookupRawString(other, "afterName"); ok {
+					return text
 				}
 			}
 		}
@@ -686,11 +674,8 @@ func commentText(cache *renderCache, node *ast.Comment) string {
 }
 
 func rawStringDetected(cache *renderCache, node ast.Node, key, fallback string) string {
-	if value, ok := lookupRaw(node, key); ok {
-		if stringValue, ok := value.(string); ok {
-			return stringValue
-		}
-		return fallback
+	if text, ok := ast.LookupRawString(node, key); ok {
+		return text
 	}
 	if parent := node.Parent(); parent != nil {
 		if inferred, ok := cache.siblingRawSample(parent, key, node.Type()); ok {

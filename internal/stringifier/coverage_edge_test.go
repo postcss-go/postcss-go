@@ -850,3 +850,108 @@ func TestAtRuleAfterNameCoverageEdges(t *testing.T) {
 		t.Fatalf("params without parent: %q", got)
 	}
 }
+
+func TestDirectEligibleAndStringifyEdges(t *testing.T) {
+	if DirectEligible(ast.NewRule(".a")) {
+		t.Fatal("non-root nodes are not direct-eligible")
+	}
+
+	root, err := parser.Parse(".a { color: red; } /* c */ @import \"x.css\";", sourcemap.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !DirectEligible(root) {
+		t.Fatal("parsed root should be direct-eligible")
+	}
+	if got := StringifyWithoutSourceMapAnnotations(root); !strings.Contains(got, "color: red") {
+		t.Fatalf("direct stringify: %q", got)
+	}
+
+	doc := ast.NewDocument()
+	eligibleRule := ast.NewRule(".doc")
+	ast.SetRawString(eligibleRule, "before", "")
+	ast.SetRawString(eligibleRule, "between", " ")
+	ast.SetRawString(eligibleRule, "after", "")
+	docDecl := ast.NewDeclaration("color", "red")
+	ast.SetRawString(docDecl, "before", "")
+	ast.SetRawString(docDecl, "between", ": ")
+	eligibleRule.Append(docDecl)
+	doc.Append(eligibleRule)
+	if !directEligible(doc) {
+		t.Fatal("document with explicit raws should be eligible")
+	}
+	if got := Stringify(doc); !strings.Contains(got, "color: red") {
+		t.Fatalf("document stringify: %q", got)
+	}
+
+	ineligible := ast.NewRoot()
+	rule := ast.NewRule(".b")
+	ineligible.Append(rule)
+	if directEligible(ineligible) {
+		t.Fatal("rule without after raw is not eligible")
+	}
+
+	declRoot := ast.NewRoot()
+	decl := ast.NewDeclaration("color", "red")
+	ast.SetRawString(decl, "before", "")
+	ast.SetRawString(decl, "between", "")
+	declRoot.Append(decl)
+	if directEligible(declRoot) {
+		t.Fatal("empty declaration between is not eligible")
+	}
+
+	commentRoot := ast.NewRoot()
+	comment := ast.NewComment("x")
+	ast.SetRawString(comment, "before", "")
+	commentRoot.Append(comment)
+	if directEligible(commentRoot) {
+		t.Fatal("comment without left/right is not eligible")
+	}
+
+	keyframes := ast.NewAtRule("keyframes", "spin")
+	keyframes.Block = true
+	ast.SetRawString(keyframes, "before", "")
+	ast.SetRawString(keyframes, "between", " ")
+	ast.SetRawString(keyframes, "after", "")
+	frame := ast.NewRule("to")
+	keyframes.Append(frame)
+	keyRoot := ast.NewRoot()
+	keyRoot.Append(keyframes)
+	if !directBeforeEligible(frame, 1, 0) {
+		t.Fatal("keyframes child without source should be before-eligible")
+	}
+	if got := directNodeBefore(frame, 1, 0); got != "" {
+		t.Fatalf("keyframes before: %q", got)
+	}
+	from := ast.NewRule("from")
+	if got := directNodeBefore(from, 1, 1); got != "" {
+		t.Fatalf("from shortcut: %q", got)
+	}
+
+	atNoBetween := ast.NewAtRule("media", "screen")
+	atNoBetween.Block = true
+	ast.SetRawString(atNoBetween, "before", "")
+	ast.SetRawString(atNoBetween, "after", "")
+	atRoot := ast.NewRoot()
+	atRoot.Append(atNoBetween)
+	if directEligible(atRoot) {
+		t.Fatal("block at-rule without between is not eligible")
+	}
+
+	nestedDoc := ast.NewRoot()
+	childDoc := ast.NewDocument()
+	ast.SetRawString(childDoc, "before", "")
+	nestedDoc.Append(childDoc)
+	if directEligible(nestedDoc) {
+		t.Fatal("document children are not direct-eligible")
+	}
+
+	annotated, err := parser.Parse("a{color:red}\n/*# sourceMappingURL=a.css.map */", sourcemap.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stripped := StringifyWithoutSourceMapAnnotations(annotated)
+	if strings.Contains(stripped, "sourceMappingURL") {
+		t.Fatalf("annotation survived: %q", stripped)
+	}
+}

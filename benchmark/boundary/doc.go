@@ -3,7 +3,7 @@
 //
 // The Go half lives here; the JavaScript half is in the sibling .mjs scripts,
 // which also build a NAPI addon and a wasip1 reactor module to price a single
-// synchronous crossing. Run everything with:
+// synchronous crossing, plus a prototype handle ABI in ./asthandle. Run with:
 //
 //	node benchmark/run-boundary.mjs
 //

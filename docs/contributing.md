@@ -26,7 +26,9 @@ Use the narrowest command that covers your change:
 
 Run `pnpm check:all` before opening a pull request. It runs formatting, linting, TypeScript type checks, upstream sync verification, JS/Go/upstream tests (including `test:upstream:go`), and builds.
 
-Installing dependencies configures a pre-commit hook that runs `pnpm format:check`. If the hook reports formatting errors, run `pnpm format`, review the changes, and commit again.
+Installing dependencies configures a pre-commit hook that runs `pnpm lint` and `pnpm format:check`. If formatting fails, run `pnpm format`, review the changes, and commit again. If lint fails, fix the reported issues before committing.
+
+`pnpm format` / `pnpm format:check` run Prettier on JS/TS and `gofmt` on Go files. Both skip `vendor/` (and `node_modules/`).
 
 ## Upstream compatibility
 

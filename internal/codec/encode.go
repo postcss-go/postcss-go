@@ -7,6 +7,7 @@ import (
 
 	"postcss-go/internal/ast"
 	"postcss-go/internal/jsbridge"
+	"postcss-go/internal/postcss"
 )
 
 // EncodeDTO serializes a bridge DTO tree.
@@ -14,7 +15,7 @@ func EncodeDTO(root *jsbridge.NodeDTO) ([]byte, error) {
 	if root == nil {
 		return nil, fmt.Errorf("codec: nil root")
 	}
-	dst := make([]byte, 0, 256)
+	dst := make([]byte, 0, encodeCapacity(nil))
 	dst = append(dst, magic0, magic1, magic2, magic3, version)
 	var err error
 	dst, err = encodeDTONode(dst, root)
@@ -28,9 +29,28 @@ func EncodeAST(node ast.Node) ([]byte, error) {
 	if node == nil {
 		return nil, fmt.Errorf("codec: nil node")
 	}
-	dst := make([]byte, 0, 256)
+	dst := make([]byte, 0, encodeCapacity(node))
 	dst = append(dst, magic0, magic1, magic2, magic3, version)
 	return encodeASTNode(dst, node, true)
+}
+
+func encodeCapacity(node ast.Node) int {
+	const minCap = 256
+	if node == nil {
+		return minCap
+	}
+	rng := node.Range()
+	size := rng.End - rng.Start
+	if size < 0 {
+		size = 0
+	}
+	// Raws keys and source metadata inflate the payload past CSS size; the
+	// root also embeds the original CSS when includeInput is set.
+	capacity := size*3 + minCap
+	if capacity < minCap {
+		return minCap
+	}
+	return capacity
 }
 
 func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error) {
@@ -38,33 +58,29 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 	switch current := node.(type) {
 	case *ast.Document:
 		dst = append(dst, tagDocument)
-		dst, err = encodeRaws(dst, current.RawFormattingReadOnly())
+		dst, err = encodeNodeRaws(dst, current)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeSource(dst, jsbridge.SourceToBridgeDTO(current.Source(), false, false, false, includeInput))
+		dst = encodeASTSource(dst, current.Source(), false, false, false, includeInput)
 		return encodeASTChildren(dst, current.Children())
 	case *ast.Root:
 		dst = append(dst, tagRoot)
-		dst, err = encodeRaws(dst, current.RawFormattingReadOnly())
+		dst, err = encodeNodeRaws(dst, current)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeSource(dst, jsbridge.SourceToBridgeDTO(current.Source(), false, false, false, includeInput))
+		dst = encodeASTSource(dst, current.Source(), false, false, false, includeInput)
 		return encodeASTChildren(dst, current.Children())
 	case *ast.Rule:
 		dst = append(dst, tagRule)
 		dst = appendString(dst, current.Selector)
-		raws := current.RawFormattingReadOnly()
-		dst, err = encodeRaws(dst, raws)
+		dst, err = encodeNodeRaws(dst, current)
 		if err != nil {
 			return nil, err
 		}
-		source := jsbridge.SourceToBridgeDTO(current.Source(), true, true, raws["ownSemicolon"] == ";", includeInput)
-		if raws["ownSemicolon"] == ";" && source != nil {
-			source.End.Column++
-		}
-		dst = encodeSource(dst, source)
+		ownSemicolon := lookupRawString(current, "ownSemicolon") == ";"
+		dst = encodeASTSource(dst, current.Source(), true, true, ownSemicolon, includeInput)
 		return encodeASTChildren(dst, current.Children())
 	case *ast.AtRule:
 		dst = append(dst, tagAtRule)
@@ -75,11 +91,11 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		} else {
 			dst = append(dst, 0)
 		}
-		dst, err = encodeRaws(dst, current.RawFormattingReadOnly())
+		dst, err = encodeNodeRaws(dst, current)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeSource(dst, jsbridge.SourceToBridgeDTO(current.Source(), true, current.Block, false, includeInput))
+		dst = encodeASTSource(dst, current.Source(), true, current.Block, false, includeInput)
 		return encodeASTChildren(dst, current.Children())
 	case *ast.Declaration:
 		dst = append(dst, tagDecl)
@@ -90,21 +106,21 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		} else {
 			dst = append(dst, 0)
 		}
-		dst, err = encodeRaws(dst, current.RawFormattingReadOnly())
+		dst, err = encodeNodeRaws(dst, current)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeSource(dst, jsbridge.SourceToBridgeDTO(current.Source(), true, false, false, includeInput))
+		dst = encodeASTSource(dst, current.Source(), true, false, false, includeInput)
 		return dst, nil
 	case *ast.Comment:
 		dst = append(dst, tagComment)
 		dst = appendString(dst, current.Text)
-		dst, err = encodeRaws(dst, current.RawFormattingReadOnly())
+		dst, err = encodeNodeRaws(dst, current)
 		if err != nil {
 			return nil, err
 		}
 		preserveEndColumn := current.Source() != nil && current.Source().Input != nil && current.Source().Input.HasSourceMap()
-		dst = encodeSource(dst, jsbridge.SourceToBridgeDTO(current.Source(), true, false, preserveEndColumn, includeInput))
+		dst = encodeASTSource(dst, current.Source(), true, false, preserveEndColumn, includeInput)
 		return dst, nil
 	default:
 		return nil, fmt.Errorf("codec: unsupported node type %T", node)
@@ -178,6 +194,19 @@ func encodeDTONode(dst []byte, node *jsbridge.NodeDTO) ([]byte, error) {
 		}
 	}
 	return dst, nil
+}
+
+func encodeASTSource(dst []byte, loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool) []byte {
+	var source jsbridge.SourceLocationDTO
+	if !jsbridge.FillSourceDTO(&source, loc, nodeEnd, block, preserveEndColumn, includeInput) {
+		return append(dst, 0)
+	}
+	// Rules with raws.ownSemicolon == ";" bump the end column after the shared
+	// sourceToDTO adjustments, matching ToDTO.
+	if preserveEndColumn && nodeEnd && block {
+		source.End.Column++
+	}
+	return encodeSource(dst, &source)
 }
 
 func encodeSource(dst []byte, source *jsbridge.SourceLocationDTO) []byte {

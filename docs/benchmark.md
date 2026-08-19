@@ -13,12 +13,18 @@ Both share the fixtures in `benchmark/fixtures/`.
 ## Engine comparison
 
 Compares **postcss-go** (Go) against upstream
-**[postcss](https://github.com/postcss/postcss)** (Node.js) and
-the independent CSS engines
-**[Lightning CSS](https://github.com/parcel-bundler/lightningcss)**,
-**[CSSTree](https://github.com/csstree/csstree)**, and
-**[esbuild](https://github.com/evanw/esbuild)** on the same workloads where
-their public APIs permit an equivalent comparison.
+**[postcss](https://github.com/postcss/postcss)** (Node.js) on equivalent
+PostCSS-shaped workloads: parse into a rich AST, optional empty walk, and
+stringify with formatting metadata preserved.
+
+**[CSSTree](https://github.com/csstree/csstree)** is included as a secondary
+reference because it exposes separate parser, walker, and generator APIs on a
+similar three-scenario surface.
+
+Bundlers and minifiers such as esbuild, Lightning CSS, and SWC are excluded
+because their public APIs expose parse and print only through a single native
+`transform()` call, without a PostCSS-shaped AST or an equivalent empty-walk
+API.
 
 The Parse scenario also includes parser-only baselines:
 **[Lezer CSS](https://github.com/lezer-parser/css)** and
@@ -90,21 +96,11 @@ PR, merge to `main` to seed the new baseline, then [archive](https://codspeed.io
 the skipped old ids in the CodSpeed UI. Synthetic sizes (`small` / `medium` /
 `large`) are 10 / 1,000 / 10,000 rules.
 
-Lightning CSS's Node API exposes parsing and printing together through
-`transform()`, without exposing its AST parser or an equivalent PostCSS-style
-empty walk. It is therefore included only in **ParseStringify**. The benchmark
-sets `minify: false` and does not configure browser targets, CSS Modules, or
-bundling. Input strings are converted to `Buffer` before timing because the
-Lightning CSS API accepts bytes; the measured operation includes native
-parse/print and output allocation.
+CSSTree participates in all three scenarios with source positions enabled.
+Source positions are enabled for CSSTree to keep its AST workload closer to
+postcss-go and PostCSS.
 
-CSSTree exposes separate parser, walker, and generator APIs, so it participates
-in all three scenarios. Source positions are enabled to keep its AST workload
-closer to postcss-go and PostCSS. esbuild, like Lightning CSS, exposes CSS
-parsing and printing as one transform operation, so it participates only in
-**ParseStringify** with minification, source maps, and target lowering disabled.
-
-`@parcel/css` is not included because it re-exports Lightning CSS. SWC's public
+SWC's public
 CSS package is focused on its minification pipeline, which is not equivalent to
 these non-minifying workloads.
 
@@ -137,9 +133,7 @@ implementation independently, run its underlying command directly:
 ```bash
 go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5
 node benchmark/postcss.bench.mjs
-node benchmark/lightningcss.bench.mjs
 node benchmark/csstree.bench.mjs
-node benchmark/esbuild.bench.mjs
 node benchmark/lezer.bench.mjs
 node benchmark/tree-sitter.bench.mjs
 node benchmark/run.mjs
@@ -240,14 +234,15 @@ pnpm bench:boundary
 
 Use `node benchmark/run-boundary.mjs --js-only` or `--go-only` when working on
 one half. The JavaScript half builds the addon and the WASM module, then runs
-four parts:
+five parts:
 
-| Part | Script             | Measures                                                                   |
-| ---- | ------------------ | -------------------------------------------------------------------------- |
-| A    | `01-hydration.mjs` | `JSON.parse` / `JSON.stringify`, `fromAst`, `toAst`, and DTO payload sizes |
-| B    | `02-napi.mjs`      | NAPI dispatch, the cgo transition, string reads/writes, batching           |
-| C    | `03-wasm.mjs`      | The same operations over WASM, plus direct linear-memory reads             |
-| D    | `04-verdict.mjs`   | Combines A–C to project a handle-based AST against the current design      |
+| Part | Script             | Measures                                                                                                                    |
+| ---- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| A    | `01-hydration.mjs` | `JSON.parse` / `JSON.stringify`, `fromAst`, `toAst`, and DTO payload sizes                                                  |
+| B    | `02-napi.mjs`      | NAPI dispatch, the cgo transition, string reads/writes, batching                                                            |
+| C    | `03-wasm.mjs`      | The same operations over WASM, plus direct linear-memory reads                                                              |
+| D    | `04-verdict.mjs`   | Combines A–C to project a handle-based AST against the current design                                                       |
+| E    | `05-plugins.mjs`   | Measured 1/3/5/10/30-plugin pipelines on binary, JSON DTO, native handles, cached handles, batched/cursor handles, and WASM |
 
 The Go half covers `ToDTO`, `json.Marshal`, `json.Unmarshal`, and `FromDTO`,
 each against a compact binary encoding of the same tree (`binary.go`). Because
@@ -265,6 +260,7 @@ Prerequisites differ:
 
 - **Part A vs the Go numbers.** The two halves are reported per fixture using the same manifest IDs, so a stage-by-stage total is the sum of both runs.
 - **Part D's break-even.** A handle-based AST replaces bulk serialization with many small crossings, so it only wins when one crossing costs less than the per-call break-even Part A reports. Part D repeats the comparison at several plugin counts, because the current design pays once per file while a handle model pays once per pass.
+- **Part E's measured pipelines.** Part D is a projection. Part E runs the same declaration visitors on real CSS through the production binary path, a synthetic JSON DTO, native handles (raw, cached, batched+cursor), and WASM handles. Cached native handles beat bulk binary transfer on that visitor shape; production Node N-API now exports the handle surface for declaration-only plugin runs while the WASM Worker path still needs a serializable tree. The Go handle ABI is `internal/asthandle`.
 - **Go banners.** The Go half prints a short `before` / `after` (or metric)
   banner immediately above each result group, so the raw `go test -bench`
   lines can be scanned without memorizing stage names. `GoWire` groups JSON
@@ -287,8 +283,9 @@ The boundary suite uses `ModernNormalize`, `TailwindPreflight`, `AnimateMin`, an
 
 ### Caveats
 
-- Parts A–C are measured. **Part D is a projection**: it multiplies measured per-crossing costs by counted operations rather than running a real handle-based AST, so treat it as a sizing estimate.
+- Parts A–C and E are measured. **Part D is a projection**: it multiplies measured per-crossing costs by counted operations rather than running a real handle-based AST, so treat it as a sizing estimate.
 - Part D's operation counts come from a modelled "typical plugin" walk, not from a real plugin such as autoprefixer.
+- Part E uses declaration visitors (read/write `prop`/`value`) at 1/3/5/10/30 plugins. It skips `Generated10k` to keep the run short. It is not a full PostCSS plugin-runtime or `raws`/custom-node contract.
 - The binary encoder covers only the `raws` keys on the stringifier's hot path, so its payload sizes are a lower bound.
 - Build artifacts (`napi/go-out/`, `napi/build/`, `wasm/core.wasm`, `results/`)
   are gitignored and regenerated by `benchmark/run-boundary.mjs`.
@@ -297,8 +294,6 @@ The boundary suite uses `ModernNormalize`, `TailwindPreflight`, `AnimateMin`, an
 
 - Results vary by CPU, Go version, and Node version. Treat numbers as directional, not absolute.
 - Node benchmarks use a fixed iteration count with warmup; Go uses `testing.B` until stable.
-- Lightning CSS results cover only its public Node `transform()` call with optimization features disabled; they are not pure parser timings.
-- esbuild results cover `transformSync()` with the CSS loader and optimization features disabled; they are not pure parser timings.
 - Real-world fixtures require postcss-go to parse real CSS correctly; `go test ./benchmark/ -run TestRealWorldFixturesParse` verifies this first.
 - The cross-engine comparison covers core parse/stringify/process paths only — not JS plugin execution or source maps. The Go stage benchmarks additionally cover tokenizing, AST walks, a single Go plugin visitor, and source map generation.
 - postcss-go is still incomplete relative to upstream; benchmark gaps may shrink or grow as the port matures.

@@ -36,6 +36,11 @@ import { fillDependencyParents, hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
 import { prepareStringifyOptions } from './source-map-output.js';
+import {
+  isHandleDeclarationPluginRun,
+  runHandleDeclarationPlugins,
+} from './handle-plugin-runtime.js';
+import { HandleDeclarationUnsupportedError, type NativeHandleAddon } from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -49,6 +54,7 @@ type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> &
     ast: AstDTO | ProcessRoot,
     options?: ProcessOptions,
   ): { css: string; map?: string; mapFile?: string };
+  handleAddon?: NativeHandleAddon | null;
 };
 
 type LiveAsyncPluginBridgeService = PluginBridgeService &
@@ -216,6 +222,10 @@ async function runPluginsWithBridgeBody(
   options = materializePreviousMap(options);
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
+  if (liveService) {
+    const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+    if (handled) return handled;
+  }
   const parsed = liveService
     ? await liveService.parseLive(css, { from: options.from })
     : await service.parse(css, { from: options.from });
@@ -282,13 +292,57 @@ function hasLiveAsyncPluginBridge(
 }
 
 /**
+ * Fast path for declaration-only plugins that only rewrite prop/value.
+ * Returns undefined when the run needs the live AST (source maps, cloneAfter,
+ * parent, async visitors, helpers, …).
+ */
+function tryHandleDeclarationResult(
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon'> & {
+    parseSync?: PluginBridgeService['parseSync'];
+  },
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor?: ResultProcessorFacade,
+): PluginResult | undefined {
+  if (
+    !service.handleAddon ||
+    typeof service.parseSync !== 'function' ||
+    !isHandleDeclarationPluginRun(plugins as AcceptedPlugin[]) ||
+    options.map
+  ) {
+    return undefined;
+  }
+  try {
+    const outputCss = runHandleDeclarationPlugins(
+      service.handleAddon,
+      css,
+      plugins as AcceptedPlugin[],
+    );
+    const result = createResult(
+      () => hydrateHandleOutputRoot(service, outputCss, css, options),
+      options,
+      plugins,
+      processor,
+    );
+    result.backend = service.capabilities?.backend;
+    result.css = outputCss;
+    fillDependencyParents(result);
+    return result;
+  } catch (error) {
+    if (error instanceof HandleDeclarationUnsupportedError) return undefined;
+    throw error;
+  }
+}
+
+/**
  * Fully synchronous counterpart to `runPluginsWithBridge`. Every extension
  * point is checked for thenables so synchronous processing never enters a
  * Promise or silently switches execution modes.
  */
 export function runPluginsWithBridgeSync(
   service: Required<Pick<PluginBridgeService, 'parseSync' | 'stringifyResultSync'>> &
-    Pick<PluginBridgeService, 'capabilities'>,
+    Pick<PluginBridgeService, 'capabilities' | 'handleAddon'>,
   plugins: AcceptedPlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -296,6 +350,8 @@ export function runPluginsWithBridgeSync(
 ): PluginResult {
   options = materializePreviousMap(options);
   const normalized = normalizePluginsSync(plugins);
+  const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+  if (handled) return handled;
   const parsed = service.parseSync(css, { from: options.from });
   const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
   attachInputMetadata(hydrated, css, options as ProcessOptions);
@@ -342,12 +398,27 @@ export function runPluginsWithBridgeSync(
 }
 
 function createResult(
-  root: ProcessRoot,
+  root: ProcessRoot | (() => ProcessRoot),
   opts: ProcessFileOptions,
   plugins: ActivePlugin[],
   processor?: ResultProcessorFacade,
 ): PluginResult {
   return new Result<RuntimePlugin | Transformer>(processor ?? { plugins }, root, opts);
+}
+
+function hydrateHandleOutputRoot(
+  service: Pick<PluginBridgeService, 'parseSync'>,
+  outputCss: string,
+  css: string,
+  options: ProcessFileOptions,
+): ProcessRoot {
+  if (typeof service.parseSync !== 'function') {
+    throw new Error('postcss-go: handle plugin path requires parseSync to hydrate Result.root');
+  }
+  const parsed = service.parseSync(outputCss, { from: options.from });
+  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
+  attachInputMetadata(hydrated, css, options as ProcessOptions);
+  return hydrated;
 }
 
 async function preparePlugin(

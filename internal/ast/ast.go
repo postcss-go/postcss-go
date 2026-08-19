@@ -78,12 +78,28 @@ type Container interface {
 }
 
 type BaseNode struct {
-	parent       Container
-	rng          SourceRange
-	src          *sourcemap.Location
-	Raws         Raws
-	lastIterator int
-	iterators    map[int]int
+	parent           Container
+	rng              SourceRange
+	src              sourcemap.Location
+	hasSrc           bool
+	rawFlags         rawFlag
+	rawSemicolon     bool
+	rawBefore        string
+	rawAfter         string
+	rawBetween       string
+	rawOwnSemicolon  string
+	rawAfterName     string
+	rawImportant     string
+	rawLeft          string
+	rawRight         string
+	rawIndent        string
+	rawSelector      RawValue
+	rawValue         RawValue
+	rawParams        RawValue
+	Raws             Raws
+	rawsMaterialized bool
+	lastIterator     int
+	iterators        map[int]int
 }
 
 type ErrorOptions struct {
@@ -112,21 +128,31 @@ func (n *BaseNode) SetRange(rng SourceRange) {
 }
 
 func (n *BaseNode) Source() *sourcemap.Location {
-	return n.src
+	if !n.hasSrc {
+		return nil
+	}
+	return &n.src
 }
 
 func (n *BaseNode) SetSource(src *sourcemap.Location) {
-	n.src = src
+	if src == nil {
+		n.hasSrc = false
+		n.src = sourcemap.Location{}
+		return
+	}
+	n.src = *src
+	n.hasSrc = true
 }
 
 func (n *BaseNode) RawFormatting() Raws {
-	if n.Raws == nil {
-		n.Raws = Raws{}
-	}
-	return n.Raws
+	return n.ensureRaws()
 }
 
 func (n *BaseNode) RawFormattingReadOnly() Raws {
+	if n.rawFlags == 0 && n.Raws == nil {
+		return nil
+	}
+	n.materializeRaws()
 	return n.Raws
 }
 
@@ -521,27 +547,30 @@ func cloneNode(node Node) Node {
 	switch current := node.(type) {
 	case *Document:
 		out := NewDocument()
+		out.BaseNode = cloneBaseNode(current.BaseNode)
 		out.rng = current.rng
 		out.src = current.src
-		out.Raws = CloneRaws(current.Raws)
+		out.hasSrc = current.hasSrc
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
 		return out
 	case *Root:
 		out := NewRoot()
+		out.BaseNode = cloneBaseNode(current.BaseNode)
 		out.rng = current.rng
 		out.src = current.src
-		out.Raws = CloneRaws(current.Raws)
+		out.hasSrc = current.hasSrc
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
 		return out
 	case *Rule:
 		out := NewRule(current.Selector)
+		out.BaseNode = cloneBaseNode(current.BaseNode)
 		out.rng = current.rng
 		out.src = current.src
-		out.Raws = CloneRaws(current.Raws)
+		out.hasSrc = current.hasSrc
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
@@ -549,9 +578,10 @@ func cloneNode(node Node) Node {
 	case *AtRule:
 		out := NewAtRule(current.Name, current.Params)
 		out.Block = current.Block
+		out.BaseNode = cloneBaseNode(current.BaseNode)
 		out.rng = current.rng
 		out.src = current.src
-		out.Raws = CloneRaws(current.Raws)
+		out.hasSrc = current.hasSrc
 		for _, child := range current.Nodes {
 			out.Append(cloneNode(child))
 		}
@@ -559,15 +589,17 @@ func cloneNode(node Node) Node {
 	case *Declaration:
 		out := NewDeclaration(current.Prop, current.Value)
 		out.Important = current.Important
+		out.BaseNode = cloneBaseNode(current.BaseNode)
 		out.rng = current.rng
 		out.src = current.src
-		out.Raws = CloneRaws(current.Raws)
+		out.hasSrc = current.hasSrc
 		return out
 	case *Comment:
 		out := NewComment(current.Text)
+		out.BaseNode = cloneBaseNode(current.BaseNode)
 		out.rng = current.rng
 		out.src = current.src
-		out.Raws = CloneRaws(current.Raws)
+		out.hasSrc = current.hasSrc
 		return out
 	default:
 		return nil
@@ -878,14 +910,14 @@ func prepareNodes(parent Container, sample Node, nodes ...Node) []Node {
 			_ = currentParent.RemoveChild(node)
 		}
 		if sample != nil {
-			if _, ok := node.RawFormattingReadOnly()["before"]; !ok {
+			if !HasRaw(node, "before") {
 				if before, ok := mutationBefore(sample); ok {
-					node.RawFormatting()["before"] = strings.Map(func(r rune) rune {
+					SetRawString(node, "before", strings.Map(func(r rune) rune {
 						if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
 							return r
 						}
 						return -1
-					}, before)
+					}, before))
 				}
 			}
 		}
@@ -900,18 +932,48 @@ func prepareNodes(parent Container, sample Node, nodes ...Node) []Node {
 // newly appended sibling; otherwise the sample's own leading whitespace is
 // used. Empty raw whitespace is meaningful and is preserved.
 func mutationBefore(sample Node) (string, bool) {
-	if before, ok := sample.RawFormattingReadOnly()["before"].(string); ok {
-		if before != "" {
-			return before, true
+	if text, ok := LookupRawString(sample, "before"); ok {
+		if text != "" {
+			return text, true
 		}
 		if container, ok := sample.(Container); ok {
-			if after, ok := container.RawFormattingReadOnly()["after"].(string); ok && strings.Contains(after, "\n") {
-				return after, true
+			if afterText, ok := LookupRawString(container, "after"); ok && strings.Contains(afterText, "\n") {
+				return afterText, true
 			}
 		}
-		return before, true
+		return text, true
 	}
 	return "", false
+}
+
+func appendParsed(parent Container, dst *[]Node, nodes ...Node) {
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		if currentParent := node.Parent(); currentParent != nil {
+			_ = currentParent.RemoveChild(node)
+		}
+		node.SetParent(parent)
+		*dst = append(*dst, node)
+	}
+}
+
+// AppendParsed attaches nodes during parsing. Formatting raws are already set,
+// so plugin-time mutation normalization is skipped.
+func AppendParsed(parent Container, nodes ...Node) {
+	switch current := parent.(type) {
+	case *Document:
+		appendParsed(current, &current.Nodes, nodes...)
+	case *Root:
+		appendParsed(current, &current.Nodes, nodes...)
+	case *Rule:
+		appendParsed(current, &current.Nodes, nodes...)
+	case *AtRule:
+		appendParsed(current, &current.Nodes, nodes...)
+	default:
+		parent.Append(nodes...)
+	}
 }
 
 func firstNode(nodes []Node) Node {

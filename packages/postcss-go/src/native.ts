@@ -36,6 +36,7 @@ import type {
   ResultMessage,
 } from './types.js';
 import { prepareStringifyOptions } from './source-map-output.js';
+import { hasNativeHandleBridge, type NativeHandleAddon } from './handle-session.js';
 
 type NativeAddon = {
   parse(css: string, from?: string): Buffer;
@@ -47,7 +48,7 @@ type NativeAddon = {
   noWork(css: string, optionsJson?: string): string;
   noWorkAsync(css: string, optionsJson?: string): Promise<string>;
   stringifyBuilder(ast: Buffer, optionsJson?: string): string;
-};
+} & Partial<NativeHandleAddon>;
 
 export type LiveParseResult = { root: Root };
 
@@ -209,8 +210,11 @@ export function installNativeSyncCssRuntime(): void {
  */
 export class NativePostcssGoService implements SyncPostcssGoService {
   readonly capabilities = NATIVE_BACKEND_CAPABILITIES;
+  readonly handleAddon: NativeHandleAddon | null;
 
-  constructor(private readonly addon: NativeAddon) {}
+  constructor(private readonly addon: NativeAddon) {
+    this.handleAddon = hasNativeHandleBridge(addon) ? addon : null;
+  }
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
     options = materializePreviousMap(options);

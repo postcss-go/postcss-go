@@ -200,6 +200,28 @@ test('companion-library packages keep their runtime library beside the addon', (
   }
   expect(binding).toContain('POSTCSS_GO_DYNAMIC_LIBRARY=1');
 
+  const addon = readFileSync(resolve(packageRoot, 'native/addon.c'), 'utf8');
+  expect(addon).toContain('require_go_symbol("pcgoCall")');
+  for (const symbol of [
+    'pcgoHandleParse',
+    'pcgoHandleClose',
+    'pcgoHandleType',
+    'pcgoHandleGetField',
+    'pcgoHandleSetField',
+    'pcgoHandleWalkDecls',
+    'pcgoHandleOpenCursor',
+    'pcgoHandleCursorNext',
+    'pcgoHandleCloseCursor',
+    'pcgoHandleReadFields',
+    'pcgoHandleSetFields',
+    'pcgoHandleNewDecl',
+    'pcgoHandleAppend',
+    'pcgoHandleDispose',
+    'pcgoHandleStringify',
+  ]) {
+    expect(addon).toContain(`require_go_symbol("${symbol}")`);
+  }
+
   const workflow = readFileSync(resolve(repoRoot, '.github/workflows/native.yml'), 'utf8');
   expect(workflow).toContain('npm/postcss-go/${{ matrix.tuple }}/libpostcssgo.dll');
 });

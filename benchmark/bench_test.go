@@ -5,6 +5,7 @@ import (
 
 	"postcss-go/benchmark"
 	postcss "postcss-go/internal/postcss"
+	"postcss-go/internal/stringifier"
 )
 
 func TestRealWorldFixturesParse(t *testing.T) {
@@ -24,6 +25,24 @@ func TestRealWorldFixturesParse(t *testing.T) {
 			}
 			_ = postcss.Stringify(root)
 		})
+	}
+}
+
+func TestBootstrapDirectEligible(t *testing.T) {
+	fixture, err := benchmark.RealWorldFixtureByID("Bootstrap")
+	if err != nil {
+		t.Fatalf("load fixture: %v", err)
+	}
+	root, err := postcss.Parse(fixture.CSS)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if !stringifier.DirectEligible(root) {
+		t.Fatal("expected parser-built Bootstrap tree to use the direct stringifier path")
+	}
+	css := postcss.Stringify(root)
+	if css == "" {
+		t.Fatal("expected non-empty css")
 	}
 }
 

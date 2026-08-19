@@ -7,3 +7,13 @@ CompileFlags:
     - -Ipackages/postcss-go/native
     - -Ipackages/postcss-go/node_modules/node-api-headers/include
     - -DNAPI_VERSION=8
+---
+If:
+  PathMatch: .*/benchmark/boundary/napi/.*
+CompileFlags:
+  Add:
+    - -std=c11
+    - -Ibenchmark/boundary/napi
+    - -Ibenchmark/boundary/napi/go-out
+    - -Ipackages/postcss-go/node_modules/node-api-headers/include
+    - -DNAPI_VERSION=8
