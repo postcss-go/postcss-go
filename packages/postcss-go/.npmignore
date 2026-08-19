@@ -1,0 +1,19 @@
+# `files` is the publish allowlist. This denylist still applies inside it.
+
+# Local Go CLI binaries that would otherwise match `bin/`
+bin/postcss-go
+bin/postcss-go.exe
+
+# Native / TypeScript build leftovers
+*.node
+*.tsbuildinfo
+**/*.map
+
+# Dev and test trees if they ever match the allowlist
+src
+test
+native
+coverage
+tsconfig*.json
+vite.config.ts
+vitest.config.ts

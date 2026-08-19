@@ -249,6 +249,14 @@ test('postcss-go package contains only the JavaScript CLI launcher', () => {
   expect(files).toContain('bin/postcss-go.js');
   expect(files).not.toContain('bin/postcss-go');
   expect(files).not.toContain('bin/postcss-go.exe');
+  expect(files).not.toContain('src/index.ts');
+  expect(files).not.toContain('native/addon.c');
+  expect(files.every((file) => !file.endsWith('.map'))).toBe(true);
+
+  const npmignore = readFileSync(resolve(packageRoot, '.npmignore'), 'utf8');
+  expect(npmignore).toContain('bin/postcss-go');
+  expect(npmignore).toContain('bin/postcss-go.exe');
+  expect(npmignore).toContain('**/*.map');
 });
 
 test('postcss-go does not expose native implementation internals', () => {
