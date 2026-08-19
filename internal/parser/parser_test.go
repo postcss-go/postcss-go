@@ -586,19 +586,21 @@ func TestHelperSplitImportantAndTrailingSpaces(t *testing.T) {
 	if len(body) != 1 || len(trailing) != 2 {
 		t.Fatalf("splitTrailingSpaces: body=%d trailing=%d", len(body), len(trailing))
 	}
+}
 
-	raws := ast.Raws{}
-	appendRawString(raws, "between", "")
-	if _, ok := raws["between"]; ok {
+func TestAppendRawStringHelper(t *testing.T) {
+	node := ast.NewAtRule("media", "")
+	appendRawString(node, "between", "")
+	if _, ok := ast.LookupRaw(node, "between"); ok {
 		t.Fatal("empty suffix should not set")
 	}
-	appendRawString(raws, "between", " ")
-	if raws["between"] != " " {
-		t.Fatalf("expected between set, got %#v", raws["between"])
+	appendRawString(node, "between", " ")
+	if value, ok := ast.LookupRaw(node, "between"); !ok || value != " " {
+		t.Fatalf("expected between set, got %#v", value)
 	}
-	appendRawString(raws, "between", "!")
-	if raws["between"] != " !" {
-		t.Fatalf("expected append, got %#v", raws["between"])
+	appendRawString(node, "between", "!")
+	if value, ok := ast.LookupRaw(node, "between"); !ok || value != " !" {
+		t.Fatalf("expected append, got %#v", value)
 	}
 }
 

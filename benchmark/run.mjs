@@ -94,15 +94,7 @@ function formatRatio(goNs, referenceNs) {
   return `${(1 / ratio).toFixed(2)}x slower`;
 }
 
-function printSection(
-  title,
-  order,
-  goResults,
-  postcssResults,
-  lightningResults,
-  csstreeResults,
-  esbuildResults,
-) {
+function printSection(title, order, goResults, postcssResults, csstreeResults) {
   console.log(title);
   console.log('');
   console.log(
@@ -111,22 +103,16 @@ function printSection(
       'postcss-go'.padStart(14),
       'postcss'.padStart(14),
       'vs postcss'.padStart(16),
-      'lightningcss'.padStart(14),
-      'vs lightning'.padStart(16),
       'css-tree'.padStart(14),
       'vs css-tree'.padStart(16),
-      'esbuild'.padStart(14),
-      'vs esbuild'.padStart(16),
     ].join('  '),
   );
-  console.log('-'.repeat(186));
+  console.log('-'.repeat(122));
 
   for (const name of order) {
     const go = goResults.get(name);
     const postcss = postcssResults.get(name);
-    const lightning = lightningResults.get(name);
     const csstree = csstreeResults.get(name);
-    const esbuild = esbuildResults.get(name);
     if (!go) continue;
 
     console.log(
@@ -135,12 +121,8 @@ function printSection(
         formatNs(go.nsPerOp).padStart(14),
         (postcss ? formatNs(postcss.nsPerOp) : '—').padStart(14),
         (postcss ? formatRatio(go.nsPerOp, postcss.nsPerOp) : '—').padStart(16),
-        (lightning ? formatNs(lightning.nsPerOp) : '—').padStart(14),
-        (lightning ? formatRatio(go.nsPerOp, lightning.nsPerOp) : '—').padStart(16),
         (csstree ? formatNs(csstree.nsPerOp) : '—').padStart(14),
         (csstree ? formatRatio(go.nsPerOp, csstree.nsPerOp) : '—').padStart(16),
-        (esbuild ? formatNs(esbuild.nsPerOp) : '—').padStart(14),
-        (esbuild ? formatRatio(go.nsPerOp, esbuild.nsPerOp) : '—').padStart(16),
       ].join('  '),
     );
   }
@@ -211,9 +193,7 @@ const parserRealWorldOrder = realWorldOrder.filter((name) => name.startsWith('Pa
 
 const goResults = runGoBenchmarks();
 const postcssResults = runNodeBenchmarks('benchmark/postcss.bench.mjs');
-const lightningResults = runNodeBenchmarks('benchmark/lightningcss.bench.mjs');
 const csstreeResults = runNodeBenchmarks('benchmark/csstree.bench.mjs');
-const esbuildResults = runNodeBenchmarks('benchmark/esbuild.bench.mjs');
 const lezerResults = runNodeBenchmarks('benchmark/lezer.bench.mjs');
 const treeSitterResults = runNodeBenchmarks('benchmark/tree-sitter.bench.mjs');
 
@@ -226,19 +206,9 @@ printSection(
   syntheticOrder,
   goResults,
   postcssResults,
-  lightningResults,
   csstreeResults,
-  esbuildResults,
 );
-printSection(
-  'Real-world CSS fixtures',
-  realWorldOrder,
-  goResults,
-  postcssResults,
-  lightningResults,
-  csstreeResults,
-  esbuildResults,
-);
+printSection('Real-world CSS fixtures', realWorldOrder, goResults, postcssResults, csstreeResults);
 printParserSection(
   'Parser-only baselines — synthetic scaling',
   parserSyntheticOrder,
@@ -257,19 +227,13 @@ printParserSection(
 console.log(
   'Fixtures: modern-normalize, Tailwind preflight, animate.css, Bootstrap, Bulma, Pure.css, UIkit, Materialize',
 );
-console.log('Go:            go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5');
-console.log('PostCSS:       node benchmark/postcss.bench.mjs');
-console.log('Lightning CSS: node benchmark/lightningcss.bench.mjs');
-console.log('CSSTree:       node benchmark/csstree.bench.mjs');
-console.log('esbuild:       node benchmark/esbuild.bench.mjs');
-console.log('Lezer CSS:     node benchmark/lezer.bench.mjs');
-console.log('Tree-sitter:   node benchmark/tree-sitter.bench.mjs');
-console.log('Lightning CSS and esbuild expose parse + stringify as a single transform;');
-console.log('their Parse and Process cells are intentionally left blank.');
+console.log('Go:          go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5');
+console.log('PostCSS:     node benchmark/postcss.bench.mjs');
+console.log('CSSTree:     node benchmark/csstree.bench.mjs');
+console.log('Lezer CSS:   node benchmark/lezer.bench.mjs');
+console.log('Tree-sitter: node benchmark/tree-sitter.bench.mjs');
 console.log('Upstreams: https://github.com/postcss/postcss');
-console.log('           https://github.com/parcel-bundler/lightningcss');
 console.log('           https://github.com/csstree/csstree');
-console.log('           https://github.com/evanw/esbuild');
 console.log('           https://github.com/lezer-parser/css');
 console.log('           https://github.com/tree-sitter/tree-sitter-css');
 console.log('');

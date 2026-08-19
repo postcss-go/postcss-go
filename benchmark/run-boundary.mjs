@@ -68,6 +68,12 @@ if (runJavaScript) {
 
   console.log(`\n${'='.repeat(72)}`);
   run('node', [resolve(boundaryDir, '04-verdict.mjs')], { cwd: repoRoot });
+
+  console.log(`\n${'='.repeat(72)}`);
+  run('node', [resolve(boundaryDir, '05-plugins.mjs')], {
+    cwd: repoRoot,
+    env: { ...process.env, SPIKE_JSON: resolve(results, '05-plugins.json') },
+  });
 }
 
 if (runGo) {

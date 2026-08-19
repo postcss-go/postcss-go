@@ -142,12 +142,21 @@ execution and once before final stringification. A persistent opaque-handle AST
 is an optimization, not a prerequisite for removing PostCSS or exposing the
 N-API synchronous API.
 
-- [ ] Benchmark real one-, three-, five-, ten-, and thirty-plugin pipelines before replacing binary whole-tree transfer.
-- [ ] Prototype an opaque Go AST handle ABI with stable identity, generation checks, explicit disposal, and detached-node lifetime.
-- [ ] Prototype cached field reads, batched reads, mutation batches, and visitor cursors.
-- [ ] Compare native handles, cached handles, binary transfer, a synthetic JSON DTO baseline, and WASM using real plugins.
-- [ ] Adopt handle-backed nodes only where measured end-to-end results outperform the binary AST path.
-- [ ] Retain the binary AST and DTO protocols for the native and WASM compatibility boundaries.
+The Go handle ABI lives in `internal/asthandle` and is measured by
+`pnpm bench:boundary` Part E. Production Node N-API exports the same handle
+surface (`handleParse`, batched field I/O, cursors) for declaration-only plugin
+pipelines; cached native handles beat bulk binary transfer on that visitor shape
+at 1–30 plugins. They are not a full PostCSS node facade (raws, custom nodes,
+dirty rewalk, Result/helpers), and the WASM Worker path still needs a
+serializable tree. Production therefore keeps the compact binary AST and DTO
+protocols for compatibility boundaries.
+
+- [x] Benchmark real one-, three-, five-, ten-, and thirty-plugin pipelines before replacing binary whole-tree transfer.
+- [x] Prototype an opaque Go AST handle ABI with stable identity, generation checks, explicit disposal, and detached-node lifetime.
+- [x] Prototype cached field reads, batched reads, mutation batches, and visitor cursors.
+- [x] Compare native handles, cached handles, binary transfer, a synthetic JSON DTO baseline, and WASM using real plugins.
+- [x] Adopt handle-backed nodes only where measured end-to-end results outperform the binary AST path.
+- [x] Retain the binary AST and DTO protocols for the native and WASM compatibility boundaries.
 
 ## Validation and release gates
 
@@ -181,4 +190,4 @@ part of a release.
 - [x] Run real-plugin and cross-backend contract suites.
 - [ ] Complete the native build, packaging, installation, and publication matrix.
 - [x] Update public compatibility and migration documentation.
-- [ ] Evaluate opaque AST handles only after the required replacement target is complete and benchmarked.
+- [x] Evaluate opaque AST handles only after the required replacement target is complete and benchmarked.

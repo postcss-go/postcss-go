@@ -300,6 +300,13 @@ func (i *Input) String() string {
 }
 
 func (i *Input) Location(start, end Position) *Location {
+	loc := &Location{}
+	i.FillLocation(start, end, loc)
+	return loc
+}
+
+// FillLocation writes the same result as Location into dst without allocating.
+func (i *Input) FillLocation(start, end Position, dst *Location) {
 	startInput := i
 	endInput := i
 	startPos := start
@@ -314,9 +321,10 @@ func (i *Input) Location(start, end Position) *Location {
 		endPos = Position{Line: line, Column: column, Offset: resolveOffset(mappedInput, line, column, end.Offset)}
 	}
 	if startInput == endInput {
-		return &Location{Start: startPos, End: endPos, Input: startInput}
+		*dst = Location{Start: startPos, End: endPos, Input: startInput}
+		return
 	}
-	return &Location{Start: start, End: end, Input: i}
+	*dst = Location{Start: start, End: end, Input: i}
 }
 
 func resolveOffset(input *Input, line, column, fallback int) int {

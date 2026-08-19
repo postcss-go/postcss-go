@@ -9,14 +9,16 @@ import (
 )
 
 type Parser struct {
-	input       string
-	tok         *tokenizer.Tokenizer
-	root        *ast.Root
-	src         *sourcemap.Input
-	stmtBuf     []tokenizer.Token
-	trackSource bool
-	pending     map[ast.Container]string
-	blockStarts map[ast.Container]int
+	input         string
+	tok           *tokenizer.Tokenizer
+	root          *ast.Root
+	src           *sourcemap.Input
+	stmtBuf       []tokenizer.Token
+	paramScratch  []tokenizer.Token
+	valueScratch  strings.Builder
+	trackSource   bool
+	pendingBefore string
+	blockStart    int
 }
 
 func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
@@ -31,16 +33,14 @@ func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
 		src:         input,
 		stmtBuf:     make([]tokenizer.Token, 0, 32),
 		trackSource: input.TracksSource(),
-		pending:     make(map[ast.Container]string),
-		blockStarts: make(map[ast.Container]int),
 	}
-	p.root.RawFormatting()["after"] = ""
+	p.root.Nodes = make([]ast.Node, 0, estimateTopLevelCapacity(len(css)))
 	if err := p.parseInto(p.root, false); err != nil {
 		return nil, err
 	}
 	if len(p.root.Children()) > 0 {
-		if _, ok := p.root.RawFormattingReadOnly()["semicolon"]; !ok {
-			p.root.RawFormatting()["semicolon"] = false
+		if !ast.HasRaw(p.root, "semicolon") {
+			ast.SetRawBool(p.root, "semicolon", false)
 		}
 	}
 	p.root.SetRange(ast.SourceRange{Start: 0, End: len(css)})
@@ -51,8 +51,15 @@ func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
 }
 
 func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
-	if _, ok := container.RawFormattingReadOnly()["after"]; !ok {
-		container.RawFormatting()["after"] = ""
+	savedPending := p.pendingBefore
+	savedBlock := p.blockStart
+	p.pendingBefore = ""
+	defer func() {
+		p.pendingBefore = savedPending
+		p.blockStart = savedBlock
+	}()
+	if !ast.HasRaw(container, "after") {
+		ast.SetRawString(container, "after", "")
 	}
 	for !p.tok.EOF() {
 		tokens, endBlock, err := p.collectStatement(stopOnBrace)
@@ -64,11 +71,11 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 		}
 		if len(tokens) == 0 && endBlock {
 			if len(container.Children()) > 0 {
-				if _, ok := container.RawFormattingReadOnly()["semicolon"]; !ok {
-					container.RawFormatting()["semicolon"] = false
+				if !ast.HasRaw(container, "semicolon") {
+					ast.SetRawBool(container, "semicolon", false)
 				}
 			}
-			container.RawFormatting()["after"] = ""
+			ast.SetRawString(container, "after", "")
 			return nil
 		}
 		var blockTrailing string
@@ -89,13 +96,13 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 			if blockTrailing != "" {
 				if children := container.Children(); len(children) > 0 {
 					if atRule, ok := children[len(children)-1].(*ast.AtRule); ok && !atRule.Block && !containerHasSemicolon(container) {
-						atRule.RawFormatting()["between"] = blockTrailing
+						ast.SetRawString(atRule, "between", blockTrailing)
 						blockTrailing = ""
 					} else if decl, ok := children[len(children)-1].(*ast.Declaration); ok && strings.HasPrefix(decl.Prop, "--") {
-						if raw, ok := decl.RawFormattingReadOnly()["value"].(ast.RawValue); ok {
-							if strings.Contains(raw.Raw, "*/") {
-								raw.Raw += blockTrailing
-								decl.RawFormatting()["value"] = raw
+						if raw, ok := ast.LookupRaw(decl, "value"); ok {
+							if value, ok := raw.(ast.RawValue); ok && strings.Contains(value.Raw, "*/") {
+								value.Raw += blockTrailing
+								ast.SetRawValue(decl, "value", value)
 								blockTrailing = ""
 							}
 						} else if decl.Value == "" {
@@ -106,28 +113,28 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 				}
 			}
 			if blockTrailing != "" {
-				if existing, ok := container.RawFormattingReadOnly()["after"].(string); ok {
-					container.RawFormatting()["after"] = existing + blockTrailing
-				} else {
-					container.RawFormatting()["after"] = blockTrailing
+				after := blockTrailing
+				if text, ok := ast.LookupRawString(container, "after"); ok {
+					after = text + blockTrailing
 				}
+				ast.SetRawString(container, "after", after)
 			}
 			if len(container.Children()) > 0 {
-				if _, ok := container.RawFormattingReadOnly()["semicolon"]; !ok {
-					container.RawFormatting()["semicolon"] = false
+				if !ast.HasRaw(container, "semicolon") {
+					ast.SetRawBool(container, "semicolon", false)
 				}
 			}
 			return nil
 		}
 	}
 	if stopOnBrace {
-		return p.syntaxError("Unclosed block: missing closing brace", p.blockStarts[container])
+		return p.syntaxError("Unclosed block: missing closing brace", p.blockStart)
 	}
 	return nil
 }
 
 func containerHasSemicolon(container ast.Container) bool {
-	value, ok := container.RawFormattingReadOnly()["semicolon"].(bool)
+	value, ok := ast.LookupRawBool(container, "semicolon")
 	return ok && value
 }
 
@@ -215,7 +222,7 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 	trimmed := trimSpaceTokens(tokens)
 	if len(trimmed) == 0 {
 		if spaces := tokensText(p.input, tokens); spaces != "" {
-			container.RawFormatting()["after"] = spaces
+			ast.SetRawString(container, "after", spaces)
 		}
 		return nil
 	}
@@ -229,7 +236,7 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 					lastComment = index + 1
 				}
 			}
-			p.pending[container] = tokensText(p.input, leading[lastComment:])
+			p.pendingBefore = tokensText(p.input, leading[lastComment:])
 			tokens = body
 			trimmed = trimSpaceTokens(tokens)
 			break
@@ -246,34 +253,33 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 		header := trimSpaceTokens(rawHeader)
 		if len(header) == 0 {
 			node := ast.NewRule("")
-			node.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
-			node.RawFormatting()["between"] = ""
+			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
 			if p.trackSource {
-				node.SetSource(p.location(last.Start, last.End+1))
+				p.attachSource(node, last.Start, last.End+1)
 			}
-			container.Append(node)
-			p.blockStarts[node] = last.Start
+			ast.AppendParsed(container, node)
+			p.blockStart = last.Start
 			return p.parseInto(node, true)
 		}
 		if header[0].Kind == "at-word" {
 			node := p.makeAtRule(header)
 			node.Block = true
-			node.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
+			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
 			setAtRuleBetween(node, p.input, rawHeader)
-			container.Append(node)
-			container.RawFormatting()["semicolon"] = false
-			p.blockStarts[node] = header[0].Start
+			ast.AppendParsed(container, node)
+			ast.SetRawBool(container, "semicolon", false)
+			p.blockStart = header[0].Start
 			return p.parseInto(node, true)
 		}
 		if isCustomPropertyBlock(p.input, header) {
 			return p.appendCustomPropertyBlock(container, tokens, header, last)
 		}
 		node := p.makeRule(header)
-		node.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
-		node.RawFormatting()["between"] = trailingFormatting(p.input, rawHeader)
-		container.Append(node)
-		container.RawFormatting()["semicolon"] = false
-		p.blockStarts[node] = header[0].Start
+		ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
+		ast.SetRawString(node, "between", trailingFormatting(p.input, rawHeader))
+		ast.AppendParsed(container, node)
+		ast.SetRawBool(container, "semicolon", false)
+		p.blockStart = header[0].Start
 		return p.parseInto(node, true)
 	case ";":
 		end := len(tokens)
@@ -293,23 +299,23 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 				return p.syntaxError("At-rule without name", body[0].Start)
 			}
 			node := p.makeAtRule(body)
-			node.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
+			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
 			setAtRuleBetween(node, p.input, rawBody)
 			p.extendSourceTo(node, tokens[len(tokens)-1].Start+1)
-			container.Append(node)
-			container.RawFormatting()["semicolon"] = true
+			ast.AppendParsed(container, node)
+			ast.SetRawBool(container, "semicolon", true)
 			return nil
 		}
 		if body[0].Kind == "comment" && len(body) == 1 {
 			node := p.makeComment(body[0])
-			node.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
-			container.Append(node)
+			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
+			ast.AppendParsed(container, node)
 			return nil
 		}
 		if err := p.appendDeclaration(container, rawBody, true, tokens[len(tokens)-1].Start+1); err != nil {
 			return err
 		}
-		container.RawFormatting()["semicolon"] = true
+		ast.SetRawBool(container, "semicolon", true)
 		return nil
 	default:
 		if trimmed[0].Kind == "at-word" {
@@ -317,23 +323,23 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 				return p.syntaxError("At-rule without name", trimmed[0].Start)
 			}
 			node := p.makeAtRule(trimmed)
-			node.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
+			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
 			if len(trimmed) == 1 && p.trackSource {
-				node.SetSource(p.location(trimmed[0].Start, trimmed[0].Start))
+				p.attachSource(node, trimmed[0].Start, trimmed[0].Start)
 			}
-			container.Append(node)
+			ast.AppendParsed(container, node)
 			return nil
 		}
 		if len(trimmed) == 1 && trimmed[0].Kind == "comment" {
 			node := p.makeComment(trimmed[0])
-			node.RawFormatting()["before"] = leadingSpace(p.input, tokens)
-			container.Append(node)
+			ast.SetRawString(node, "before", leadingSpace(p.input, tokens))
+			ast.AppendParsed(container, node)
 			return nil
 		}
 		if err := p.appendDeclaration(container, tokens, false, -1); err != nil {
 			return err
 		}
-		container.RawFormatting()["semicolon"] = false
+		ast.SetRawBool(container, "semicolon", false)
 		return nil
 	}
 }
@@ -341,17 +347,17 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 func (p *Parser) freeSemicolon(container ast.Container, tokens []tokenizer.Token) error {
 	children := container.Children()
 	if len(children) == 0 {
-		p.pending[container] += tokensText(p.input, tokens)
+		p.pendingBefore += tokensText(p.input, tokens)
 		return nil
 	}
 	prev := children[len(children)-1]
 	switch node := prev.(type) {
 	case *ast.Rule:
 		own := tokensText(p.input, tokens)
-		if existing, ok := node.RawFormattingReadOnly()["ownSemicolon"].(string); ok {
-			node.RawFormatting()["ownSemicolon"] = existing + own
+		if text, ok := ast.LookupRawString(node, "ownSemicolon"); ok {
+			ast.SetRawString(node, "ownSemicolon", text+own)
 		} else {
-			node.RawFormatting()["ownSemicolon"] = own
+			ast.SetRawString(node, "ownSemicolon", own)
 		}
 		if node.Source() != nil {
 			end := p.tok.Position()
@@ -361,13 +367,13 @@ func (p *Parser) freeSemicolon(container ast.Container, tokens []tokenizer.Token
 			p.extendSourceTo(node, end)
 		}
 	case *ast.Declaration:
-		container.RawFormatting()["semicolon"] = true
+		ast.SetRawBool(container, "semicolon", true)
 		text := tokensText(p.input, tokens)
-		if existing, ok := container.RawFormattingReadOnly()["after"].(string); ok {
-			container.RawFormatting()["after"] = existing + text
-		} else {
-			container.RawFormatting()["after"] = text
+		after := text
+		if existing, ok := ast.LookupRawString(container, "after"); ok {
+			after = existing + text
 		}
+		ast.SetRawString(container, "after", after)
 	}
 	return nil
 }
@@ -418,15 +424,17 @@ func (p *Parser) appendCustomPropertyBlock(container ast.Container, tokens, head
 				if err != nil {
 					return err
 				}
-				if raw, ok := decl.RawFormattingReadOnly()["value"].(ast.RawValue); ok && strings.HasPrefix(decl.Prop, "--") {
-					decl.Value = raw.Raw
-					delete(decl.RawFormatting(), "value")
+				if raw, ok := ast.LookupRaw(decl, "value"); ok {
+					if value, ok := raw.(ast.RawValue); ok && strings.HasPrefix(decl.Prop, "--") {
+						decl.Value = value.Raw
+						ast.DeleteRaw(decl, "value")
+					}
 				}
-				decl.RawFormatting()["before"] = p.takePendingBefore(container, leadingSpace(p.input, tokens))
-				container.Append(decl)
+				ast.SetRawString(decl, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
+				ast.AppendParsed(container, decl)
 				if terminated {
 					p.extendSourceTo(decl, semicolonStart+1)
-					container.RawFormatting()["semicolon"] = true
+					ast.SetRawBool(container, "semicolon", true)
 				}
 				return nil
 			}
@@ -470,15 +478,19 @@ func (p *Parser) appendDeclaration(container ast.Container, tokens []tokenizer.T
 	if strings.Contains(p.tokensText(prefix), ":") {
 		declBefore = p.tokensText(prefix)
 	}
-	if existing, ok := decl.RawFormattingReadOnly()["before"].(string); ok {
-		declBefore += existing
+	if text, ok := ast.LookupRawString(decl, "before"); ok {
+		declBefore += text
 	}
-	decl.RawFormatting()["before"] = declBefore
-	if pending := p.pending[container]; pending != "" {
-		decl.RawFormatting()["before"] = pending + decl.RawFormattingReadOnly()["before"].(string)
-		delete(p.pending, container)
+	ast.SetRawString(decl, "before", declBefore)
+	if pending := p.pendingBefore; pending != "" {
+		if text, ok := ast.LookupRawString(decl, "before"); ok {
+			ast.SetRawString(decl, "before", pending+text)
+		} else {
+			ast.SetRawString(decl, "before", pending)
+		}
+		p.pendingBefore = ""
 	}
-	container.Append(decl)
+	ast.AppendParsed(container, decl)
 	p.appendTrailingComments(container, trailing)
 	return nil
 }
@@ -491,8 +503,8 @@ func (p *Parser) appendLeadingComments(container ast.Container, tokens []tokeniz
 			before += token.Text(p.input)
 		case "comment":
 			node := p.makeComment(token)
-			node.RawFormatting()["before"] = before
-			container.Append(node)
+			ast.SetRawString(node, "before", before)
+			ast.AppendParsed(container, node)
 			before = ""
 		}
 	}
@@ -506,16 +518,16 @@ func (p *Parser) appendTrailingComments(container ast.Container, tokens []tokeni
 			before += token.Text(p.input)
 		case "comment":
 			node := p.makeComment(token)
-			node.RawFormatting()["before"] = before
-			container.Append(node)
+			ast.SetRawString(node, "before", before)
+			ast.AppendParsed(container, node)
 			before = ""
 		}
 	}
 }
 
-func (p *Parser) takePendingBefore(container ast.Container, before string) string {
-	if pending := p.pending[container]; pending != "" {
-		delete(p.pending, container)
+func (p *Parser) takePendingBefore(_ ast.Container, before string) string {
+	if pending := p.pendingBefore; pending != "" {
+		p.pendingBefore = ""
 		return pending + before
 	}
 	return before
@@ -548,23 +560,24 @@ func splitTrailingSpaces(tokens []tokenizer.Token) (body, trailing []tokenizer.T
 func (p *Parser) makeRule(tokens []tokenizer.Token) *ast.Rule {
 	selectorTokens, trailing := splitTrailingFormatting(tokens)
 	rawSelector := p.tokensText(selectorTokens)
-	selector := strings.TrimSpace(cleanSelectorValue(p.input, selectorTokens))
+	selector := trimSpaceASCII(p.cleanSelectorValue(selectorTokens))
 	rawSelector = strings.TrimPrefix(rawSelector, "\ufeff")
 	selector = strings.TrimPrefix(selector, "\ufeff")
 	node := ast.NewRule(selector)
+	node.Nodes = make([]ast.Node, 0, 4)
 	if trailingText := p.tokensText(trailing); trailingText != "" {
-		node.RawFormatting()["between"] = trailingText
+		ast.SetRawString(node, "between", trailingText)
 	}
 	if rawSelector != selector {
-		node.RawFormatting()["selector"] = ast.RawValue{Raw: rawSelector, Value: selector}
+		ast.SetRawValue(node, "selector", ast.RawValue{Raw: rawSelector, Value: selector})
 	}
 	node.SetRange(ast.SourceRange{Start: selectorTokens[0].Start, End: selectorTokens[len(selectorTokens)-1].End})
 	p.attachSource(node, selectorTokens[0].Start, selectorTokens[len(selectorTokens)-1].End+1)
 	return node
 }
 
-func cleanSelectorValue(input string, tokens []tokenizer.Token) string {
-	var builder strings.Builder
+func (p *Parser) cleanSelectorValue(tokens []tokenizer.Token) string {
+	p.valueScratch.Reset()
 	for index, token := range tokens {
 		if token.Kind == "comment" {
 			prev := "empty"
@@ -576,18 +589,19 @@ func cleanSelectorValue(input string, tokens []tokenizer.Token) string {
 				next = tokens[index+1].Kind
 			}
 			if prev != "space" && prev != "empty" && next != "space" && next != "empty" {
-				builder.WriteString(token.Text(input))
+				p.valueScratch.WriteString(token.Text(p.input))
 			}
 			continue
 		}
-		builder.WriteString(token.Text(input))
+		p.valueScratch.WriteString(token.Text(p.input))
 	}
-	return builder.String()
+	return p.valueScratch.String()
 }
 
 func (p *Parser) makeAtRule(tokens []tokenizer.Token) *ast.AtRule {
 	name := strings.TrimPrefix(tokens[0].Text(p.input), "@")
-	paramTokens := append([]tokenizer.Token(nil), tokens[1:]...)
+	p.paramScratch = append(p.paramScratch[:0], tokens[1:]...)
+	paramTokens := p.paramScratch
 	between := takeSpacesAndCommentsFromEnd(p.input, &paramTokens)
 	afterName := ""
 	params := ""
@@ -596,17 +610,21 @@ func (p *Parser) makeAtRule(tokens []tokenizer.Token) *ast.AtRule {
 	if len(paramTokens) > 0 {
 		afterName = takeSpacesAndCommentsFromStart(p.input, &paramTokens)
 		rawParams := p.tokensText(paramTokens)
-		params = strings.TrimSpace(cleanAtRuleParams(p.input, paramTokens))
+		params = trimSpaceASCII(p.cleanAtRuleParams(paramTokens))
 		if rawParams != params && params != "" {
 			paramsRaw = ast.RawValue{Raw: rawParams, Value: params}
 			hasParamsRaw = true
 		}
 	}
 	node := ast.NewAtRule(name, params)
-	node.RawFormatting()["afterName"] = afterName
-	node.RawFormatting()["between"] = between
+	if afterName != "" {
+		ast.SetRawString(node, "afterName", afterName)
+	}
+	if between != "" {
+		ast.SetRawString(node, "between", between)
+	}
 	if hasParamsRaw {
-		node.RawFormatting()["params"] = paramsRaw
+		ast.SetRawValue(node, "params", paramsRaw)
 	}
 	node.SetRange(ast.SourceRange{Start: tokens[0].Start, End: tokens[len(tokens)-1].End})
 	p.attachSource(node, tokens[0].Start, tokens[len(tokens)-1].End+1)
@@ -614,23 +632,28 @@ func (p *Parser) makeAtRule(tokens []tokenizer.Token) *ast.AtRule {
 }
 
 func setAtRuleBetween(node *ast.AtRule, input string, tokens []tokenizer.Token) {
-	raws := node.RawFormatting()
-	if _, ok := raws["between"]; !ok {
-		raws["between"] = trailingFormatting(input, tokens)
+	if !ast.HasRaw(node, "between") {
+		ast.SetRawString(node, "between", trailingFormatting(input, tokens))
 		return
 	}
-	appendRawString(raws, "between", trailingSpace(input, tokens))
+	if suffix := trailingSpace(input, tokens); suffix != "" {
+		if text, ok := ast.LookupRawString(node, "between"); ok {
+			ast.SetRawString(node, "between", text+suffix)
+			return
+		}
+		ast.SetRawString(node, "between", suffix)
+	}
 }
 
-func appendRawString(raws ast.Raws, key, suffix string) {
+func appendRawString(node ast.Node, key, suffix string) {
 	if suffix == "" {
 		return
 	}
-	if value, ok := raws[key].(string); ok {
-		raws[key] = value + suffix
+	if text, ok := ast.LookupRawString(node, key); ok {
+		ast.SetRawString(node, key, text+suffix)
 		return
 	}
-	raws[key] = suffix
+	ast.SetRawString(node, key, suffix)
 }
 
 func (p *Parser) makeComment(token tokenizer.Token) *ast.Comment {
@@ -639,13 +662,13 @@ func (p *Parser) makeComment(token tokenizer.Token) *ast.Comment {
 	trimmed := strings.TrimSpace(text)
 	node := ast.NewComment(trimmed)
 	if trimmed == "" {
-		node.RawFormatting()["left"] = text
-		node.RawFormatting()["right"] = ""
+		ast.SetRawString(node, "left", text)
+		ast.SetRawString(node, "right", "")
 	} else {
 		left := text[:strings.Index(text, trimmed)]
 		rightStart := strings.LastIndex(text, trimmed) + len(trimmed)
-		node.RawFormatting()["left"] = left
-		node.RawFormatting()["right"] = text[rightStart:]
+		ast.SetRawString(node, "left", left)
+		ast.SetRawString(node, "right", text[rightStart:])
 	}
 	node.SetRange(ast.SourceRange{Start: token.Start, End: token.End})
 	p.attachSource(node, token.Start, token.End+1)
@@ -663,7 +686,7 @@ func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, er
 		return nil, p.syntaxError("Unknown word: expected declaration", tokens[0].Start)
 	}
 	parenDepth, squareDepth, braceDepth := 0, 0, 0
-	allowValueColons := strings.Contains(strings.ToLower(p.tokensText(tokens[colon+1:])), "progid:")
+	allowValueColons := tokensContainProgid(p.input, tokens[colon+1:])
 	for index := colon + 1; index < len(tokens); index++ {
 		switch tokens[index].Kind {
 		case "(":
@@ -716,7 +739,7 @@ func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, er
 	for betweenStart > 0 && (tokens[betweenStart-1].Kind == "space" || tokens[betweenStart-1].Kind == "comment") {
 		betweenStart--
 	}
-	prop := strings.TrimSpace(p.tokensText(tokens[:betweenStart]))
+	prop := trimSpaceASCII(p.tokensText(tokens[:betweenStart]))
 	propertyPrefixRaw := ""
 	if prop == "" {
 		return nil, p.syntaxError("Unknown word: expected declaration", tokens[0].Start)
@@ -773,12 +796,12 @@ func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, er
 			}
 		}
 	}
-	rawValueText := strings.TrimSpace(p.tokensText(valueTokens))
+	rawValueText := trimSpaceASCII(p.tokensText(valueTokens))
 	value := rawValueText
 	if !customProperty {
-		value = strings.TrimSpace(cleanDeclarationValue(p.input, valueTokens))
+		value = trimSpaceASCII(p.cleanDeclarationValue(valueTokens))
 	} else {
-		cleaned := cleanCustomPropertyValue(p.input, valueTokens)
+		cleaned := p.cleanCustomPropertyValue(valueTokens)
 		if important {
 			importantRaw = strings.TrimLeft(importantRaw, " \t\r\n")
 			for index, token := range originalValueTokens {
@@ -787,9 +810,9 @@ func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, er
 					prefix := originalValueTokens[:index]
 					if len(prefix) > 0 {
 						rawValueText = p.tokensText(prefix)
-						value = strings.TrimSpace(cleanDeclarationValue(p.input, prefix))
+						value = trimSpaceASCII(p.cleanDeclarationValue(prefix))
 						if strings.TrimSpace(value) == "" {
-							value = cleanDeclarationValue(p.input, prefix)
+							value = p.cleanDeclarationValue(prefix)
 						}
 					}
 					break
@@ -802,60 +825,84 @@ func (p *Parser) makeDeclaration(tokens []tokenizer.Token) (*ast.Declaration, er
 					}
 					valueTokens = append([]tokenizer.Token{token}, valueTokens...)
 				}
-				cleaned = cleanDeclarationValue(p.input, valueTokens)
+				cleaned = p.cleanDeclarationValue(valueTokens)
 			}
 		}
-		if strings.TrimSpace(cleaned) == "" && cleaned != "" {
+		if trimSpaceASCII(cleaned) == "" && cleaned != "" {
 			rawValueText = p.tokensText(valueTokens)
 			value = cleaned
 		}
 	}
 	node := ast.NewDeclaration(prop, value)
 	if propertyPrefixRaw != "" {
-		node.RawFormatting()["before"] = propertyPrefixRaw
+		ast.SetRawString(node, "before", propertyPrefixRaw)
 	}
-	node.RawFormatting()["between"] = p.tokensText(tokens[betweenStart:valueStart])
-	if customProperty && strings.TrimSpace(value) == "" {
-		node.RawFormatting()["between"] = strings.TrimRight(node.RawFormattingReadOnly()["between"].(string), " \t\r\n")
+	between := p.tokensText(tokens[betweenStart:valueStart])
+	if customProperty && trimSpaceASCII(value) == "" {
+		between = strings.TrimRight(between, " \t\r\n")
 	}
+	ast.SetRawString(node, "between", between)
 	node.Important = important
 	trailing := trailingSpace(p.input, original)
 	if important {
 		importantSuffix := importantRaw + trailing
 		if importantSuffix != " !important" {
-			node.RawFormatting()["important"] = importantSuffix
+			ast.SetRawString(node, "important", importantSuffix)
 		}
 		if rawValueText != value {
 			if customProperty && strings.HasSuffix(rawValueText, "*/") {
 				rawValueText += " "
 			}
-			node.RawFormatting()["value"] = ast.RawValue{Raw: rawValueText, Value: value}
+			ast.SetRawValue(node, "value", ast.RawValue{Raw: rawValueText, Value: value})
 		}
 	} else if rawValueText != value || trailing != "" {
-		node.RawFormatting()["value"] = ast.RawValue{Raw: rawValueText + trailing, Value: value}
+		ast.SetRawValue(node, "value", ast.RawValue{Raw: rawValueText + trailing, Value: value})
 	}
 	if customProperty && value == "" && trailing != "" {
 		node.Value = trailing
-		delete(node.RawFormatting(), "value")
+		ast.DeleteRaw(node, "value")
 	}
 	node.SetRange(ast.SourceRange{Start: tokens[0].Start, End: tokens[len(tokens)-1].End})
 	p.attachSource(node, tokens[0].Start, tokens[len(tokens)-1].End+1)
 	return node, nil
 }
 
+func tokensContainProgid(input string, tokens []tokenizer.Token) bool {
+	for index, token := range tokens {
+		if strings.Contains(strings.ToLower(token.Text(input)), "progid:") {
+			return true
+		}
+		if strings.EqualFold(token.Text(input), "progid") && index+1 < len(tokens) && tokens[index+1].Kind == ":" {
+			return true
+		}
+	}
+	return false
+}
+
 func tokensText(input string, tokens []tokenizer.Token) string {
 	if len(tokens) == 0 {
 		return ""
 	}
+	first := tokens[0]
 	if len(tokens) == 1 {
-		return tokens[0].Text(input)
+		return first.Text(input)
 	}
-	var builder strings.Builder
-	builder.Grow(tokens[len(tokens)-1].End - tokens[0].Start + 1)
-	for _, token := range tokens {
-		builder.WriteString(token.Text(input))
+	last := tokens[len(tokens)-1]
+	for i := 1; i < len(tokens); i++ {
+		if tokens[i].Start != tokens[i-1].End+1 {
+			var builder strings.Builder
+			builder.Grow(last.End - first.Start + 1)
+			for _, token := range tokens {
+				builder.WriteString(token.Text(input))
+			}
+			return builder.String()
+		}
 	}
-	return builder.String()
+	end := last.End + 1
+	if end > len(input) {
+		end = len(input)
+	}
+	return input[first.Start:end]
 }
 
 func leadingSpace(input string, tokens []tokenizer.Token) string {
@@ -959,52 +1006,110 @@ func splitImportant(input string, tokens []tokenizer.Token) ([]tokenizer.Token, 
 	return tokens, false, ""
 }
 
-func cleanDeclarationValue(input string, tokens []tokenizer.Token) string {
-	var builder strings.Builder
+func (p *Parser) cleanDeclarationValue(tokens []tokenizer.Token) string {
 	for index, token := range tokens {
 		if token.Kind != "comment" {
-			builder.WriteString(token.Text(input))
 			continue
 		}
-		if index > 0 && index+1 < len(tokens) && tokens[index-1].Kind == "word" && strings.HasPrefix(tokens[index+1].Text(input), "(") {
-			builder.WriteString(token.Text(input))
+		keep := index > 0 && index+1 < len(tokens) && tokens[index-1].Kind == "word" && strings.HasPrefix(tokens[index+1].Text(p.input), "(")
+		if keep {
+			continue
 		}
+		p.valueScratch.Reset()
+		for i, item := range tokens {
+			if item.Kind != "comment" {
+				p.valueScratch.WriteString(item.Text(p.input))
+				continue
+			}
+			if i > 0 && i+1 < len(tokens) && tokens[i-1].Kind == "word" && strings.HasPrefix(tokens[i+1].Text(p.input), "(") {
+				p.valueScratch.WriteString(item.Text(p.input))
+			}
+		}
+		return p.valueScratch.String()
 	}
-	return builder.String()
+	return tokensText(p.input, tokens)
 }
 
-func cleanCustomPropertyValue(input string, tokens []tokenizer.Token) string {
-	var builder strings.Builder
+func (p *Parser) cleanCustomPropertyValue(tokens []tokenizer.Token) string {
 	hasComment := false
 	for _, token := range tokens {
 		if token.Kind == "comment" {
 			hasComment = true
+			break
+		}
+	}
+	if !hasComment {
+		return tokensText(p.input, tokens)
+	}
+	p.valueScratch.Reset()
+	for _, token := range tokens {
+		if token.Kind == "comment" {
 			continue
 		}
-		builder.WriteString(token.Text(input))
+		p.valueScratch.WriteString(token.Text(p.input))
 	}
-	if builder.Len() == 0 && hasComment {
+	if p.valueScratch.Len() == 0 {
 		return " "
 	}
-	return builder.String()
+	return p.valueScratch.String()
 }
 
-func cleanAtRuleParams(input string, tokens []tokenizer.Token) string {
-	var builder strings.Builder
+func (p *Parser) cleanAtRuleParams(tokens []tokenizer.Token) string {
 	for _, token := range tokens {
 		if token.Kind != "comment" {
-			builder.WriteString(token.Text(input))
 			continue
 		}
+		p.valueScratch.Reset()
+		for _, item := range tokens {
+			if item.Kind != "comment" {
+				p.valueScratch.WriteString(item.Text(p.input))
+			}
+		}
+		return p.valueScratch.String()
 	}
-	return builder.String()
+	return tokensText(p.input, tokens)
+}
+
+func estimateTopLevelCapacity(cssLen int) int {
+	if cssLen < 4096 {
+		return 32
+	}
+	return cssLen / 100
+}
+
+func trimSpaceASCII(value string) string {
+	start, end := 0, len(value)
+	for start < end && isASCIISpace(value[start]) {
+		start++
+	}
+	for end > start && isASCIISpace(value[end-1]) {
+		end--
+	}
+	if start == 0 && end == len(value) {
+		return value
+	}
+	return value[start:end]
+}
+
+func isASCIISpace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f'
+}
+
+func cleanDeclarationValue(input string, tokens []tokenizer.Token) string {
+	return (&Parser{input: input}).cleanDeclarationValue(tokens)
+}
+
+func cleanCustomPropertyValue(input string, tokens []tokenizer.Token) string {
+	return (&Parser{input: input}).cleanCustomPropertyValue(tokens)
 }
 
 func (p *Parser) attachSource(node ast.Node, start, end int) {
 	if !p.trackSource {
 		return
 	}
-	node.SetSource(p.location(start, end))
+	var loc sourcemap.Location
+	p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(end), &loc)
+	node.SetSource(&loc)
 }
 
 func (p *Parser) extendSourceTo(node ast.Node, end int) {
@@ -1013,7 +1118,9 @@ func (p *Parser) extendSourceTo(node ast.Node, end int) {
 	}
 	start := node.Source().Start.Offset
 	node.SetRange(ast.SourceRange{Start: start, End: end})
-	node.SetSource(p.location(start, end))
+	var loc sourcemap.Location
+	p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(end), &loc)
+	node.SetSource(&loc)
 }
 
 func (p *Parser) tokensText(tokens []tokenizer.Token) string {
@@ -1054,8 +1161,4 @@ func (p *Parser) syntaxError(message string, offset int) error {
 		}
 	}
 	return p.src.ErrorAtOffset(message, offset, "")
-}
-
-func (p *Parser) location(start, end int) *sourcemap.Location {
-	return p.src.Location(p.src.FromOffset(start), p.src.FromOffset(end))
 }

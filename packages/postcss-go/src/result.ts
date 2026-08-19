@@ -74,7 +74,7 @@ export class Result<P = unknown> {
   map?: ResultMap;
   /** Resolved external map path reported by Go, when present. */
   mapFile?: string;
-  root: ProcessRoot;
+  declare root: ProcessRoot;
   messages: ResultMessage[] = [];
   opts: ProcessFileOptions;
   processor: ResultProcessor;
@@ -82,10 +82,30 @@ export class Result<P = unknown> {
   /** Backend that parsed and stringified this result. */
   backend?: BackendKind;
 
-  constructor(processor: ResultProcessor, root: ProcessRoot, opts: ProcessFileOptions = {}) {
+  constructor(
+    processor: ResultProcessor,
+    root: ProcessRoot | (() => ProcessRoot) | undefined,
+    opts: ProcessFileOptions = {},
+  ) {
     this.processor = processor;
-    this.root = root;
     this.opts = opts;
+    let loaded: ProcessRoot | undefined = typeof root === 'function' ? undefined : root;
+    let load: (() => ProcessRoot) | undefined = typeof root === 'function' ? root : undefined;
+    Object.defineProperty(this, 'root', {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        if (loaded === undefined && load) {
+          loaded = load();
+          load = undefined;
+        }
+        return loaded as ProcessRoot;
+      },
+      set: (value: ProcessRoot) => {
+        loaded = value;
+        load = undefined;
+      },
+    });
   }
 
   get content(): string {

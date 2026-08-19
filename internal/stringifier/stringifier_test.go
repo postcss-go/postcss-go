@@ -44,6 +44,31 @@ func TestStringifyAtRuleWithoutBlock(t *testing.T) {
 	}
 }
 
+func TestDirectStringifyMatchesSlowPath(t *testing.T) {
+	fixtures := []string{
+		"/*x*/\n.a{color:red!important;\n  background :  blue  ;}\n",
+		".a  { color: red }",
+		"@media screen  { color: red }",
+		"@media /*c*/ screen { color: red; }",
+		"@import x ;",
+		"@keyframes k { from { opacity: 0 } to { opacity: 1 } }",
+	}
+	for _, css := range fixtures {
+		root, err := parser.Parse(css, sourcemap.Options{})
+		if err != nil {
+			t.Fatalf("parse failed: %v", err)
+		}
+		if !directEligible(root) {
+			t.Fatalf("parser tree should be direct-eligible for %q", css)
+		}
+		slow := stringify(root, false)
+		fast := directStringify(root, false)
+		if slow != fast {
+			t.Fatalf("direct path mismatch for %q\nslow: %q\nfast: %q", css, slow, fast)
+		}
+	}
+}
+
 func TestParseStringifyPreservesPostCSSRaws(t *testing.T) {
 	css := "/*x*/\n.a{color:red!important;\n  background :  blue  ;}\n"
 	root, err := parser.Parse(css, sourcemap.Options{From: "input.css"})
