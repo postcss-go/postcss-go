@@ -9,11 +9,13 @@ on:
       - '**/*.go'
       - go.mod
       - go.sum
+      - .github/workflows/codspeed.yml
   pull_request:
     paths:
       - '**/*.go'
       - go.mod
       - go.sum
+      - .github/workflows/codspeed.yml
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
@@ -24,38 +26,39 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write # required for OIDC authentication with CodSpeed
 
 jobs:
   go-benchmarks:
     name: Go Benchmarks
-    # Go CodSpeed currently supports walltime only. Macro runners need a GitHub
-    # organization and, for this public repo, "Allow public repositories" on
-    # Organization Settings → Actions → Runner groups → Default.
-    # See docs/benchmark.md ("Reading a walltime report").
+    # Go CodSpeed supports walltime only, and walltime needs a dedicated
+    # machine: `codspeed-macro` is a 16-core ARM64 bare-metal runner, so base
+    # and head are measured on identical hardware instead of on whichever CPU
+    # generation a shared GitHub runner happens to allocate.
     runs-on: codspeed-macro
+    permissions:
+      contents: read # required for actions/checkout
+      id-token: write # required for OIDC authentication with CodSpeed
     env:
-      # `codspeed` excludes:
-      # - benchmark/small_bench_test.go (*_Small / *_small)
-      # - benchmark/extended_real_bench_test.go (Bulma / Pure / UIkit / Materialize)
-      # The CodSpeed Go runner discovers Benchmark* from source; -bench filters
-      # alone are not reliable for dropping flaky or suite-polluting benches.
-      GOFLAGS: -mod=mod -tags=codspeed
+      GOFLAGS: -mod=mod
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Run Go benchmarks
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@v5
         with:
           mode: walltime # go only supports walltime mode
-          token: ${{ secrets.CODSPEED_TOKEN }}
-          # CodSpeed Go runner only accepts the `-bench` flag.
+          # The CodSpeed Go runner discovers every `Benchmark*` in the package
+          # and only accepts the `-bench` flag.
           run: go test ./benchmark/ -bench=.
+        env:
+          # Macro runners are ARM64, where frame-pointer unwinding yields more
+          # reliable Go call stacks (and flame graphs) than DWARF unwinding.
+          CODSPEED_PERF_UNWINDING_MODE: fp

@@ -1,17 +1,15 @@
-//go:build !codspeed
-
 package benchmark_test
 
 import "testing"
 
 // Extended real-world fixtures (Bulma / Pure / UIkit / Materialize) add ~1.4 MB
-// of CSS and 12 heavy Parse/ParseStringify/Process benches. CodSpeed walltime on
-// shared runners measures the whole package in one process; those cases run
-// before BenchmarkTokenize_* (and interleave with existing ParseStringifyReal_*)
-// and routinely push Bootstrap baselines over the default ~10% threshold with no
-// Go engine change. Keep them for local `go test -bench=. ./benchmark/` and the
-// JS cross-engine suite (manifest fixtures); exclude them from CodSpeed CI via
-// the `codspeed` build tag (see .github/workflows/codspeed.yml).
+// of CSS and 12 heavy Parse/ParseStringify/Process benches. They used to be
+// compiled out of CodSpeed CI because walltime on shared runners measures the
+// whole package in one process and pushed Bootstrap baselines over the default
+// ~10% threshold with no Go engine change. CodSpeed now runs on the dedicated
+// `codspeed-macro` bare-metal runner (see .github/workflows/codspeed.yml), so
+// the full suite is tracked in CI alongside the local `go test -bench=.
+// ./benchmark/` run and the JS cross-engine suite.
 
 func BenchmarkParseReal_Bulma(b *testing.B) {
 	fixture := mustFixture(b, "Bulma")
