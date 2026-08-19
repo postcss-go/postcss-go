@@ -21,7 +21,10 @@ try {
   const address = server.httpServer?.address();
   if (!address || typeof address === 'string') throw new Error('Vite did not expose a TCP port');
 
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({
+    headless: true,
+    ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+  });
   const page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${address.port}/test/browser-smoke/`);
   await page.waitForFunction(() => globalThis.__postcssGoWasmSmoke?.status !== 'pending', null, {

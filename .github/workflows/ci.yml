@@ -91,6 +91,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOFLAGS: -mod=mod
+      # ubuntu-latest already ships Google Chrome; reuse it instead of
+      # downloading Playwright's Chromium build on every run.
+      PLAYWRIGHT_CHANNEL: chrome
 
     steps:
       - name: Checkout
@@ -115,9 +118,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
 
       - name: Test browser WASM
         run: pnpm --filter postcss-go test:browser-wasm
