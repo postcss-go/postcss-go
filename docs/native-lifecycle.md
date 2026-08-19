@@ -50,7 +50,7 @@ source location and input metadata.
 The native build workflow produces one package for each declared tuple:
 macOS arm64/x64, Linux glibc arm64/x64, and Windows MSVC arm64/x64. On every
 runner it packs the platform package and
-`postcss-go`, installs both tarballs into a clean project, exercises all
+`@postcss-go/core`, installs both tarballs into a clean project, exercises all
 four synchronous and asynchronous operations, and repeats native work inside a
 Worker Thread. Platforms that cannot link the Go archive directly include a
 validated shared-library companion beside the addon. Publication consumes only

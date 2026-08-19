@@ -1,14 +1,14 @@
 {
-  "name": "postcss-go-monorepo",
+  "name": "@postcss-go/monorepo",
   "private": true,
   "description": "PostCSSGo Monorepo",
-  "homepage": "https://github.com/eryue0220/postcss-go#readme",
+  "homepage": "https://github.com/postcss-go/postcss-go#readme",
   "bugs": {
-    "url": "https://github.com/eryue0220/postcss-go/issues"
+    "url": "https://github.com/postcss-go/postcss-go/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eryue0220/postcss-go.git"
+    "url": "git+https://github.com/postcss-go/postcss-go.git"
   },
   "license": "MIT",
   "packageManager": "pnpm@9.12.3",
@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "build:release": "pnpm --filter postcss-go build:js && pnpm --filter postcss-go build:wasm",
+    "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm",
     "check": "pnpm -r check",
     "check:all": "pnpm format:check && pnpm lint && pnpm check && pnpm check:upstream && pnpm test && pnpm test:upstream && pnpm test:upstream:go && pnpm build",
     "check:upstream": "node ./scripts/check-upstream-postcss-sync.mjs",
@@ -43,14 +43,14 @@
     "sync:upstream": "node ./scripts/sync-upstream-postcss-tests.mjs",
     "sync:benchmark-fixtures": "node ./benchmark/sync-fixtures.mjs",
     "test": "pnpm test:js && pnpm test:go",
-    "test:core-css-contract": "go test -mod=mod ./pkg/api -run CoreCSS && pnpm --filter postcss-go test:core-css-contract",
+    "test:core-css-contract": "go test -mod=mod ./pkg/api -run CoreCSS && pnpm --filter @postcss-go/core test:core-css-contract",
     "test:js": "pnpm --filter './packages/**' --if-present test",
     "test:go": "go test -mod=mod ./...",
     "test:coverage": "pnpm test:coverage:js && pnpm test:coverage:go",
     "test:coverage:js": "pnpm --filter './packages/**' --if-present test:coverage",
     "test:coverage:go": "mkdir -p coverage && go test -mod=mod -covermode=atomic -coverprofile=coverage/go.out ./... && go tool cover -func=coverage/go.out | tee coverage/go.txt && node ./scripts/check-go-coverage.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
-    "test:upstream:go": "pnpm --filter postcss-go-compat test:upstream:go",
+    "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
     "bench": "node benchmark/run.mjs",
     "bench:boundary": "node benchmark/run-boundary.mjs"
   },

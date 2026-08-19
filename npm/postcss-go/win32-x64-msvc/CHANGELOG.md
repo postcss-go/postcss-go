@@ -1,4 +1,4 @@
-# postcss-go-native-win32-x64-msvc
+# @postcss-go/native-win32-x64-msvc
 
 ## 0.0.1
 

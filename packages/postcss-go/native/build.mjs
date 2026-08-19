@@ -1,6 +1,6 @@
 /**
  * Builds the Go library and the Node-API addon, then places the host native
- * files into the matching `postcss-go-native-<tuple>` package so the runtime
+ * files into the matching `@postcss-go/native-<tuple>` package so the runtime
  * loader resolves the same path in development and production. Windows uses
  * c-shared because MSVC cannot consume Go's GNU archive and the shared Go
  * runtime remains usable across multiple Node Worker environments.

@@ -107,7 +107,7 @@ export type {
   PluginListenerGroup,
   Transformer,
 } from './plugin-types.js';
-export type { MapOptions, ProcessFileOptions } from 'postcss-go-shared/map-options';
+export type { MapOptions, ProcessFileOptions } from '@postcss-go/shared/map-options';
 export { isNativeBridgeAvailable } from './native.js';
 export {
   loadConfig,

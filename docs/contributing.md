@@ -90,6 +90,6 @@ and verifies that they are unchanged before publishing.
 
 Publishing requires the repository `NPM_TOKEN` secret. The compatibility
 harness and shared helper packages remain private; the shared runtime and
-declarations are bundled into `postcss-go`.
+declarations are bundled into `@postcss-go/core`.
 
 GitHub Actions runs the same validation across Ubuntu, macOS, and Windows. A scheduled workflow keeps the vendored PostCSS tests in sync.

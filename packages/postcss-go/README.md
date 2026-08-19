@@ -12,10 +12,10 @@ This package is the primary JS/TS integration point for:
 ## Install
 
 ```bash
-npm i -D postcss-go
+npm i -D @postcss-go/core
 ```
 
-A compatible `postcss-go-native-*` platform package is required at runtime.
+A compatible `@postcss-go/native-*` platform package is required at runtime.
 Missing native artifacts are reported as backend-unavailable errors; there is
 no child-process transport fallback.
 
@@ -41,7 +41,7 @@ equivalent `.postcssrc.*` names without `postcss-load-config`. JSON config is
 also supported when it does not need executable plugins.
 
 ```ts
-import type { PostcssGoConfigExport } from 'postcss-go';
+import type { PostcssGoConfigExport } from '@postcss-go/core';
 
 const config: PostcssGoConfigExport = (ctx) => ({
   // Prefer CLI `--map` / `--no-map` when present; otherwise choose by env.
@@ -71,7 +71,7 @@ parser, syntax, or stringifier implementations currently throw
 ## Backend reporting
 
 ```ts
-import postcss, { getBackendCapabilities } from 'postcss-go';
+import postcss, { getBackendCapabilities } from '@postcss-go/core';
 
 const installed = getBackendCapabilities();
 console.log(installed.asynchronous?.backend); // "native" or null
@@ -82,11 +82,11 @@ console.log(result.backend); // backend used for this operation: "native"
 
 ## Browser / WASM
 
-For browsers, use the `postcss-go/wasm` entry. It re-exports the browser
+For browsers, use the `@postcss-go/core/wasm` entry. It re-exports the browser
 API and ships the classic Worker plus WASM assets:
 
 ```ts
-import { createBrowserProcessor } from 'postcss-go/wasm';
+import { createBrowserProcessor } from '@postcss-go/core/wasm';
 
 const processor = createBrowserProcessor([], {
   // Copy these three package assets to your application's public directory.
@@ -96,7 +96,7 @@ const processor = createBrowserProcessor([], {
 });
 ```
 
-See the website guide page `guide/browser-wasm` for CSP and asset-loading details.
+See the [browser WASM guide](https://postcss-go.github.io/guide/browser-wasm/) for CSP and asset-loading details.
 Browser plugins may mutate the hydrated AST; `helpers.postcss.parse`,
 `root.append('.a{}')`, `Node#toString()`, and `helpers.postcss.stringify` throw
 `SyncBackendUnavailableError`.
@@ -118,7 +118,7 @@ child-process, WASM, or PostCSS fallback in Node.
 
 ## Migrating from PostCSS
 
-1. Install `postcss-go` and remove the runtime `postcss`,
+1. Install `@postcss-go/core` and remove the runtime `postcss`,
    `postcss-load-config`, and `postcss-reporter` dependencies if nothing else
    uses them.
 2. Replace the CLI command with `postcss-go`; keep a supported
@@ -134,6 +134,6 @@ child-process, WASM, or PostCSS fallback in Node.
 ## Development
 
 ```bash
-pnpm --filter postcss-go test
-pnpm --filter postcss-go test:cli
+pnpm --filter @postcss-go/core test
+pnpm --filter @postcss-go/core test:cli
 ```

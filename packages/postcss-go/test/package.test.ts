@@ -96,15 +96,15 @@ test('postcss-go lists platform packages as optionalDependencies', () => {
     files?: string[];
   };
   expect(pkg.optionalDependencies).toMatchObject({
-    'postcss-go-native-darwin-arm64': 'workspace:*',
-    'postcss-go-native-darwin-x64': 'workspace:*',
-    'postcss-go-native-linux-arm64-gnu': 'workspace:*',
-    'postcss-go-native-linux-x64-gnu': 'workspace:*',
-    'postcss-go-native-win32-arm64-msvc': 'workspace:*',
-    'postcss-go-native-win32-x64-msvc': 'workspace:*',
+    '@postcss-go/native-darwin-arm64': 'workspace:*',
+    '@postcss-go/native-darwin-x64': 'workspace:*',
+    '@postcss-go/native-linux-arm64-gnu': 'workspace:*',
+    '@postcss-go/native-linux-x64-gnu': 'workspace:*',
+    '@postcss-go/native-win32-arm64-msvc': 'workspace:*',
+    '@postcss-go/native-win32-x64-msvc': 'workspace:*',
   });
-  expect(pkg.optionalDependencies).not.toHaveProperty('postcss-go-native-linux-arm64-musl');
-  expect(pkg.optionalDependencies).not.toHaveProperty('postcss-go-native-linux-x64-musl');
+  expect(pkg.optionalDependencies).not.toHaveProperty('@postcss-go/native-linux-arm64-musl');
+  expect(pkg.optionalDependencies).not.toHaveProperty('@postcss-go/native-linux-x64-musl');
   expect(pkg.files ?? []).not.toContain('native/prebuilds/**/*.node');
 });
 
@@ -112,8 +112,8 @@ test('release builds JavaScript and WASM without rebuilding validated native add
   const rootPackage = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
   };
-  expect(rootPackage.scripts['build:release']).toContain('postcss-go build:js');
-  expect(rootPackage.scripts['build:release']).toContain('postcss-go build:wasm');
+  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:js');
+  expect(rootPackage.scripts['build:release']).toContain('@postcss-go/core build:wasm');
   expect(rootPackage.scripts['build:release']).not.toContain('build:native');
   expect(rootPackage.scripts.release).toBe('node ./scripts/release.mjs');
 
@@ -132,12 +132,12 @@ test('release builds JavaScript and WASM without rebuilding validated native add
   expect(workflow).not.toContain('publish: pnpm release');
 });
 
-test('postcss-go-shared stays private and is bundled into core', () => {
+test('@postcss-go/shared stays private and is bundled into core', () => {
   const sharedPackage = JSON.parse(readFileSync(resolve(sharedRoot, 'package.json'), 'utf8')) as {
     name: string;
     private?: boolean;
   };
-  expect(sharedPackage.name).toBe('postcss-go-shared');
+  expect(sharedPackage.name).toBe('@postcss-go/shared');
   expect(sharedPackage.private).toBe(true);
 
   const corePackage = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
@@ -145,17 +145,17 @@ test('postcss-go-shared stays private and is bundled into core', () => {
     devDependencies?: Record<string, string>;
     scripts?: Record<string, string>;
   };
-  expect(corePackage.dependencies).not.toHaveProperty('postcss-go-shared');
-  expect(corePackage.devDependencies).toHaveProperty('postcss-go-shared', 'workspace:*');
-  expect(corePackage.scripts?.['build:js']).toContain('pnpm --filter postcss-go-shared build');
+  expect(corePackage.dependencies).not.toHaveProperty('@postcss-go/shared');
+  expect(corePackage.devDependencies).toHaveProperty('@postcss-go/shared', 'workspace:*');
+  expect(corePackage.scripts?.['build:js']).toContain('pnpm --filter @postcss-go/shared build');
 
   const changesets = JSON.parse(
     readFileSync(resolve(repoRoot, '.changeset/config.json'), 'utf8'),
   ) as {
     fixed: string[][];
   };
-  const coreReleaseGroup = changesets.fixed.find((group) => group.includes('postcss-go'));
-  expect(coreReleaseGroup).not.toContain('postcss-go-shared');
+  const coreReleaseGroup = changesets.fixed.find((group) => group.includes('@postcss-go/core'));
+  expect(coreReleaseGroup).not.toContain('@postcss-go/shared');
 
   expect(npmPackFiles(packageRoot)).toEqual(
     expect.arrayContaining([
@@ -167,7 +167,7 @@ test('postcss-go-shared stays private and is bundled into core', () => {
   );
   for (const path of filesBelow(resolve(packageRoot, 'dist'))) {
     if (!/\.(?:js|d\.ts)$/.test(path)) continue;
-    expect(readFileSync(path, 'utf8'), path).not.toContain('postcss-go-shared');
+    expect(readFileSync(path, 'utf8'), path).not.toContain('@postcss-go/shared');
   }
 });
 
@@ -428,7 +428,7 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
           private: true,
           type: 'module',
           dependencies: {
-            'postcss-go': `file:${coreTarball}`,
+            '@postcss-go/core': `file:${coreTarball}`,
             '@types/node': '^22.10.1',
           },
         },
@@ -445,7 +445,7 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
 
     writeFileSync(
       resolve(consumer, 'smoke.ts'),
-      `import type { ProcessFileOptions } from 'postcss-go';\n` +
+      `import type { ProcessFileOptions } from '@postcss-go/core';\n` +
         `const options: ProcessFileOptions = { from: 'input.css' };\n` +
         `void options;\n`,
     );
@@ -470,7 +470,7 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
 
     writeFileSync(
       resolve(consumer, 'smoke.mjs'),
-      `import postcss from 'postcss-go';\n` +
+      `import postcss from '@postcss-go/core';\n` +
         `const root = postcss.parse('a{color:red}');\n` +
         `if (root.type !== 'root' || root.toString() !== 'a{color:red}') {\n` +
         `  throw new Error('packed package smoke failed');\n` +

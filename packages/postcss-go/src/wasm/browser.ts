@@ -3,8 +3,8 @@ import {
   normalizeProcessOptions,
   type NormalizeProcessOptionsInput,
   type ProcessFileOptions,
-} from 'postcss-go-shared/map-options';
-import { joinMapAnnotationPath } from 'postcss-go-shared/map-path';
+} from '@postcss-go/shared/map-options';
+import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
 import { asProcessRoot, fromAst, toAst, type ProcessRoot } from '../ast.js';
 import { assertSupportedAst } from '../ast-utils.js';
