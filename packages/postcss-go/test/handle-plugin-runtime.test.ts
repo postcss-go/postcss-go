@@ -25,8 +25,10 @@ const displayPlugin: AcceptedPlugin = {
 };
 
 test('isHandleDeclarationPluginRun accepts declaration-only plugins', () => {
+  expect(isHandleDeclarationPluginRun([])).toBe(false);
   expect(isHandleDeclarationPluginRun([colorPlugin])).toBe(true);
   expect(isHandleDeclarationPluginRun([colorPlugin, displayPlugin])).toBe(true);
+  expect(isHandleDeclarationPluginRun([((root) => root) as AcceptedPlugin])).toBe(false);
   expect(
     isHandleDeclarationPluginRun([
       {
@@ -151,3 +153,105 @@ test('Processor falls back from the handle path for async declaration visitors',
   });
   expect(result.css).toContain('navy');
 });
+
+test.skipIf(!isNativeBridgeAvailable())(
+  'handle declaration runtime covers empty trees, prop writes, and skipped visitors',
+  () => {
+    const service = createNativeService();
+    const addon = service.handleAddon!;
+    expect(runHandleDeclarationPlugins(addon, '/* comment only */', [colorPlugin])).toContain(
+      'comment only',
+    );
+
+    const rename: AcceptedPlugin = {
+      postcssPlugin: 'rename-color',
+      Declaration(decl) {
+        if (decl.prop === 'color') decl.prop = 'background-color';
+      },
+    };
+    const transformer = ((root) => root) as AcceptedPlugin;
+    const asyncVisitor: AcceptedPlugin = {
+      postcssPlugin: 'skip-async',
+      async Declaration(decl) {
+        decl.value = 'ignored';
+      },
+    };
+    const css = runHandleDeclarationPlugins(addon, 'a { color: red; }', [
+      transformer,
+      asyncVisitor,
+      rename,
+    ]);
+    expect(css).toContain('background-color');
+    service.close();
+  },
+);
+
+test.skipIf(!isNativeBridgeAvailable())(
+  'handle path falls back for thenable visitors, helpers, and source maps',
+  () => {
+    const service = createNativeService();
+    const thenable: AcceptedPlugin = {
+      postcssPlugin: 'thenable-decl',
+      Declaration(decl) {
+        decl.value = 'navy';
+        return Promise.resolve();
+      },
+    };
+    const helpers: AcceptedPlugin = {
+      postcssPlugin: 'helpers-decl',
+      Declaration(_decl, pluginHelpers: { result?: unknown }) {
+        return pluginHelpers.result;
+      },
+    };
+    const cloneAfter: AcceptedPlugin = {
+      postcssPlugin: 'clone-border',
+      Declaration(decl) {
+        if (decl.prop === 'color') {
+          decl.cloneAfter({ prop: 'border-color', value: 'black' });
+        }
+      },
+    };
+
+    expect(() =>
+      runHandleDeclarationPlugins(service.handleAddon!, 'a { color: red; }', [thenable]),
+    ).toThrow(/async/);
+    expect(() =>
+      runHandleDeclarationPlugins(service.handleAddon!, 'a { color: red; }', [helpers]),
+    ).toThrow(/helpers/);
+    expect(
+      runPluginsWithBridgeSync(service, [cloneAfter], 'a { color: red; }', { map: false }).css,
+    ).toContain('border-color: black');
+    expect(
+      runPluginsWithBridgeSync(service, [colorPlugin], 'a { color: red; }', { map: true }).css,
+    ).toContain('navy');
+
+    const exploding = {
+      capabilities: service.capabilities,
+      parseSync: service.parseSync.bind(service),
+      stringifyResultSync: service.stringifyResultSync.bind(service),
+      handleAddon: {
+        handleParse() {
+          throw new Error('boom');
+        },
+        handleClose() {},
+        handleType: () => 0,
+        handleGetField: () => '',
+        handleSetField() {},
+        handleWalkDecls: () => 0,
+        handleOpenCursor: () => 0,
+        handleCursorNext: () => 0,
+        handleCloseCursor() {},
+        handleReadFields: () => [],
+        handleSetFields() {},
+        handleStringify: () => '',
+        handleNewDecl: () => 1,
+        handleAppend() {},
+        handleDispose() {},
+      },
+    };
+    expect(() =>
+      runPluginsWithBridgeSync(exploding, [colorPlugin], 'a { color: red; }', {}),
+    ).toThrow(/boom/);
+    service.close();
+  },
+);

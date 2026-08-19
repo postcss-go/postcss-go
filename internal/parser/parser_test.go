@@ -816,6 +816,16 @@ func TestParseParamsRawAndSetBetweenHelper(t *testing.T) {
 		{Kind: "word", Start: 1, End: 6},
 		{Kind: "space", Start: 7, End: 7},
 	})
+
+	nonString := ast.NewAtRule("media", "screen")
+	ast.ApplyRaw(nonString, "between", true)
+	setAtRuleBetween(nonString, " screen ", []tokenizer.Token{
+		{Kind: "word", Start: 1, End: 7},
+		{Kind: "space", Start: 7, End: 8},
+	})
+	if got, ok := ast.LookupRawString(nonString, "between"); !ok || got == "" {
+		t.Fatalf("expected suffix between after non-string raw, got %q %v", got, ok)
+	}
 }
 
 func TestParseSpacesOnlyAndUnknownEmptyProp(t *testing.T) {

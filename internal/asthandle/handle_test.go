@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"postcss-go/internal/ast"
+	csserrors "postcss-go/internal/csserrors"
+	"postcss-go/internal/sourcemap"
 )
 
 const sampleCSS = `.card { color: red; display: flex; }
@@ -256,6 +258,74 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 	if err := session.SetField(decl, Field(-1), "x"); !errors.Is(err, ErrBadField) {
 		t.Fatalf("set bad field: %v", err)
 	}
+
+	for _, field := range []Field{FieldValue, FieldName, FieldParams, FieldText} {
+		if _, err := session.GetField(rule, field); !errors.Is(err, ErrBadField) {
+			t.Fatalf("rule get %d: %v", field, err)
+		}
+		if err := session.SetField(rule, field, "x"); !errors.Is(err, ErrBadField) {
+			t.Fatalf("rule set %d: %v", field, err)
+		}
+	}
+	for _, field := range []Field{FieldSelector, FieldName, FieldParams, FieldText} {
+		if _, err := session.GetField(decl, field); !errors.Is(err, ErrBadField) {
+			t.Fatalf("decl get %d: %v", field, err)
+		}
+		if err := session.SetField(decl, field, "x"); !errors.Is(err, ErrBadField) {
+			t.Fatalf("decl set %d: %v", field, err)
+		}
+	}
+	if _, err := session.GetField(comment, FieldProp); !errors.Is(err, ErrBadField) {
+		t.Fatalf("comment prop: %v", err)
+	}
+	if err := session.SetField(comment, FieldProp, "x"); !errors.Is(err, ErrBadField) {
+		t.Fatalf("comment set prop: %v", err)
+	}
+	if _, err := session.GetField(at, FieldSelector); !errors.Is(err, ErrBadField) {
+		t.Fatalf("at selector: %v", err)
+	}
+	if err := session.SetField(at, FieldSelector, "x"); !errors.Is(err, ErrBadField) {
+		t.Fatalf("at set selector: %v", err)
+	}
+}
+
+func TestTypeRejectsUnknownNodes(t *testing.T) {
+	session := New()
+	defer session.Close()
+	h := session.mustHandle(&unknownHandleNode{})
+	kind, err := session.Type(h)
+	if kind != TypeNone || !errors.Is(err, ErrInvalidHandle) {
+		t.Fatalf("unknown type: %d %v", kind, err)
+	}
+}
+
+type unknownHandleNode struct{}
+
+func (unknownHandleNode) Type() ast.NodeType              { return "unknown" }
+func (unknownHandleNode) Parent() ast.Container           { return nil }
+func (unknownHandleNode) SetParent(ast.Container)         {}
+func (unknownHandleNode) Range() ast.SourceRange          { return ast.SourceRange{} }
+func (unknownHandleNode) SetRange(ast.SourceRange)        {}
+func (unknownHandleNode) Source() *sourcemap.Location     { return nil }
+func (unknownHandleNode) SetSource(*sourcemap.Location)   {}
+func (unknownHandleNode) RawFormatting() ast.Raws         { return ast.Raws{} }
+func (unknownHandleNode) RawFormattingReadOnly() ast.Raws { return nil }
+func (unknownHandleNode) Root() ast.Node                  { return unknownHandleNode{} }
+func (unknownHandleNode) Next() ast.Node                  { return nil }
+func (unknownHandleNode) Prev() ast.Node                  { return nil }
+func (unknownHandleNode) Remove() ast.Node                { return unknownHandleNode{} }
+func (unknownHandleNode) ReplaceWith(...ast.Node) error   { return nil }
+func (unknownHandleNode) Clone() ast.Node                 { return unknownHandleNode{} }
+func (unknownHandleNode) CloneBefore(...ast.Node) (ast.Node, error) {
+	return unknownHandleNode{}, nil
+}
+func (unknownHandleNode) CloneAfter(...ast.Node) (ast.Node, error) {
+	return unknownHandleNode{}, nil
+}
+func (unknownHandleNode) Before(...ast.Node) error { return nil }
+func (unknownHandleNode) After(...ast.Node) error  { return nil }
+func (unknownHandleNode) Error(string, ...ast.ErrorOptions) *csserrors.SyntaxError {
+	return nil
 }
 
 func TestVisitorCursorAndBatches(t *testing.T) {
