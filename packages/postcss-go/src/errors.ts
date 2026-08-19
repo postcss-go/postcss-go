@@ -157,7 +157,7 @@ export class SyncBackendUnavailableError extends Error {
 export class AsyncBackendUnavailableError extends Error {
   constructor() {
     super(
-      'The asynchronous postcss-go API requires the worker-backed Node N-API backend, but no compatible native addon is available; reinstall postcss-go for the current platform',
+      'The asynchronous postcss-go API requires the worker-backed Node N-API backend, but no compatible native addon is available; reinstall @postcss-go/core for the current platform',
     );
     this.name = 'AsyncBackendUnavailableError';
   }

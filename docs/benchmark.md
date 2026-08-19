@@ -175,13 +175,16 @@ GOFLAGS='-tags=codspeed' codspeed run --mode walltime --skip-upload -- go test .
 
 #### Reading a walltime report
 
-Walltime is the only instrument available for Go, and this repository runs it on
-`ubuntu-latest` (`codspeed-macro` runners require an organization account). Base
-and head therefore land on whichever CPU GitHub allocates — EPYC 7763, 9V74 and
-9V45 have all been observed — and the _same_ benchmark binary can be more than
-1.5x slower on the older generation. A report where every benchmark moves by a
-similar large amount, together with CodSpeed's "Different runtime environments
-detected" warning, is that situation and not a code change.
+Walltime is the only instrument available for Go. This repository runs it on
+CodSpeed [Macro Runners](https://codspeed.io/docs/features/macro-runners)
+(`runs-on: codspeed-macro`) so base and head share a stable host instead of
+whichever CPU GitHub Actions allocates. The GitHub organization must allow
+public repositories in **Actions → Runner groups → Default**, or the job will
+wait for a runner that never appears.
+
+If a report still shows "Different runtime environments detected", treat a
+uniform large move across every benchmark as an environment change, not a code
+change.
 
 Two checks separate the two cases before touching any code:
 

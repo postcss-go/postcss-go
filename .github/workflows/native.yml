@@ -83,13 +83,13 @@ jobs:
 
       - name: Build native package
         if: ${{ !startsWith(matrix.tuple, 'win32-') }}
-        run: pnpm --filter postcss-go build
+        run: pnpm --filter @postcss-go/core build
 
       - name: Build native package on Windows
         if: ${{ startsWith(matrix.tuple, 'win32-') }}
         shell: pwsh
         run: |
-          pnpm --filter postcss-go build 2>&1 | Tee-Object -FilePath native-build.log
+          pnpm --filter @postcss-go/core build 2>&1 | Tee-Object -FilePath native-build.log
           if ($LASTEXITCODE -ne 0) {
             $lines = @(
               Select-String native-build.log -Pattern ': error |fatal error|LNK[0-9]{4}|unresolved external|undefined reference|cannot open|cannot find|no such file|not recognized' |

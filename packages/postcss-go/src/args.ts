@@ -58,7 +58,7 @@ Options:
 
 If no input files are passed, it reads from stdin. If neither -o, --dir, or --replace is passed, it writes to stdout.
 
-For more details, please see https://github.com/eryue0220/postcss-go`;
+For more details, please see https://github.com/postcss-go/postcss-go`;
 
 const options = {
   output: { type: 'string' as const, short: 'o' },

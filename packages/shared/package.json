@@ -1,5 +1,5 @@
 {
-  "name": "postcss-go-shared",
+  "name": "@postcss-go/shared",
   "version": "0.0.0",
   "private": true,
   "description": "Shared helpers for postcss-go packages and CJS compat overrides.",

@@ -1,5 +1,5 @@
 {
-  "name": "postcss-go",
+  "name": "@postcss-go/core",
   "version": "0.0.1",
   "description": "Node.js API and CLI for the postcss-go engine.",
   "type": "module",
@@ -48,7 +48,7 @@
   ],
   "scripts": {
     "build": "pnpm run build:js && pnpm run build:native && pnpm run build:wasm",
-    "build:js": "pnpm --filter postcss-go-shared build && vite build",
+    "build:js": "pnpm --filter @postcss-go/shared build && vite build",
     "build:native": "node ./native/build.mjs",
     "build:wasm": "node ../../scripts/build-wasm.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.types.json",
@@ -68,15 +68,15 @@
     "tinyglobby": "^0.2.15"
   },
   "optionalDependencies": {
-    "postcss-go-native-darwin-arm64": "workspace:*",
-    "postcss-go-native-darwin-x64": "workspace:*",
-    "postcss-go-native-linux-arm64-gnu": "workspace:*",
-    "postcss-go-native-linux-x64-gnu": "workspace:*",
-    "postcss-go-native-win32-arm64-msvc": "workspace:*",
-    "postcss-go-native-win32-x64-msvc": "workspace:*"
+    "@postcss-go/native-darwin-arm64": "workspace:*",
+    "@postcss-go/native-darwin-x64": "workspace:*",
+    "@postcss-go/native-linux-arm64-gnu": "workspace:*",
+    "@postcss-go/native-linux-x64-gnu": "workspace:*",
+    "@postcss-go/native-win32-arm64-msvc": "workspace:*",
+    "@postcss-go/native-win32-x64-msvc": "workspace:*"
   },
   "devDependencies": {
-    "postcss-go-shared": "workspace:*",
+    "@postcss-go/shared": "workspace:*",
     "node-api-headers": "^1.9.0",
     "node-gyp": "13.0.1",
     "postcss": "^8.5.15",
@@ -93,11 +93,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/eryue0220/postcss-go.git"
+    "url": "https://github.com/postcss-go/postcss-go.git"
   },
   "bugs": {
-    "url": "https://github.com/eryue0220/postcss-go/issues"
+    "url": "https://github.com/postcss-go/postcss-go/issues"
   },
-  "homepage": "https://eryue0220.github.io/postcss-go/",
-  "license": "MIT"
+  "homepage": "https://postcss-go.github.io/",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

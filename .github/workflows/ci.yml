@@ -120,7 +120,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test browser WASM
-        run: pnpm --filter postcss-go test:browser-wasm
+        run: pnpm --filter @postcss-go/core test:browser-wasm
 
       - name: Test cross-surface Core CSS contract
         run: pnpm test:core-css-contract
