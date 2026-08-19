@@ -44,10 +44,12 @@ export function runHandleDeclarationPlugins(
   try {
     const root = session.parse(css);
     const count = session.cursorWalkDecls(root);
+
     if (count === 0) return session.stringify(root);
+
     const handles = session.walkBuffer.subarray(0, count);
     const props = session.readFields(handles, HANDLE_FIELD_PROP);
-    let values = session.readFields(handles, HANDLE_FIELD_VALUE);
+    const values = session.readFields(handles, HANDLE_FIELD_VALUE);
     let propsChanged = false;
 
     for (const plugin of plugins) {

@@ -70,7 +70,7 @@ jobs:
       - name: Check Go formatting
         shell: bash
         run: |
-          unformatted="$(gofmt -l .)"
+          unformatted="$(find . -name '*.go' -not -path './vendor/*' -not -path '*/node_modules/*' -exec gofmt -l {} +)"
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"
             echo "$unformatted"

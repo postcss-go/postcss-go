@@ -40,7 +40,7 @@ import {
   isHandleDeclarationPluginRun,
   runHandleDeclarationPlugins,
 } from './handle-plugin-runtime.js';
-import { hasNativeHandleBridge, type NativeHandleAddon } from './handle-session.js';
+import { type NativeHandleAddon } from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
