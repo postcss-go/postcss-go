@@ -40,11 +40,54 @@ static char handle_scratch[HANDLE_SCRATCH_CAPACITY];
 #if defined(POSTCSS_GO_DYNAMIC_LIBRARY)
 typedef int (*pcgo_call_function)(
     unsigned char, char*, int, char*, int, char*, int, char*, int);
+typedef unsigned int (*pcgo_handle_parse_fn)(char*, int);
+typedef void (*pcgo_handle_close_fn)(void);
+typedef int (*pcgo_handle_type_fn)(unsigned int);
+typedef int (*pcgo_handle_get_field_fn)(unsigned int, int, char*, int);
+typedef int (*pcgo_handle_set_field_fn)(unsigned int, int, char*, int);
+typedef int (*pcgo_handle_walk_decls_fn)(unsigned int, unsigned int*, int);
+typedef int (*pcgo_handle_open_cursor_fn)(unsigned int, int);
+typedef int (*pcgo_handle_cursor_next_fn)(int, unsigned int*, int);
+typedef int (*pcgo_handle_close_cursor_fn)(int);
+typedef int (*pcgo_handle_read_fields_fn)(unsigned int*, int, int, char*, int);
+typedef int (*pcgo_handle_set_fields_fn)(unsigned int*, int, int, char*, int);
+typedef unsigned int (*pcgo_handle_new_decl_fn)(char*, int, char*, int);
+typedef int (*pcgo_handle_append_fn)(unsigned int, unsigned int);
+typedef int (*pcgo_handle_dispose_fn)(unsigned int);
+typedef int (*pcgo_handle_stringify_fn)(unsigned int, char*, int);
 static INIT_ONCE go_bridge_once = INIT_ONCE_STATIC_INIT;
 static HMODULE go_bridge_library = NULL;
 static pcgo_call_function go_bridge_call = NULL;
+static pcgo_handle_parse_fn go_handle_parse = NULL;
+static pcgo_handle_close_fn go_handle_close = NULL;
+static pcgo_handle_type_fn go_handle_type = NULL;
+static pcgo_handle_get_field_fn go_handle_get_field = NULL;
+static pcgo_handle_set_field_fn go_handle_set_field = NULL;
+static pcgo_handle_walk_decls_fn go_handle_walk_decls = NULL;
+static pcgo_handle_open_cursor_fn go_handle_open_cursor = NULL;
+static pcgo_handle_cursor_next_fn go_handle_cursor_next = NULL;
+static pcgo_handle_close_cursor_fn go_handle_close_cursor = NULL;
+static pcgo_handle_read_fields_fn go_handle_read_fields = NULL;
+static pcgo_handle_set_fields_fn go_handle_set_fields = NULL;
+static pcgo_handle_new_decl_fn go_handle_new_decl = NULL;
+static pcgo_handle_append_fn go_handle_append = NULL;
+static pcgo_handle_dispose_fn go_handle_dispose = NULL;
+static pcgo_handle_stringify_fn go_handle_stringify = NULL;
 static char go_bridge_error[ERROR_CAPACITY] = {0};
 extern IMAGE_DOS_HEADER __ImageBase;
+
+static FARPROC require_go_symbol(const char* name) {
+  FARPROC symbol = GetProcAddress(go_bridge_library, name);
+  if (!symbol) {
+    if (!go_bridge_error[0]) {
+      snprintf(go_bridge_error, sizeof(go_bridge_error),
+          "postcss-go native companion is missing %s (Windows error %lu)",
+          name, (unsigned long)GetLastError());
+    }
+    go_bridge_call = NULL;
+  }
+  return symbol;
+}
 
 static BOOL CALLBACK load_go_bridge(
     PINIT_ONCE once, PVOID parameter, PVOID* context) {
@@ -75,12 +118,22 @@ static BOOL CALLBACK load_go_bridge(
         (unsigned long)GetLastError());
     return TRUE;
   }
-  go_bridge_call = (pcgo_call_function)GetProcAddress(go_bridge_library, "pcgoCall");
-  if (!go_bridge_call) {
-    snprintf(go_bridge_error, sizeof(go_bridge_error),
-        "postcss-go native companion is missing pcgoCall (Windows error %lu)",
-        (unsigned long)GetLastError());
-  }
+  go_bridge_call = (pcgo_call_function)require_go_symbol("pcgoCall");
+  go_handle_parse = (pcgo_handle_parse_fn)require_go_symbol("pcgoHandleParse");
+  go_handle_close = (pcgo_handle_close_fn)require_go_symbol("pcgoHandleClose");
+  go_handle_type = (pcgo_handle_type_fn)require_go_symbol("pcgoHandleType");
+  go_handle_get_field = (pcgo_handle_get_field_fn)require_go_symbol("pcgoHandleGetField");
+  go_handle_set_field = (pcgo_handle_set_field_fn)require_go_symbol("pcgoHandleSetField");
+  go_handle_walk_decls = (pcgo_handle_walk_decls_fn)require_go_symbol("pcgoHandleWalkDecls");
+  go_handle_open_cursor = (pcgo_handle_open_cursor_fn)require_go_symbol("pcgoHandleOpenCursor");
+  go_handle_cursor_next = (pcgo_handle_cursor_next_fn)require_go_symbol("pcgoHandleCursorNext");
+  go_handle_close_cursor = (pcgo_handle_close_cursor_fn)require_go_symbol("pcgoHandleCloseCursor");
+  go_handle_read_fields = (pcgo_handle_read_fields_fn)require_go_symbol("pcgoHandleReadFields");
+  go_handle_set_fields = (pcgo_handle_set_fields_fn)require_go_symbol("pcgoHandleSetFields");
+  go_handle_new_decl = (pcgo_handle_new_decl_fn)require_go_symbol("pcgoHandleNewDecl");
+  go_handle_append = (pcgo_handle_append_fn)require_go_symbol("pcgoHandleAppend");
+  go_handle_dispose = (pcgo_handle_dispose_fn)require_go_symbol("pcgoHandleDispose");
+  go_handle_stringify = (pcgo_handle_stringify_fn)require_go_symbol("pcgoHandleStringify");
   return TRUE;
 }
 
@@ -102,6 +155,22 @@ static int call_go_bridge(
   return go_bridge_call(operation, first, first_len, second, second_len,
       output, output_capacity, error, error_capacity);
 }
+
+#define pcgoHandleParse go_handle_parse
+#define pcgoHandleClose go_handle_close
+#define pcgoHandleType go_handle_type
+#define pcgoHandleGetField go_handle_get_field
+#define pcgoHandleSetField go_handle_set_field
+#define pcgoHandleWalkDecls go_handle_walk_decls
+#define pcgoHandleOpenCursor go_handle_open_cursor
+#define pcgoHandleCursorNext go_handle_cursor_next
+#define pcgoHandleCloseCursor go_handle_close_cursor
+#define pcgoHandleReadFields go_handle_read_fields
+#define pcgoHandleSetFields go_handle_set_fields
+#define pcgoHandleNewDecl go_handle_new_decl
+#define pcgoHandleAppend go_handle_append
+#define pcgoHandleDispose go_handle_dispose
+#define pcgoHandleStringify go_handle_stringify
 #else
 static int initialize_go_bridge(char* error) {
   (void)error;
