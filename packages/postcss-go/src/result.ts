@@ -1,5 +1,5 @@
 import type { ProcessRoot } from './ast.js';
-import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
+import type { ProcessFileOptions } from 'postcss-go-shared/map-options';
 import { Warning, type WarningOptions } from './warning.js';
 import type { ResultMessage, SourceMap } from './types.js';
 import type { BackendKind } from './service.js';

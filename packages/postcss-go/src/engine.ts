@@ -2,7 +2,7 @@ import {
   applyMapAnnotationAsync,
   type MapOptions,
   type ProcessFileOptions,
-} from '@postcss-go/shared/map-options';
+} from 'postcss-go-shared/map-options';
 import { createDefaultAsyncService } from './native.js';
 import { asProcessRoot, fromAst, type Node } from './ast.js';
 import { attachInputMetadata } from './input.js';

@@ -50,7 +50,7 @@
     "test:coverage:js": "pnpm --filter './packages/**' --if-present test:coverage",
     "test:coverage:go": "mkdir -p coverage && go test -mod=mod -covermode=atomic -coverprofile=coverage/go.out ./... && go tool cover -func=coverage/go.out | tee coverage/go.txt && node ./scripts/check-go-coverage.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
-    "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
+    "test:upstream:go": "pnpm --filter postcss-go-compat test:upstream:go",
     "bench": "node benchmark/run.mjs",
     "bench:boundary": "node benchmark/run-boundary.mjs"
   },

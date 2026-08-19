@@ -1,4 +1,4 @@
-import { materializePreviousMap, type ProcessFileOptions } from '@postcss-go/shared/map-options';
+import { materializePreviousMap, type ProcessFileOptions } from 'postcss-go-shared/map-options';
 
 import {
   AtRule,

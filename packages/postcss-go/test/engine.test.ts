@@ -1,7 +1,7 @@
 import path from 'node:path';
 import postcss from 'postcss';
 import { expect, test, vi } from 'vitest';
-import { isExternalSourceMap, isSourceMapEnabled } from '@postcss-go/shared/map-options';
+import { isExternalSourceMap, isSourceMapEnabled } from 'postcss-go-shared/map-options';
 
 import { fromAst, Root, type Declaration, type Rule } from '../src/ast.ts';
 import { stringifyNode } from './helpers/stringify.ts';

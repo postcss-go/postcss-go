@@ -77,9 +77,6 @@ importers:
 
   packages/postcss-compat:
     dependencies:
-      '@postcss-go/shared':
-        specifier: workspace:*
-        version: link:../shared
       nanoid:
         specifier: ^3.3.12
         version: 3.3.12
@@ -89,6 +86,9 @@ importers:
       postcss-go:
         specifier: workspace:*
         version: link:../postcss-go
+      postcss-go-shared:
+        specifier: workspace:*
+        version: link:../shared
       source-map-js:
         specifier: ^1.2.1
         version: 1.2.1
@@ -151,28 +151,25 @@ importers:
         specifier: ^0.2.15
         version: 0.2.17
     optionalDependencies:
-      '@postcss-go/native-darwin-arm64':
+      postcss-go-native-darwin-arm64:
         specifier: workspace:*
         version: link:../../npm/postcss-go/darwin-arm64
-      '@postcss-go/native-darwin-x64':
+      postcss-go-native-darwin-x64:
         specifier: workspace:*
         version: link:../../npm/postcss-go/darwin-x64
-      '@postcss-go/native-linux-arm64-gnu':
+      postcss-go-native-linux-arm64-gnu:
         specifier: workspace:*
         version: link:../../npm/postcss-go/linux-arm64-gnu
-      '@postcss-go/native-linux-x64-gnu':
+      postcss-go-native-linux-x64-gnu:
         specifier: workspace:*
         version: link:../../npm/postcss-go/linux-x64-gnu
-      '@postcss-go/native-win32-arm64-msvc':
+      postcss-go-native-win32-arm64-msvc:
         specifier: workspace:*
         version: link:../../npm/postcss-go/win32-arm64-msvc
-      '@postcss-go/native-win32-x64-msvc':
+      postcss-go-native-win32-x64-msvc:
         specifier: workspace:*
         version: link:../../npm/postcss-go/win32-x64-msvc
     devDependencies:
-      '@postcss-go/shared':
-        specifier: workspace:*
-        version: link:../shared
       node-api-headers:
         specifier: ^1.9.0
         version: 1.9.0
@@ -182,6 +179,9 @@ importers:
       postcss:
         specifier: ^8.5.15
         version: 8.5.15
+      postcss-go-shared:
+        specifier: workspace:*
+        version: link:../shared
       postcss-import:
         specifier: 16.1.1
         version: 16.1.1(postcss@8.5.15)

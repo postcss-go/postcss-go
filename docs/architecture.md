@@ -127,4 +127,4 @@ Contract notes:
 
 ## Testing
 
-Tests live next to the code they protect (tokenizer, parser, AST, processor, stringifier, bridge, `@postcss-go/shared`, packages). Prefer the narrowest boundary tests first, then the broader checks from [Contributing](contributing.md).
+Tests live next to the code they protect (tokenizer, parser, AST, processor, stringifier, bridge, `postcss-go-shared`, packages). Prefer the narrowest boundary tests first, then the broader checks from [Contributing](contributing.md).

@@ -1,5 +1,5 @@
 {
-  "name": "@postcss-go/site",
+  "name": "postcss-go-site",
   "version": "0.0.0",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 {
-  "name": "@postcss-go/native-darwin-x64",
-  "version": "0.0.1",
+  "name": "postcss-go-native-darwin-x64",
+  "version": "0.0.0",
   "license": "MIT",
   "description": "postcss-go native addon for darwin-x64",
   "bugs": "https://github.com/eryue0220/postcss-go/issues",

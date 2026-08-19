@@ -1,4 +1,4 @@
-import { materializePreviousMap, type ProcessFileOptions } from '@postcss-go/shared/map-options';
+import { materializePreviousMap, type ProcessFileOptions } from 'postcss-go-shared/map-options';
 
 import { asProcessRoot, fromAst, Node, Root, toAst, type ProcessRoot } from './ast.js';
 import { attachInputMetadata } from './input.js';

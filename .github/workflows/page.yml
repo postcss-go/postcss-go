@@ -42,10 +42,10 @@ jobs:
           cache: pnpm
 
       - name: Install website dependencies
-        run: pnpm install --no-frozen-lockfile --filter @postcss-go/site
+        run: pnpm install --no-frozen-lockfile --filter postcss-go-site
 
       - name: Build website
-        run: pnpm --filter @postcss-go/site build
+        run: pnpm --filter postcss-go-site build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
