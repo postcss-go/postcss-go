@@ -1,6 +1,8 @@
 # postcss-go
 
 [![CI](https://github.com/postcss-go/postcss-go/actions/workflows/ci.yml/badge.svg)](https://github.com/postcss-go/postcss-go/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@postcss-go/core.svg)](https://www.npmjs.com/package/@postcss-go/core)
+[![npm downloads](https://img.shields.io/npm/dm/@postcss-go/core.svg)](https://www.npmjs.com/package/@postcss-go/core)
 [![codecov](https://codecov.io/gh/postcss-go/postcss-go/graph/badge.svg)](https://codecov.io/gh/postcss-go/postcss-go)
 [![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/postcss-go/postcss-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
