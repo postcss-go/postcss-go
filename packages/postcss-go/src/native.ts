@@ -1,6 +1,5 @@
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
   materializePreviousMap,
@@ -21,6 +20,7 @@ import {
   type CssSyntaxErrorDTO,
 } from './errors.js';
 import { attachInputMetadata } from './input.js';
+import { currentModulePath } from './module-path.js';
 import {
   NATIVE_BACKEND_CAPABILITIES,
   type PostcssGoService,
@@ -75,8 +75,9 @@ function loadAddon(): NativeAddon | null {
   if (process.env.POSTCSS_GO_DISABLE_NATIVE === '1') return null;
   if (cachedAddon !== undefined) return cachedAddon;
   try {
-    const require = createRequire(import.meta.url);
-    const here = dirname(fileURLToPath(import.meta.url));
+    const modulePath = currentModulePath(import.meta.url);
+    const require = createRequire(modulePath);
+    const here = dirname(modulePath);
 
     // Prefer the published / workspace platform package (same path in
     // development after `native/build.mjs` and in production after install).

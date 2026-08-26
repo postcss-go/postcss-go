@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +50,41 @@ function copySharedDeclarations() {
   };
 }
 
+function writeCommonJsFacade() {
+  return {
+    name: 'write-commonjs-facade',
+    closeBundle() {
+      writeFileSync(
+        resolve(root, 'dist/index.cjs'),
+        `'use strict';
+
+const api = require('./index-internal.cjs');
+const postcss = api.default;
+
+for (const [name, value] of Object.entries(api)) {
+  if (name === 'default' || Object.prototype.hasOwnProperty.call(postcss, name)) continue;
+  Object.defineProperty(postcss, name, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  });
+}
+
+Object.defineProperty(postcss, 'default', {
+  configurable: true,
+  enumerable: true,
+  value: postcss,
+});
+Object.defineProperty(postcss, '__esModule', { value: true });
+
+module.exports = postcss;
+`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     dts({
@@ -88,6 +123,7 @@ export default defineConfig({
       },
     }),
     copySharedDeclarations(),
+    writeCommonJsFacade(),
   ],
   build: {
     emptyOutDir: true,
@@ -102,15 +138,18 @@ export default defineConfig({
         wasm: resolve(root, 'src/wasm/index.ts'),
         'wasm/worker': resolve(root, 'src/wasm/worker.ts'),
       },
-      formats: ['es'],
-      fileName: (_format, entryName) => `${entryName}.js`,
+      formats: ['es', 'cjs'],
+      fileName: (format, entryName) => {
+        if (format === 'es') return `${entryName}.js`;
+        return entryName === 'index' ? 'index-internal.cjs' : `${entryName}.cjs`;
+      },
     },
     rollupOptions: {
       external: isExternal,
       output: {
+        exports: 'named',
         preserveModules: true,
         preserveModulesRoot: 'src',
-        entryFileNames: '[name].js',
       },
     },
   },

@@ -4,6 +4,7 @@ import { type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
 import { Node, stringifyCssSync, type Root } from './ast.js';
 import { SyncBackendUnavailableError } from './errors.js';
+import { currentModulePath } from './module-path.js';
 import { throwInvalidPlugin } from './plugin-normalize.js';
 import {
   createDefaultAsyncService,
@@ -30,7 +31,9 @@ import {
   dispatchStringifySync,
 } from './dispatch.js';
 
-const { version: packageVersion } = createRequire(import.meta.url)('../package.json') as {
+const { version: packageVersion } = createRequire(currentModulePath(import.meta.url))(
+  '../package.json',
+) as {
   version: string;
 };
 
