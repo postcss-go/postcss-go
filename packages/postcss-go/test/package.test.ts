@@ -160,13 +160,15 @@ test('@postcss-go/shared stays private and is bundled into core', () => {
   expect(npmPackFiles(packageRoot)).toEqual(
     expect.arrayContaining([
       'dist/shared/dist/map-options.js',
+      'dist/shared/dist/map-options.cjs',
       'dist/shared/dist/map-options.d.ts',
       'dist/shared/dist/map-path.js',
+      'dist/shared/dist/map-path.cjs',
       'dist/shared/dist/map-path.d.ts',
     ]),
   );
   for (const path of filesBelow(resolve(packageRoot, 'dist'))) {
-    if (!/\.(?:js|d\.ts)$/.test(path)) continue;
+    if (!/\.(?:c?js|d\.ts)$/.test(path)) continue;
     expect(readFileSync(path, 'utf8'), path).not.toContain('@postcss-go/shared');
   }
 });
@@ -338,15 +340,28 @@ test('postcss-go wasm entry re-exports the browser API and declares asset subpat
     scripts: Record<string, string>;
   };
   expect(pkg.exports).toMatchObject({
+    '.': {
+      types: './dist/index.d.ts',
+      import: './dist/index.js',
+      require: './dist/index.cjs',
+    },
     './browser': {
       types: './dist/wasm.d.ts',
+      import: './dist/wasm.js',
+      require: './dist/wasm.cjs',
       default: './dist/wasm.js',
     },
     './wasm': {
       types: './dist/wasm.d.ts',
+      import: './dist/wasm.js',
+      require: './dist/wasm.cjs',
       default: './dist/wasm.js',
     },
-    './wasm/worker': { default: './dist/wasm/worker.js' },
+    './wasm/worker': {
+      import: './dist/wasm/worker.js',
+      require: './dist/wasm/worker.cjs',
+      default: './dist/wasm/worker.js',
+    },
     './wasm/postcss-go.wasm': { default: './dist/wasm/postcss-go.wasm' },
     './wasm/wasm_exec.js': { default: './dist/wasm/wasm_exec.js' },
   });
@@ -354,7 +369,9 @@ test('postcss-go wasm entry re-exports the browser API and declares asset subpat
   expect(npmPackFiles(packageRoot)).toEqual(
     expect.arrayContaining([
       'dist/wasm.js',
+      'dist/wasm.cjs',
       'dist/wasm/worker.js',
+      'dist/wasm/worker.cjs',
       'dist/wasm/postcss-go.wasm',
       'dist/wasm/wasm_exec.js',
     ]),
@@ -394,6 +411,7 @@ test('host platform package contains the native addon', () => {
 test('clean packed installation has no PostCSS packages in the dependency tree', () => {
   expect(existsSync(resolve(sharedRoot, 'dist/index.js'))).toBe(true);
   expect(existsSync(resolve(packageRoot, 'dist/index.js'))).toBe(true);
+  expect(existsSync(resolve(packageRoot, 'dist/index.cjs'))).toBe(true);
 
   const staging = mkdtempSync(resolve(tmpdir(), 'postcss-go-pack-'));
   try {
@@ -477,6 +495,24 @@ test('clean packed installation has no PostCSS packages in the dependency tree',
         `}\n`,
     );
     execFileSync(process.execPath, ['smoke.mjs'], { cwd: consumer, encoding: 'utf8' });
+
+    writeFileSync(
+      resolve(consumer, 'smoke.cjs'),
+      `const postcss = require('@postcss-go/core');\n` +
+        `const service = require('@postcss-go/core/service');\n` +
+        `const browser = require('@postcss-go/core/browser');\n` +
+        `if (typeof postcss !== 'function' || postcss.default !== postcss || postcss.postcss !== postcss) {\n` +
+        `  throw new Error('packed CommonJS export is not PostCSS-compatible');\n` +
+        `}\n` +
+        `if (typeof service.isSyncPostcssGoService !== 'function' || typeof browser.createBrowserProcessor !== 'function') {\n` +
+        `  throw new Error('packed CommonJS subpath export failed');\n` +
+        `}\n` +
+        `const root = postcss.parse('a{color:red}');\n` +
+        `if (root.type !== 'root' || root.toString() !== 'a{color:red}') {\n` +
+        `  throw new Error('packed CommonJS smoke failed');\n` +
+        `}\n`,
+    );
+    execFileSync(process.execPath, ['smoke.cjs'], { cwd: consumer, encoding: 'utf8' });
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }

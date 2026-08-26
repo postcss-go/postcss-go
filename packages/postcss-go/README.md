@@ -34,9 +34,55 @@ The CLI always uses the Go engine. JS plugin chains run through the
 postcss-go-owned plugin runtime before Go parse/stringify and source-map
 generation.
 
+## Webpack
+
+Use the dedicated `@postcss-go/webpack-loader` package. It calls this package
+directly and does not depend on `postcss` or the official `postcss-loader`:
+
+```bash
+npm i -D @postcss-go/core @postcss-go/webpack-loader css-loader
+```
+
+```js
+// webpack.config.cjs
+const autoprefixer = require('autoprefixer');
+
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /\.css$/i,
+        use: [
+          'css-loader',
+          {
+            loader: '@postcss-go/webpack-loader',
+            options: {
+              sourceMap: true,
+              postcssOptions: {
+                config: false,
+                plugins: [autoprefixer()],
+              },
+            },
+          },
+        ],
+      },
+    ],
+  },
+};
+```
+
+The integration preserves loader source maps (including previous maps from
+upstream loaders such as `sass-loader`), warnings, emitted assets,
+dependency messages, syntax errors, and PostCSS AST metadata. See the
+[`@postcss-go/webpack-loader` documentation](../webpack-loader/README.md) for
+its configuration contract.
+
+Custom parsers, syntax implementations, stringifiers, and `LazyResult` are not
+supported.
+
 ## Config
 
-The built-in loader supports `postcss.config.js`, `.cjs`, `.mjs`, and the
+The built-in config loader supports `postcss.config.js`, `.cjs`, `.mjs`, and the
 equivalent `.postcssrc.*` names without `postcss-load-config`. JSON config is
 also supported when it does not need executable plugins.
 
@@ -118,9 +164,10 @@ child-process, WASM, or PostCSS fallback in Node.
 
 ## Migrating from PostCSS
 
-1. Install `@postcss-go/core` and remove the runtime `postcss`,
-   `postcss-load-config`, and `postcss-reporter` dependencies if nothing else
-   uses them.
+1. Install `@postcss-go/core` and remove `postcss`, `postcss-load-config`, and
+   `postcss-reporter` if nothing else uses them. For Webpack, replace
+   `postcss-loader` with `@postcss-go/webpack-loader` so the `postcss` peer is
+   no longer required.
 2. Replace the CLI command with `postcss-go`; keep a supported
    `postcss.config.*` file and plugin list.
 3. Replace implicit `LazyResult` reads with `await processor.process(...)`, or
@@ -136,4 +183,5 @@ child-process, WASM, or PostCSS fallback in Node.
 ```bash
 pnpm --filter @postcss-go/core test
 pnpm --filter @postcss-go/core test:cli
+pnpm --filter @postcss-go/webpack-loader test
 ```

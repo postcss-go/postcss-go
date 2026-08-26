@@ -20,10 +20,11 @@
 
 ## Packages
 
-| Package              | Path                      | Role                                                               |
-| -------------------- | ------------------------- | ------------------------------------------------------------------ |
-| `@postcss-go/core`   | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
-| `@postcss-go/compat` | `packages/postcss-compat` | Upstream compatibility harness                                     |
+| Package                      | Path                      | Role                                                               |
+| ---------------------------- | ------------------------- | ------------------------------------------------------------------ |
+| `@postcss-go/core`           | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
+| `@postcss-go/webpack-loader` | `packages/webpack-loader` | Webpack 5 adapter without a `postcss-loader` dependency            |
+| `@postcss-go/compat`         | `packages/postcss-compat` | Upstream compatibility harness                                     |
 
 ## Documentation
 
