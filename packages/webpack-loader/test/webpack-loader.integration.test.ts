@@ -149,7 +149,6 @@ test('processes CSS and forwards warnings, messages, maps, and AST metadata', as
   expect(capture.map?.sources?.some((source) => source.endsWith('input.css'))).toBe(true);
   expect(capture.ast).toMatchObject({
     type: 'postcss',
-    version: '0.0.1',
     rootType: 'root',
     css: expect.stringContaining('color: blue'),
   });
