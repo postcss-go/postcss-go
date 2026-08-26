@@ -21,5 +21,5 @@ func BenchmarkParseStringify_Small(b *testing.B) {
 func BenchmarkProcess_Small(b *testing.B) { benchmarkProcess(b, benchmark.SmallRules) }
 
 func BenchmarkTokenize_small(b *testing.B) {
-	benchmarkTokenizeCSS(b, benchmark.GenerateCSS(benchmark.SmallRules))
+	benchmarkTokenizeCSS(b, generatedCSS(benchmark.SmallRules))
 }

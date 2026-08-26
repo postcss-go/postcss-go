@@ -1,12 +1,29 @@
 package benchmark_test
 
 import (
+	"sync"
 	"testing"
 
 	"postcss-go/benchmark"
 	postcss "postcss-go/internal/postcss"
 	"postcss-go/internal/stringifier"
 )
+
+// The timed loops below use `for b.Loop()` (Go 1.24+) instead of `for i := 0; i
+// < b.N; i++`, and the fixtures/synthetic stylesheets they measure are cached at
+// package level.
+//
+// Reason: the CodSpeed walltime runner records one measurement per timed
+// section. `b.N` loops reset that buffer on every framework round, so a whole
+// benchmark collapsed into a single sample (rounds: 1, stdev: 0) that could not
+// be median-filtered or outlier-filtered, and unrelated GC/scheduling jitter
+// showed up as double-digit "regressions" in PR reports. `b.Loop()` reports
+// every iteration, which gives CodSpeed hundreds of rounds per benchmark.
+//
+// `b.Loop()` also excludes work done before the loop from the measurement, so no
+// b.ResetTimer() call is needed; caching the setup keeps it off the hot path
+// entirely (re-reading the embedded fixtures on every round used to add GC
+// pressure to the measured section).
 
 func TestRealWorldFixturesParse(t *testing.T) {
 	fixtures, err := benchmark.RealWorldFixtures()
@@ -49,9 +66,8 @@ func TestBootstrapDirectEligible(t *testing.T) {
 func benchmarkParseCSS(b *testing.B, css string) {
 	b.SetBytes(int64(len(css)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := postcss.Parse(css); err != nil {
 			b.Fatal(err)
 		}
@@ -61,9 +77,8 @@ func benchmarkParseCSS(b *testing.B, css string) {
 func benchmarkParseStringifyCSS(b *testing.B, css string) {
 	b.SetBytes(int64(len(css)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		root, err := postcss.Parse(css)
 		if err != nil {
 			b.Fatal(err)
@@ -76,9 +91,8 @@ func benchmarkProcessCSS(b *testing.B, css string) {
 	processor := postcss.New()
 	b.SetBytes(int64(len(css)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := processor.Process(css); err != nil {
 			b.Fatal(err)
 		}
@@ -86,15 +100,15 @@ func benchmarkProcessCSS(b *testing.B, css string) {
 }
 
 func benchmarkParse(b *testing.B, rules int) {
-	benchmarkParseCSS(b, benchmark.GenerateCSS(rules))
+	benchmarkParseCSS(b, generatedCSS(rules))
 }
 
 func benchmarkParseStringify(b *testing.B, rules int) {
-	benchmarkParseStringifyCSS(b, benchmark.GenerateCSS(rules))
+	benchmarkParseStringifyCSS(b, generatedCSS(rules))
 }
 
 func benchmarkProcess(b *testing.B, rules int) {
-	benchmarkProcessCSS(b, benchmark.GenerateCSS(rules))
+	benchmarkProcessCSS(b, generatedCSS(rules))
 }
 
 func BenchmarkParse_Medium(b *testing.B) { benchmarkParse(b, benchmark.MediumRules) }
@@ -181,13 +195,54 @@ func BenchmarkProcessReal_BootstrapMin(b *testing.B) {
 	benchmarkProcessCSS(b, fixture.CSS)
 }
 
+// fixturesByID decodes the manifest and reads every embedded stylesheet, so it
+// is resolved once for the whole benchmark binary instead of once per round.
+var fixturesByID = sync.OnceValues(func() (map[string]benchmark.RealWorldFixture, error) {
+	fixtures, err := benchmark.RealWorldFixtures()
+	if err != nil {
+		return nil, err
+	}
+
+	byID := make(map[string]benchmark.RealWorldFixture, len(fixtures))
+	for _, fixture := range fixtures {
+		byID[fixture.ID] = fixture
+	}
+
+	return byID, nil
+})
+
 func mustFixture(b *testing.B, id string) benchmark.RealWorldFixture {
 	b.Helper()
 
-	fixture, err := benchmark.RealWorldFixtureByID(id)
+	byID, err := fixturesByID()
 	if err != nil {
-		b.Fatalf("load fixture %q: %v", id, err)
+		b.Fatalf("load fixtures: %v", err)
+	}
+
+	fixture, ok := byID[id]
+	if !ok {
+		b.Fatalf("unknown fixture id %q", id)
 	}
 
 	return fixture
+}
+
+// generatedCSS memoizes the synthetic stylesheets so generation stays out of
+// the timed benchmark bodies.
+var (
+	generatedCSSMu    sync.Mutex
+	generatedCSSCache = map[int]string{}
+)
+
+func generatedCSS(rules int) string {
+	generatedCSSMu.Lock()
+	defer generatedCSSMu.Unlock()
+
+	css, ok := generatedCSSCache[rules]
+	if !ok {
+		css = benchmark.GenerateCSS(rules)
+		generatedCSSCache[rules] = css
+	}
+
+	return css
 }
