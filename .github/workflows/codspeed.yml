@@ -1,15 +1,13 @@
 name: CodSpeed
 
 on:
+  # No `paths` filter on the default branch: every commit on `main` needs a
+  # baseline run, otherwise PR reports fall back to an older `main` commit and
+  # mix unrelated changes into the comparison.
   push:
     branches:
       - main
       - master
-    paths:
-      - '**/*.go'
-      - go.mod
-      - go.sum
-      - .github/workflows/codspeed.yml
   pull_request:
     paths:
       - '**/*.go'
@@ -56,7 +54,9 @@ jobs:
         with:
           mode: walltime # go only supports walltime mode
           # The CodSpeed Go runner discovers every `Benchmark*` in the package
-          # and only accepts the `-bench` flag.
+          # and only accepts the `-bench` and `-benchtime` flags. `-benchtime`
+          # is left at its default (3s), which is what sizes the number of
+          # measured rounds per benchmark.
           run: go test ./benchmark/ -bench=.
         env:
           # Macro runners are ARM64, where frame-pointer unwinding yields more
