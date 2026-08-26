@@ -10,8 +10,8 @@
     "prepare:go": "pnpm --filter @postcss-go/shared build && pnpm build && echo 'Go overrides are applied to a temp copy by test:upstream:go; not written to vendor.'",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ../../scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/shared build && pnpm build && POSTCSS_COMPAT_MODE=go UPSTREAM_TEST_PATTERN='\\.test\\.(ts|js)$' node ../../scripts/run-upstream-tests.mjs",
-    "test": "pnpm build && vitest run",
-    "test:coverage": "pnpm build && vitest run --coverage"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@postcss-go/core": "workspace:*",

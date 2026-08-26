@@ -23,9 +23,9 @@
     }
   },
   "scripts": {
-    "build": "pnpm -r build",
-    "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm && pnpm --filter @postcss-go/webpack-loader build",
-    "check": "pnpm -r check",
+    "build": "turbo run build",
+    "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm",
+    "check": "turbo run check",
     "check:all": "pnpm format:check && pnpm lint && pnpm check && pnpm check:upstream && pnpm test && pnpm test:upstream && pnpm test:upstream:go && pnpm build",
     "check:upstream": "node ./scripts/check-upstream-postcss-sync.mjs",
     "changeset": "changeset",
@@ -44,10 +44,10 @@
     "sync:benchmark-fixtures": "node ./benchmark/sync-fixtures.mjs",
     "test": "pnpm test:js && pnpm test:go",
     "test:core-css-contract": "go test -mod=mod ./pkg/api -run CoreCSS && pnpm --filter @postcss-go/core test:core-css-contract",
-    "test:js": "pnpm --filter './packages/**' --if-present test",
+    "test:js": "turbo run test",
     "test:go": "go test -mod=mod ./...",
     "test:coverage": "pnpm test:coverage:js && pnpm test:coverage:go",
-    "test:coverage:js": "pnpm --filter './packages/**' --if-present test:coverage",
+    "test:coverage:js": "turbo run test:coverage",
     "test:coverage:go": "mkdir -p coverage && go test -mod=mod -covermode=atomic -coverprofile=coverage/go.out ./... && go tool cover -func=coverage/go.out | tee coverage/go.txt && node ./scripts/check-go-coverage.mjs",
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
@@ -70,6 +70,7 @@
     "prettier": "^3.8.4",
     "tree-sitter": "npm:web-tree-sitter@^0.26.9",
     "tree-sitter-css": "^0.25.0",
+    "turbo": "^2.10.12",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
     "web-tree-sitter": "^0.26.9"

@@ -9,6 +9,7 @@
 import { AtRule, Comment, Declaration, Document, Node, Root, Rule, type ChildNode } from './ast.js';
 import { UnsupportedAstNodeError } from './errors.js';
 import type { AstNode, Raws, SourceLocation, SourcePosition } from './types.js';
+import { toSourceMapPath } from '@postcss-go/shared/map-path';
 
 const MAGIC = Buffer.from('PCGW');
 const VERSION = 1;
@@ -471,12 +472,14 @@ function encodeSource(writer: Writer, source: SourceLocation | undefined): void 
   writer.string(mapText);
   writer.string(
     mapText
-      ? (extended.mapUrl ??
-          inputMap?.file ??
-          extended.input?.file ??
-          extended.input?.from ??
-          source.file ??
-          '')
+      ? toSourceMapPath(
+          extended.mapUrl ??
+            inputMap?.file ??
+            extended.input?.file ??
+            extended.input?.from ??
+            source.file ??
+            '',
+        )
       : '',
   );
 }
