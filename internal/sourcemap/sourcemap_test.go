@@ -312,6 +312,37 @@ func TestNewInputWithSourceMap(t *testing.T) {
 	}
 }
 
+func TestNewInputComposesPreviousMapWithBackslashMapURL(t *testing.T) {
+	const sourceMap = `{
+		"version": 3,
+		"file": "generated.css",
+		"sources": ["original.css"],
+		"sourcesContent": [".orig {\n  color: red;\n}"],
+		"names": [],
+		"mappings": "AAAA"
+	}`
+
+	input, err := NewInput(".gen{}", Options{
+		From:         `C:\repo\input.css`,
+		SourceMapURL: `C:\repo\input.css`,
+		SourceMap:    []byte(sourceMap),
+	})
+	if err != nil {
+		t.Fatalf("new input with backslash map URL failed: %v", err)
+	}
+
+	_, origin, line, column, ok := input.Origin(1, 1)
+	if !ok {
+		t.Fatal("expected previous-map origin lookup to succeed")
+	}
+	if origin == nil || !strings.HasSuffix(strings.ReplaceAll(origin.File, `\`, "/"), "/original.css") {
+		t.Fatalf("expected origin file to end with original.css, got %#v", origin)
+	}
+	if line != 1 || column != 1 {
+		t.Fatalf("expected origin 1:1, got %d:%d", line, column)
+	}
+}
+
 func TestLocationOffsetRemappedThroughSourceMap(t *testing.T) {
 	const sourceMap = `{
 		"version": 3,
