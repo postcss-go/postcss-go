@@ -6,7 +6,8 @@
   "engines": {
     "node": ">=18"
   },
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "postcss-go": "./bin/postcss-go.js"
@@ -14,17 +15,25 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
     "./browser": {
       "types": "./dist/wasm.d.ts",
+      "import": "./dist/wasm.js",
+      "require": "./dist/wasm.cjs",
       "default": "./dist/wasm.js"
     },
     "./wasm": {
       "types": "./dist/wasm.d.ts",
+      "import": "./dist/wasm.js",
+      "require": "./dist/wasm.cjs",
       "default": "./dist/wasm.js"
     },
     "./wasm/worker": {
+      "import": "./dist/wasm/worker.js",
+      "require": "./dist/wasm/worker.cjs",
       "default": "./dist/wasm/worker.js"
     },
     "./wasm/postcss-go.wasm": {
@@ -35,6 +44,8 @@
     },
     "./service": {
       "types": "./dist/service.d.ts",
+      "import": "./dist/service.js",
+      "require": "./dist/service.cjs",
       "default": "./dist/service.js"
     },
     "./bin": "./bin/postcss-go.js",
