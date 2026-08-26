@@ -31,6 +31,7 @@ dist/
 .tmp/
 coverage/
 **/coverage/
+.turbo/
 
 # Local Go bridge binary for postcss-go
 packages/postcss-go/bin/postcss-go

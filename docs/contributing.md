@@ -12,6 +12,8 @@ Install dependencies from the repository root:
 pnpm install
 ```
 
+Package scripts (`build`, `check`, `test`, `test:coverage`) are orchestrated with [Turborepo](https://turborepo.dev/). Prefer the root `pnpm` scripts below; they call `turbo run` so dependent packages build in the correct order and cacheable outputs are reused.
+
 ## Development workflow
 
 Use the narrowest command that covers your change:
@@ -23,6 +25,8 @@ Use the narrowest command that covers your change:
 | JS + Go unit tests | `pnpm test`      |
 | TypeScript checks  | `pnpm check`     |
 | Full validation    | `pnpm check:all` |
+
+Filter to a single package when needed, for example `pnpm exec turbo run test --filter=@postcss-go/shared`.
 
 Run `pnpm check:all` before opening a pull request. It runs formatting, linting, TypeScript type checks, upstream sync verification, JS/Go/upstream tests (including `test:upstream:go`), and builds.
 
