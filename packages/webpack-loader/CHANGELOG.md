@@ -1,6 +1,6 @@
-# @postcss-go/core
+# @postcss-go/webpack-loader
 
-## 0.0.2
+## 0.0.1
 
 ### Patch Changes
 
@@ -8,9 +8,5 @@
   depending on the official `postcss` or `postcss-loader` packages. Document it as
   the supported Webpack integration and remove the `postcss-loader` compatibility
   path from `@postcss-go/core`.
-
-## 0.0.1
-
-### Patch Changes
-
-- fcd0b8b: Initial 0.0.1 release of the Go-backed PostCSS engine: Node.js API, CLI, WASM browser entry, and native addons for macOS, Linux glibc, and Windows.
+- Updated dependencies [cb43b81]
+  - @postcss-go/core@0.0.2

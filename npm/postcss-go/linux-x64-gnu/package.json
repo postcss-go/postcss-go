@@ -1,6 +1,6 @@
 {
   "name": "@postcss-go/native-linux-x64-gnu",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "MIT",
   "description": "postcss-go native addon for linux-x64-gnu",
   "bugs": "https://github.com/postcss-go/postcss-go/issues",
