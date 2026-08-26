@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -9,13 +10,19 @@ const distDir = path.join(repoRoot, 'packages', 'postcss-go', 'dist', 'wasm');
 
 fs.mkdirSync(distDir, { recursive: true });
 
+/** Go requires GOCACHE or LocalAppData; Turbo strict mode may strip the latter on Windows. */
+function withGoCache(env) {
+  if (env.GOCACHE || env.LOCALAPPDATA || env.LocalAppData) return env;
+  return { ...env, GOCACHE: path.join(os.homedir(), '.cache', 'go-build') };
+}
+
 const result = spawnSync(
   'go',
   ['build', '-o', path.join(distDir, 'postcss-go.wasm'), './cmd/wasm'],
   {
     cwd: repoRoot,
     stdio: 'inherit',
-    env: { ...process.env, GOOS: 'js', GOARCH: 'wasm' },
+    env: withGoCache({ ...process.env, GOOS: 'js', GOARCH: 'wasm' }),
   },
 );
 if (result.status !== 0) process.exit(result.status ?? 1);

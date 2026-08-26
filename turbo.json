@@ -1,0 +1,36 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "globalEnv": ["GOFLAGS"],
+  "globalPassThroughEnv": [
+    "APPDATA",
+    "CGO_CFLAGS",
+    "CGO_ENABLED",
+    "CGO_LDFLAGS",
+    "GOCACHE",
+    "GOMODCACHE",
+    "GOPATH",
+    "GOROOT",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "SystemDrive",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "USERPROFILE"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "check": {},
+    "test": {
+      "dependsOn": ["build", "^build"]
+    },
+    "test:coverage": {
+      "dependsOn": ["build", "^build"],
+      "outputs": ["coverage/**"]
+    }
+  }
+}

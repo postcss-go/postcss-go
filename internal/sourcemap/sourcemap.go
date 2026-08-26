@@ -101,12 +101,16 @@ func newInput(
 		}
 	}
 	if len(opts.SourceMap) > 0 {
-		consumer, err := sourcemap.Parse(opts.SourceMapURL, opts.SourceMap)
+		// go-sourcemap resolves relative sources against the map URL. Windows
+		// backslashes make Source() return the map URL itself instead of the
+		// original source, so always normalize separators before Parse.
+		mapURL := strings.ReplaceAll(opts.SourceMapURL, `\`, "/")
+		consumer, err := sourcemap.Parse(mapURL, opts.SourceMap)
 		if err != nil {
 			return nil, err
 		}
 		input.consumer = consumer
-		input.originContent = sourceMapContentAvailability(opts.SourceMap, opts.SourceMapURL, input.File)
+		input.originContent = sourceMapContentAvailability(opts.SourceMap, mapURL, input.File)
 	}
 	return input, nil
 }

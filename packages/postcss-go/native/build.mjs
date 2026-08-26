@@ -32,6 +32,12 @@ const deploymentEnv =
       }
     : {};
 
+/** Go requires GOCACHE or LocalAppData; Turbo strict mode may strip the latter on Windows. */
+function withGoCache(env) {
+  if (env.GOCACHE || env.LOCALAPPDATA || env.LocalAppData) return env;
+  return { ...env, GOCACHE: join(homedir(), '.cache', 'go-build') };
+}
+
 function run(command, args, options = {}) {
   return spawnSync(command, args, { stdio: 'inherit', ...options });
 }
@@ -126,12 +132,12 @@ const archive = run(
   ],
   {
     cwd: repoRoot,
-    env: {
+    env: withGoCache({
       ...process.env,
       ...deploymentEnv,
       CGO_ENABLED: '1',
       GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
-    },
+    }),
   },
 );
 
