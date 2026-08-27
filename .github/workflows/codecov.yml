@@ -20,6 +20,7 @@ on:
       - 'packages/postcss-go/**'
       - 'packages/postcss-compat/**'
       - 'packages/shared/**'
+      - 'packages/vite-loader/**'
       - 'npm/postcss-go/**'
       - scripts/build-wasm.mjs
       - scripts/check-go-coverage.mjs
@@ -42,6 +43,7 @@ on:
       - 'packages/postcss-go/**'
       - 'packages/postcss-compat/**'
       - 'packages/shared/**'
+      - 'packages/vite-loader/**'
       - 'npm/postcss-go/**'
       - scripts/build-wasm.mjs
       - scripts/check-go-coverage.mjs
@@ -112,6 +114,7 @@ jobs:
           path: |
             packages/postcss-go/coverage/lcov.info
             packages/postcss-compat/coverage/lcov.info
+            packages/vite-loader/coverage/lcov.info
 
       - name: Upload Go coverage to Codecov
         if: env.CODECOV_TOKEN != ''
@@ -129,7 +132,7 @@ jobs:
         if: env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v7
         with:
-          files: ./packages/postcss-go/coverage/lcov.info,./packages/postcss-compat/coverage/lcov.info
+          files: ./packages/postcss-go/coverage/lcov.info,./packages/postcss-compat/coverage/lcov.info,./packages/vite-loader/coverage/lcov.info
           flags: js
           name: codecov-js
           disable_search: true

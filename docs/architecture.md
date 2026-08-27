@@ -99,6 +99,9 @@ sequenceDiagram
 - **webpack-loader** — thin Webpack 5 adapter for options, previous maps,
   warnings, dependency messages, emitted assets, and AST metadata; calls core
   directly without depending on the official `postcss-loader`
+- **vite-loader** — pre-transform Vite adapter for CSS, config lookup, source
+  maps, warnings, watch dependencies, and emitted assets; prevents duplicate
+  automatic PostCSS config execution unless Vite has an explicit PostCSS setup
 - **shared** — private dual ESM/CJS helpers for map-option normalization, annotation callbacks, map paths, and map-mode predicates; bundled into core and used directly by vendored compat overrides
 
 JavaScript stays responsible for ecosystem-facing behavior and synchronous JavaScript plugin callbacks. Go handles parse, the canonical AST implementation, process, no-work map handling, and all pipeline/plugin-result stringify and source-map generation. Node plugin helpers that parse or stringify CSS (`helpers.postcss.parse`, `Node#toString()`, builder callbacks) use the N-API Go parser/stringifier; the browser WASM Worker path throws `SyncBackendUnavailableError` instead.
