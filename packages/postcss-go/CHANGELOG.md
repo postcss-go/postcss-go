@@ -1,5 +1,11 @@
 # @postcss-go/core
 
+## 0.0.5
+
+### Patch Changes
+
+- dc24a6d: Build vite-loader and webpack-loader during release so published tarballs include `dist/`.
+
 ## 0.0.4
 
 ## 0.0.3
