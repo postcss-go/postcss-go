@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AcceptedPlugin } from '@postcss-go/core';
+import { CssSyntaxError, type AcceptedPlugin } from '@postcss-go/core';
 import { afterEach, expect, test } from 'vitest';
 import { build, createLogger, type Logger, type Plugin, type ResolvedConfig } from 'vite';
 
@@ -426,6 +426,70 @@ test('rejects invalid plugins and missing explicit configs', async () => {
   await expect(
     compile(directory, { postcssOptions: { config: 'missing.config.cjs' } }),
   ).rejects.toThrow('No postcss-go config found');
+});
+
+test('forwards warnings without source locations and merges object map options', async () => {
+  const directory = createProject('.mapped { color: red; }\n');
+  const input = resolve(directory, 'input.css');
+  const plugin: AcceptedPlugin = {
+    postcssPlugin: 'warning-contract',
+    Once(_root, { result }) {
+      result.warn('plain warning');
+    },
+  };
+
+  const { result, warnings } = await transformCss(
+    {
+      sourceMap: true,
+      postcssOptions: {
+        config: false,
+        map: { sourcesContent: true },
+        plugins: [plugin],
+      },
+    },
+    '.mapped { color: red; }\n',
+    input,
+  );
+
+  expect(warnings).toEqual(['[warning-contract] plain warning']);
+  expect(result?.map).toBeTypeOf('string');
+  const map = JSON.parse(result!.map as string) as { sourcesContent?: string[] };
+  expect(map.sourcesContent?.[0]).toContain('color: red');
+});
+
+test('reports CssSyntaxError without line metadata and rethrows other errors', async () => {
+  const directory = createProject();
+  const input = resolve(directory, 'input.css');
+
+  const syntaxErrorPlugin: AcceptedPlugin = {
+    postcssPlugin: 'syntax-error-contract',
+    Once() {
+      throw new CssSyntaxError('broken css', { plugin: 'syntax-error-contract' });
+    },
+  };
+  const { thrown: syntaxThrown } = await transformCss(
+    { postcssOptions: { config: false, plugins: [syntaxErrorPlugin] } },
+    '.card { color: red; }\n',
+    input,
+  );
+  expect(syntaxThrown).toMatchObject({
+    message: '[syntax-error-contract] broken css',
+    loc: undefined,
+  });
+
+  const runtimeErrorPlugin: AcceptedPlugin = {
+    postcssPlugin: 'runtime-error-contract',
+    Once() {
+      throw new Error('unexpected runtime failure');
+    },
+  };
+  const { thrown: runtimeThrown } = await transformCss(
+    { postcssOptions: { config: false, plugins: [runtimeErrorPlugin] } },
+    '.card { color: red; }\n',
+    input,
+  );
+  expect(runtimeThrown).toBeInstanceOf(Error);
+  expect((runtimeThrown as Error).message).toBe('unexpected runtime failure');
 });
 
 test('package stays free of postcss and postcss-loader', () => {
