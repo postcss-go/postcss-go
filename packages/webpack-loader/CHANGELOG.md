@@ -1,5 +1,12 @@
 # @postcss-go/webpack-loader
 
+## 0.0.3
+
+### Patch Changes
+
+- Updated dependencies [889ee70]
+  - @postcss-go/core@0.0.3
+
 ## 0.0.1
 
 ### Patch Changes
