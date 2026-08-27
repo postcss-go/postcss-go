@@ -1,6 +1,6 @@
 {
   "name": "@postcss-go/vite-loader",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Vite plugin for the postcss-go engine.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -20,6 +20,7 @@
     "dist"
   ],
   "scripts": {
+    "prepublishOnly": "pnpm run build",
     "build": "vite build",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
