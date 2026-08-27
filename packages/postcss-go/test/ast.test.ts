@@ -681,6 +681,29 @@ test('position helpers resolve offsets past the input and serialize source witho
   expect(json.source).not.toHaveProperty('inputId');
 });
 
+test('enumerable node properties avoid internal AST fields for Object.keys consumers', () => {
+  const root = new Root({
+    nodes: [
+      {
+        type: 'rule',
+        selector: 'a',
+        nodes: [{ type: 'decl', prop: 'color', value: 'red' }],
+      },
+    ],
+  });
+  const decl = (root.first as Rule).first as Declaration;
+  const declKeys = Object.keys(decl);
+  const rootKeys = Object.keys(root);
+
+  expect(declKeys).toContain('parent');
+  expect(declKeys).not.toContain('parentNode');
+  expect(declKeys).not.toContain('clean');
+  expect(declKeys).not.toContain('proxyCache');
+  expect(rootKeys).toEqual(['type', 'source', 'raws', 'nodes']);
+  expect(rootKeys).not.toContain('lastEach');
+  expect(rootKeys).not.toContain('indexes');
+});
+
 test('replaceWith flattens nested arrays and container proxies wrap walkers', () => {
   const root = new Root({
     nodes: [
