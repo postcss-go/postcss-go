@@ -219,7 +219,7 @@ importers:
   packages/webpack-loader:
     dependencies:
       '@postcss-go/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../postcss-go
     devDependencies:
       '@types/node':

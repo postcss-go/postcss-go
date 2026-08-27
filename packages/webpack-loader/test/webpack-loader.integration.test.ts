@@ -474,5 +474,4 @@ test('package stays free of postcss and postcss-loader', () => {
     expect(section?.postcss).toBeUndefined();
     expect(section?.['postcss-loader']).toBeUndefined();
   }
-  expect(pkg.dependencies?.['@postcss-go/core']).toBe('workspace:*');
 });

@@ -5,6 +5,7 @@
   "fixed": [
     [
       "@postcss-go/core",
+      "@postcss-go/webpack-loader",
       "@postcss-go/native-darwin-arm64",
       "@postcss-go/native-darwin-x64",
       "@postcss-go/native-linux-arm64-gnu",

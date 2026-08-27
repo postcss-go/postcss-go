@@ -30,7 +30,6 @@ Fixes #
 - [ ] Go engine
 - [ ] Native addon
 - [ ] WASM
-- [ ] `@postcss-go/compat`
 - [ ] Docs / repo tooling
 - [ ] Other:
 
