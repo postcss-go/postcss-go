@@ -1,0 +1,97 @@
+name: Feature Request
+description: Suggest a new capability or improvement for postcss-go
+title: '[Feature]: '
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+        `postcss-go` is a Go port of PostCSS focused on performance and ecosystem compatibility. Feature requests are easier to evaluate when they explain the use case and how they relate to upstream PostCSS behavior.
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Target package / area
+      description: Where should this feature live?
+      options:
+        - '@postcss-go/core (Node.js API / CLI)'
+        - '@postcss-go/webpack-loader'
+        - Go engine (parse / transform / stringify / source maps)
+        - Native addon (@postcss-go/native-*)
+        - WASM (@postcss-go/core/wasm)
+        - Documentation / DX
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem are you trying to solve? Who benefits from this feature?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API, behavior, or workflow you would like to see.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: postcss-compat
+    attributes:
+      label: PostCSS compatibility
+      description: How should this relate to upstream PostCSS?
+      options:
+        - 'Should match upstream PostCSS behavior/API'
+        - 'postcss-go-specific extension (document divergence)'
+        - 'Not applicable'
+        - 'Not sure'
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example usage
+      description: Show how you would like to use this feature in code, CLI, or webpack config.
+      render: javascript
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds exist today? Why are they insufficient?
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: Contribution
+      description: Are you willing to help implement this?
+      options:
+        - 'Yes, I can open a PR'
+        - 'Maybe, with guidance'
+        - 'No, reporting only'
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, benchmarks, related issues, or upstream PostCSS references.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and pull requests to avoid duplicates
+          required: true
