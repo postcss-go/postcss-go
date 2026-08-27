@@ -1,0 +1,137 @@
+name: Bug Report
+description: Report unexpected behavior or a regression in postcss-go
+title: '[Bug]: '
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        `postcss-go` is **experimental** and aims to stay compatible with the PostCSS ecosystem. The most actionable reports include a minimal reproduction and, when relevant, how upstream PostCSS behaves for the same input.
+
+        Please do not include secrets or proprietary CSS in your report.
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected package / area
+      description: Which part of the project is involved?
+      options:
+        - '@postcss-go/core (Node.js API / CLI)'
+        - '@postcss-go/webpack-loader'
+        - Go engine (parse / transform / stringify / source maps)
+        - Native addon (@postcss-go/native-*)
+        - WASM (@postcss-go/core/wasm)
+        - Upstream compatibility (@postcss-go/compat)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: postcss-go version
+      description: e.g. `@postcss-go/core` version from `package.json` or `npm ls @postcss-go/core`
+      placeholder: '0.x.x'
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug in one or two sentences.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen? If this is a PostCSS compatibility issue, describe upstream PostCSS behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages, warnings, or incorrect output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal CSS input, config, plugin chain, and commands needed to reproduce the issue.
+      render: shell
+      placeholder: |
+        1. Install `@postcss-go/core@x.y.z`
+        2. Run `postcss-go input.css -o output.css -u autoprefixer`
+        3. See error / wrong output
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal sample
+      description: Paste the smallest CSS, JS/TS, webpack config, or plugin setup that still reproduces the issue.
+      render: css
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / stack trace
+      description: Paste full terminal output, stack traces, or loader warnings if available.
+      render: shell
+
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Upstream PostCSS behavior
+      description: Does the same input behave differently with upstream PostCSS?
+      options:
+        - 'Yes — PostCSS behaves as expected'
+        - 'No — PostCSS has the same issue'
+        - 'Not tested'
+        - 'Not applicable'
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: '22.x.x'
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / platform
+      placeholder: 'macOS 15 / Ubuntu 24.04 / Windows 11 / browser'
+    validations:
+      required: true
+
+  - type: input
+    id: native
+    attributes:
+      label: Native platform package (if applicable)
+      description: e.g. `@postcss-go/native-darwin-arm64`
+      placeholder: '@postcss-go/native-darwin-arm64'
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues to avoid duplicates
+          required: true
+        - label: I can reproduce this on the latest release (or main branch)
+          required: false
