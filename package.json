@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm",
+    "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm && pnpm --filter @postcss-go/vite-loader --filter @postcss-go/webpack-loader build",
     "check": "turbo run check",
     "check:all": "pnpm format:check && pnpm lint && pnpm check && pnpm check:upstream && pnpm test && pnpm test:upstream && pnpm test:upstream:go && pnpm build",
     "check:upstream": "node ./scripts/check-upstream-postcss-sync.mjs",
