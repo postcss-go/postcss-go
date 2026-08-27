@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import upstream from 'postcss';
 import atImport from 'postcss-import';
+import nested from 'postcss-nested';
 import { afterAll, expect, test } from 'vitest';
 
 import { Processor } from '../src/processor.ts';
@@ -87,4 +88,32 @@ test('mutation-heavy and asynchronous plugins match across native and WASM Worke
   } finally {
     await wasm.close();
   }
+});
+
+const multipleAmpersandCss = `.hero {
+  display: flex;
+
+  & h1 {
+    margin: 0;
+  }
+
+  & .cta {
+    border-radius: 999px;
+  }
+}`;
+
+test('postcss-nested flattens multiple & blocks in one rule', async () => {
+  const plugin = nested() as AcceptedPlugin;
+  const owned = await new Processor([plugin]).process(multipleAmpersandCss, {
+    from: 'input.css',
+    map: false,
+  });
+  const reference = await upstream([plugin]).process(multipleAmpersandCss, {
+    from: 'input.css',
+    map: false,
+  });
+
+  expect(owned.css).toBe(reference.css);
+  expect(owned.css).toContain('.hero h1');
+  expect(owned.css).toContain('.hero .cta');
 });
