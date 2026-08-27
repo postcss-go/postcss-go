@@ -2,6 +2,11 @@
 
 ## 0.0.5
 
+### Minor Changes
+
+- Publish the public Go library at `github.com/postcss-go/postcss-go/pkg/api`.
+  Install with `go get github.com/postcss-go/postcss-go/pkg/api@v0.0.5`.
+
 ### Patch Changes
 
 - dc24a6d: Build vite-loader and webpack-loader during release so published tarballs include `dist/`.

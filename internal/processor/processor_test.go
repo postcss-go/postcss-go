@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/go-sourcemap/sourcemap"
-	"postcss-go/internal/ast"
-	"postcss-go/internal/result"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/result"
 )
 
 type testSourceMap struct {

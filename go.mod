@@ -1,4 +1,4 @@
-module postcss-go
+module github.com/postcss-go/postcss-go
 
 go 1.25.0
 

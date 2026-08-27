@@ -12,8 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-sourcemap/sourcemap"
-	"postcss-go/internal/csserrors"
-	"postcss-go/internal/utils"
+	"github.com/postcss-go/postcss-go/internal/csserrors"
+	"github.com/postcss-go/postcss-go/internal/utils"
 )
 
 type Position struct {

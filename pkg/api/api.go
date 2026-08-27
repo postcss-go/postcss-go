@@ -1,9 +1,24 @@
-// Package api exposes postcss-go's public Go API: parsing, AST mutation,
-// traversal, stringifying, and source maps. It is intended for integrating
-// the CSS pipeline into other Go tools as a library.
+// Package api provides a Go library for CSS parsing, AST transformation,
+// stringifying, and source maps. It is intended for integrating the CSS
+// pipeline into other Go tools as a library.
+//
+// Install:
+//
+//	go get github.com/postcss-go/postcss-go/pkg/api@v0.0.5
+//
+// Example:
+//
+//	root, err := api.Parse(".btn { color: red; }")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	result, err := api.New().Process(api.Stringify(root), api.ProcessOptions{
+//		From: "input.css",
+//		To:   "output.css",
+//	})
 package api
 
-import internal "postcss-go/internal/postcss"
+import internal "github.com/postcss-go/postcss-go/internal/postcss"
 
 type Node = internal.Node
 type Container = internal.Container

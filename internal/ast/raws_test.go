@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 func TestVisitRawsAndApplyRawStayCompact(t *testing.T) {

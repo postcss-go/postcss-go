@@ -1,13 +1,13 @@
 package postcss
 
 import (
-	"postcss-go/internal/ast"
-	csserrors "postcss-go/internal/csserrors"
-	"postcss-go/internal/parser"
-	"postcss-go/internal/processor"
-	"postcss-go/internal/result"
-	"postcss-go/internal/sourcemap"
-	"postcss-go/internal/stringifier"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	csserrors "github.com/postcss-go/postcss-go/internal/csserrors"
+	"github.com/postcss-go/postcss-go/internal/parser"
+	"github.com/postcss-go/postcss-go/internal/processor"
+	"github.com/postcss-go/postcss-go/internal/result"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/stringifier"
 )
 
 type Node = ast.Node

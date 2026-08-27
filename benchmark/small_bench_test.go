@@ -3,7 +3,7 @@ package benchmark_test
 import (
 	"testing"
 
-	"postcss-go/benchmark"
+	"github.com/postcss-go/postcss-go/benchmark"
 )
 
 // Small synthetic fixtures finish in tens of microseconds. They used to be

@@ -34,17 +34,17 @@ Five node kinds: `Root`, `Rule`, `AtRule`, `Declaration`, `Comment`. Nodes share
 
 ## Go packages
 
-| Package            | Responsibility                                 |
-| ------------------ | ---------------------------------------------- |
-| `pkg/api`          | Public Go library facade                       |
-| `tokenizer`        | Lexical scanning                               |
-| `parser`           | AST construction                               |
-| `ast`              | Node types, mutation, traversal                |
-| `processor`        | Plugin lifecycle and orchestration             |
-| `sourcemap`        | Inputs, locations, previous maps               |
-| `stringifier`      | CSS output and generated maps                  |
-| `result`           | CSS, root, maps, warnings                      |
-| `internal/postcss` | Assembled core used by native, WASM, and codec |
+| Package            | Responsibility                                                        |
+| ------------------ | --------------------------------------------------------------------- |
+| `pkg/api`          | Public Go library facade (`github.com/postcss-go/postcss-go/pkg/api`) |
+| `tokenizer`        | Lexical scanning                                                      |
+| `parser`           | AST construction                                                      |
+| `ast`              | Node types, mutation, traversal                                       |
+| `processor`        | Plugin lifecycle and orchestration                                    |
+| `sourcemap`        | Inputs, locations, previous maps                                      |
+| `stringifier`      | CSS output and generated maps                                         |
+| `result`           | CSS, root, maps, warnings                                             |
+| `internal/postcss` | Assembled core used by native, WASM, and codec                        |
 
 The tokenizer never builds AST nodes; the parser never runs plugins; the processor coordinates without owning tokenization or serialization.
 

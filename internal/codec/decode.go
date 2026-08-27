@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"math"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/jsbridge"
-	"postcss-go/internal/postcss"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/postcss"
 )
 
 // DecodeDTO rebuilds a bridge DTO tree from EncodeDTO / EncodeAST output.

@@ -12,12 +12,12 @@ import (
 	"regexp"
 	"strings"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/parser"
-	"postcss-go/internal/result"
-	"postcss-go/internal/sourcemap"
-	"postcss-go/internal/stringifier"
-	"postcss-go/internal/utils"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/parser"
+	"github.com/postcss-go/postcss-go/internal/result"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/stringifier"
+	"github.com/postcss-go/postcss-go/internal/utils"
 )
 
 type Options struct {

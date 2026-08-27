@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/csserrors"
-	"postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/csserrors"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
 )
 
 func TestFitPayload(t *testing.T) {

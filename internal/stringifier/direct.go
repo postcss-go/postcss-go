@@ -3,7 +3,7 @@ package stringifier
 import (
 	"strings"
 
-	"postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/ast"
 )
 
 // directEligible reports whether the tree can be stringified without

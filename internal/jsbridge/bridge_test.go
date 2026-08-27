@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/csserrors"
-	postcss "postcss-go/internal/postcss"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/csserrors"
+	postcss "github.com/postcss-go/postcss-go/internal/postcss"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 func TestProcessOptionsJSONContract(t *testing.T) {

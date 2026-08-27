@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"postcss-go/internal/nativeaddon"
-	"postcss-go/internal/nativebridge"
+	"github.com/postcss-go/postcss-go/internal/nativeaddon"
+	"github.com/postcss-go/postcss-go/internal/nativebridge"
 )
 
 func cBytes(ptr *C.char, length C.int) []byte {

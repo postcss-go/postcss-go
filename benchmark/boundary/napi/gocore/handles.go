@@ -1,3 +1,5 @@
+//go:build boundary_napi
+
 package main
 
 import "C"
@@ -5,7 +7,7 @@ import "C"
 import (
 	"unsafe"
 
-	"postcss-go/internal/asthandle"
+	"github.com/postcss-go/postcss-go/internal/asthandle"
 )
 
 var (

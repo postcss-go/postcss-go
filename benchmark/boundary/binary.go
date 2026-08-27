@@ -3,7 +3,7 @@ package boundary
 import (
 	"encoding/binary"
 
-	"postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/ast"
 )
 
 /*

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/tokenizer"
+	"github.com/postcss-go/postcss-go/internal/tokenizer"
 )
 
 func TestLegacyTokenPreservesRPCShape(t *testing.T) {

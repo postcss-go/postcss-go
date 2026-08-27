@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/parser"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/parser"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 func TestStringifyWithBuilderCoversNodeKinds(t *testing.T) {

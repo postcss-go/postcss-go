@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
 )
 
 // BenchmarkGoWire measures every stage the Go side pays today to hand one AST

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/ast"
-	csserrors "postcss-go/internal/csserrors"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	csserrors "github.com/postcss-go/postcss-go/internal/csserrors"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 const sampleCSS = `.card { color: red; display: flex; }

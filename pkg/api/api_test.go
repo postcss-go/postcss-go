@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	gosourcemap "github.com/go-sourcemap/sourcemap"
-	postcss "postcss-go/pkg/api"
+	postcss "github.com/postcss-go/postcss-go/pkg/api"
 )
 
 type contractAST struct {

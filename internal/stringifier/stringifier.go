@@ -5,8 +5,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 type SourceMapOptions struct {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
 )
 
 func TestResponseJSON(t *testing.T) {
