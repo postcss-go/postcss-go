@@ -85,6 +85,9 @@ export interface SyncCssRuntime {
 let syncCssRuntime: SyncCssRuntime | undefined;
 let wasmSyncCssHelpersBlocked = 0;
 
+/** PostCSS stores the clean flag on a symbol so Object.keys skips it. */
+const isClean = Symbol('isClean');
+
 const syncCssUnavailable =
   'helpers.postcss.parse, AST string insertion, Node#toString(), and helpers.postcss.stringify require the Node N-API backend; the browser WASM Worker backend is asynchronous only';
 
@@ -206,9 +209,7 @@ export class Node {
   type: NodeType;
   source?: SourceLocation;
   raws: Raws;
-  private parentNode?: Container<any>;
-  private clean = false;
-  private proxyCache?: this;
+  declare parent?: Container<any>;
 
   constructor(defaults?: NodeInit);
   constructor(type: NodeType, defaults?: NodeInit);
@@ -231,20 +232,16 @@ export class Node {
     }
   }
 
-  get parent(): Container<any> | undefined {
-    return this.parentNode;
-  }
-
-  set parent(parent: Container<any> | undefined) {
-    this.parentNode = parent;
-  }
-
   get proxyOf(): this {
     return this;
   }
 
   setParent(parent: Container<any> | undefined): void {
-    this.parentNode = parent;
+    if (parent === undefined) {
+      delete this.parent;
+    } else {
+      this.parent = parent;
+    }
   }
 
   addToError<T extends Error>(error: T): T {
@@ -354,17 +351,17 @@ export class Node {
   }
 
   get isClean(): boolean {
-    return this.clean;
+    return (this as Node & { [isClean]?: boolean })[isClean] === true;
   }
 
   markClean(): this {
-    this.clean = true;
+    (this as Node & { [isClean]: boolean })[isClean] = true;
     return this;
   }
 
   markDirty(): this {
-    if (!this.clean) return this;
-    this.clean = false;
+    if (!this.isClean) return this;
+    (this as Node & { [isClean]: boolean })[isClean] = false;
     if (this.parent) this.parent.markDirty();
     return this;
   }
@@ -579,10 +576,11 @@ export class Node {
   }
 
   toProxy(): this {
-    if (!this.proxyCache) {
-      this.proxyCache = new Proxy(this, this.getProxyProcessor());
+    const cache = (this as Node & { proxyCache?: this }).proxyCache;
+    if (!cache) {
+      (this as Node & { proxyCache: this }).proxyCache = new Proxy(this, this.getProxyProcessor());
     }
-    return this.proxyCache;
+    return (this as Node & { proxyCache: this }).proxyCache;
   }
 
   toString(stringifier?: Stringifier | StringifierSyntax): string {
@@ -668,10 +666,10 @@ export class Node {
   }
 }
 
+type ContainerWithWalkState = Container & { lastEach?: number; indexes?: Map<number, number> };
+
 export class Container<Child extends Node = ChildNode> extends Node {
   nodes: Child[] | undefined;
-  private lastEach = 0;
-  private readonly indexes = new Map<number, number>();
 
   constructor(defaults?: ContainerInit);
   constructor(type: NodeType, defaults?: ContainerInit);
@@ -764,19 +762,29 @@ export class Container<Child extends Node = ChildNode> extends Node {
     return this;
   }
 
+  private getIterator(): number {
+    const state = this as ContainerWithWalkState;
+    if (!state.lastEach) state.lastEach = 0;
+    if (!state.indexes) state.indexes = new Map();
+    state.lastEach += 1;
+    const iterator = state.lastEach;
+    state.indexes.set(iterator, 0);
+    return iterator;
+  }
+
   each(callback: WalkCallback<Child>): false | undefined {
     if (!this.nodes) return undefined;
-    const iterator = ++this.lastEach;
-    this.indexes.set(iterator, 0);
+    const state = this as ContainerWithWalkState;
+    const iterator = this.getIterator();
     let result: unknown;
-    while ((this.indexes.get(iterator) ?? 0) < this.nodes.length) {
-      const index = this.indexes.get(iterator) ?? 0;
+    while ((state.indexes!.get(iterator) ?? 0) < this.nodes.length) {
+      const index = state.indexes!.get(iterator) ?? 0;
       const child = this.nodes[index];
       result = callback(child, index);
       if (result === false) break;
-      this.indexes.set(iterator, (this.indexes.get(iterator) ?? index) + 1);
+      state.indexes!.set(iterator, (state.indexes!.get(iterator) ?? index) + 1);
     }
-    this.indexes.delete(iterator);
+    state.indexes!.delete(iterator);
     return result === false ? false : undefined;
   }
 
@@ -786,7 +794,11 @@ export class Container<Child extends Node = ChildNode> extends Node {
     for (const child of [...children].reverse()) {
       const nodes = this.normalize([child], this.first, 'prepend').reverse();
       for (const node of nodes) this.nodes.unshift(node as Child);
-      for (const [id, index] of this.indexes) this.indexes.set(id, index + nodes.length);
+      if ((this as ContainerWithWalkState).indexes) {
+        for (const [id, index] of (this as ContainerWithWalkState).indexes!) {
+          (this as ContainerWithWalkState).indexes!.set(id, index + nodes.length);
+        }
+      }
       added += nodes.length;
     }
     if (added) this.markDirty();
@@ -830,8 +842,11 @@ export class Container<Child extends Node = ChildNode> extends Node {
     if (detached.length) this.inheritBefore(detached, sample ?? this.nodes?.[index]);
     for (const node of detached) node.setParent(this);
     this.nodes?.splice(index, 0, ...(children as Child[]));
-    for (const [id, iteratorIndex] of this.indexes) {
-      if (index <= iteratorIndex) this.indexes.set(id, iteratorIndex + children.length);
+    if ((this as ContainerWithWalkState).indexes) {
+      for (const [id, iteratorIndex] of (this as ContainerWithWalkState).indexes!) {
+        if (index <= iteratorIndex)
+          (this as ContainerWithWalkState).indexes!.set(id, iteratorIndex + children.length);
+      }
     }
     if (children.length) this.markDirty();
   }
@@ -896,8 +911,11 @@ export class Container<Child extends Node = ChildNode> extends Node {
     if (index < 0) throw new Error('Node is not a child of this container');
     this.nodes?.[index]?.setParent(undefined);
     this.nodes?.splice(index, 1);
-    for (const [id, iteratorIndex] of this.indexes) {
-      if (iteratorIndex >= index) this.indexes.set(id, iteratorIndex - 1);
+    if ((this as ContainerWithWalkState).indexes) {
+      for (const [id, iteratorIndex] of (this as ContainerWithWalkState).indexes!) {
+        if (iteratorIndex >= index)
+          (this as ContainerWithWalkState).indexes!.set(id, iteratorIndex - 1);
+      }
     }
     this.markDirty();
     return this;
@@ -1359,13 +1377,7 @@ function hydrateJSON(
 function cloneNode<T extends Node>(node: T, parent?: Container<any>): T {
   const cloned = Object.create(Object.getPrototypeOf(node)) as T;
   for (const [name, value] of Object.entries(node)) {
-    if (
-      name === 'indexes' ||
-      name === 'lastEach' ||
-      name === 'proxyCache' ||
-      name === 'parentNode' ||
-      name === 'clean'
-    ) {
+    if (name === 'indexes' || name === 'lastEach' || name === 'proxyCache' || name === 'parent') {
       continue;
     }
     if (name === 'source') {
@@ -1379,9 +1391,10 @@ function cloneNode<T extends Node>(node: T, parent?: Container<any>): T {
     }
   }
   if (node instanceof Container) {
-    Object.assign(cloned, { indexes: new Map<number, number>(), lastEach: 0 });
+    delete (cloned as ContainerWithWalkState).lastEach;
+    delete (cloned as ContainerWithWalkState).indexes;
   }
-  (cloned as unknown as { clean: boolean }).clean = false;
+  delete (cloned as Node & { [isClean]?: boolean })[isClean];
   cloned.setParent(parent);
   return cloned;
 }

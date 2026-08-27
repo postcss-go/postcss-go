@@ -5,10 +5,9 @@ import type { AstNode, RawField, Raws, SourceLocation } from './types.js';
 const BUILTIN_NODE_TYPES = new Set(['root', 'document', 'rule', 'atrule', 'decl', 'comment']);
 
 export const INTERNAL_NODE_PROPERTIES = new Set([
-  'clean',
   'indexes',
   'lastEach',
-  'parentNode',
+  'parent',
   'proxyCache',
   'rawsProvided',
 ]);
