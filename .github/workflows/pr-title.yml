@@ -1,0 +1,54 @@
+name: PR Title
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
+    steps:
+      - name: Check Conventional Commits title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|bench)(\([a-z0-9._/-]+\))?(!)?: .+$'
+
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "PR title is valid: $TITLE"
+            exit 0
+          fi
+
+          cat <<'EOF'
+          Invalid PR title.
+
+          Expected format:
+            type(scope): description
+            type: description
+
+          Allowed types:
+            feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, bench
+
+          Examples:
+            feat(core): add browser WASM entry
+            fix(webpack-loader): preserve upstream source maps
+            chore: update issue templates
+          EOF
+
+          echo "Got: $TITLE"
+          exit 1

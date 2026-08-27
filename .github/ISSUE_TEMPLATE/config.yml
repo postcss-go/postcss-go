@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/postcss-go/postcss-go/discussions
+    about: Open-ended questions, ideas, and community conversation.
+  - name: Documentation
+    url: https://postcss-go.github.io/
+    about: Read the project website and architecture docs before opening an issue.
+  - name: Contributing guide
+    url: https://github.com/postcss-go/postcss-go/blob/main/docs/contributing.md
+    about: Development workflow, tests, and pull request expectations.
