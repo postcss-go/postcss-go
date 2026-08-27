@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
-	"postcss-go/benchmark"
-	postcss "postcss-go/internal/postcss"
-	"postcss-go/internal/stringifier"
+	"github.com/postcss-go/postcss-go/benchmark"
+	postcss "github.com/postcss-go/postcss-go/internal/postcss"
+	"github.com/postcss-go/postcss-go/internal/stringifier"
 )
 
 // The timed loops below use `for b.Loop()` (Go 1.24+) instead of `for i := 0; i

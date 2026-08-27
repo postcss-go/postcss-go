@@ -92,6 +92,12 @@ jobs:
       - name: Vet Go
         run: go vet ./...
 
+      - name: Check Go module path
+        run: node ./scripts/check-go-module-path.mjs
+
+      - name: Smoke test external Go module consumption
+        run: node ./scripts/smoke-go-module.mjs
+
       - name: Build packages
         run: pnpm build
 

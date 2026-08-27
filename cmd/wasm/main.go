@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"syscall/js"
 
-	"postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
 )
 
 func main() {

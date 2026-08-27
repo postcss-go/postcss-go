@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/sourcemap"
-	"postcss-go/internal/tokenizer"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/tokenizer"
 )
 
 func TestParseBuildsSourceRangesAndNodes(t *testing.T) {

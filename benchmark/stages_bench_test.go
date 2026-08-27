@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
-	"postcss-go/benchmark"
-	postcss "postcss-go/internal/postcss"
-	"postcss-go/internal/tokenizer"
+	"github.com/postcss-go/postcss-go/benchmark"
+	postcss "github.com/postcss-go/postcss-go/internal/postcss"
+	"github.com/postcss-go/postcss-go/internal/tokenizer"
 )
 
 // Stage-level benchmarks complement the end-to-end scenarios in bench_test.go by

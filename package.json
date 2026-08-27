@@ -37,7 +37,7 @@
     "format": "prettier . --write && find . -name '*.go' -not -path './vendor/*' -not -path '*/node_modules/*' -exec gofmt -w {} +",
     "lint": "pnpm lint:js && pnpm lint:go",
     "lint:js": "eslint .",
-    "lint:go": "go vet -mod=mod ./...",
+    "lint:go": "go vet -mod=mod ./... && node ./scripts/check-go-module-path.mjs",
     "prepare": "husky",
     "prepare:upstream-compat": "node ./scripts/prepare-upstream-compat.mjs",
     "sync:upstream": "node ./scripts/sync-upstream-postcss-tests.mjs",

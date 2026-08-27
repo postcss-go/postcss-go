@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"testing"
 
-	csserrors "postcss-go/internal/csserrors"
-	"postcss-go/internal/sourcemap"
+	csserrors "github.com/postcss-go/postcss-go/internal/csserrors"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 func TestWalkHelpers(t *testing.T) {

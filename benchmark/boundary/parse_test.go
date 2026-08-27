@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/parser"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/parser"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 // BenchmarkParseThroughput compares MB/s across fixtures. Minified stylesheets

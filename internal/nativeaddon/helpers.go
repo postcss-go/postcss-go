@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"postcss-go/internal/csserrors"
-	"postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/csserrors"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
 )
 
 const cssSyntaxErrorPrefix = "postcss-go:css-syntax:"

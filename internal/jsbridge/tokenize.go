@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
-	"postcss-go/internal/tokenizer"
+	"github.com/postcss-go/postcss-go/internal/tokenizer"
 )
 
 var nextTokenizeSessionID int64

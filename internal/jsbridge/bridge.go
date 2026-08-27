@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"postcss-go/internal/ast"
-	postcss "postcss-go/internal/postcss"
-	"postcss-go/internal/stringifier"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	postcss "github.com/postcss-go/postcss-go/internal/postcss"
+	"github.com/postcss-go/postcss-go/internal/stringifier"
 )
 
 type Request struct {

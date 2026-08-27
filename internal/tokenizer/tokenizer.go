@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 type Options struct {

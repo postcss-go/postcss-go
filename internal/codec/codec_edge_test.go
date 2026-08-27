@@ -6,11 +6,11 @@ import (
 	"math"
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/codec"
-	"postcss-go/internal/jsbridge"
-	"postcss-go/internal/parser"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/codec"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/parser"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 func TestEncodeNilRoots(t *testing.T) {

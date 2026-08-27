@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/codec"
-	"postcss-go/internal/result"
-	"postcss-go/internal/stringifier"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/codec"
+	"github.com/postcss-go/postcss-go/internal/result"
+	"github.com/postcss-go/postcss-go/internal/stringifier"
 )
 
 func TestParseReturnsBinaryCodec(t *testing.T) {

@@ -68,6 +68,7 @@ jobs:
         run: node ./scripts/check-native-artifacts.mjs verify "$RUNNER_TEMP/native-artifacts.json"
 
       - name: Create release PR or publish packages
+        id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm changeset:version
@@ -76,3 +77,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag Go module release
+        if: steps.changesets.outputs.published == 'true'
+        run: node ./scripts/tag-go-module.mjs

@@ -10,9 +10,9 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/sourcemap"
-	"postcss-go/internal/utils"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/utils"
 )
 
 const vlqChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"

@@ -11,7 +11,7 @@
 
 ## Overview
 
-`postcss-go` is a Go port of the core [PostCSS](https://github.com/postcss/postcss) architecture. It provides CSS parsing, AST transformation, processing, stringifying, and source map support, with Node.js packages for runtime integration.
+`postcss-go` is a Go port of the core [PostCSS](https://github.com/postcss/postcss) architecture. It provides CSS parsing, AST transformation, processing, stringifying, and source map support, with a public Go library and Node.js packages for runtime integration.
 
 ## Goals
 
@@ -20,16 +20,18 @@
 
 ## Packages
 
-| Package                      | Path                      | Role                                                               |
-| ---------------------------- | ------------------------- | ------------------------------------------------------------------ |
-| `@postcss-go/core`           | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
-| `@postcss-go/webpack-loader` | `packages/webpack-loader` | Webpack 5 adapter without a `postcss-loader` dependency            |
-| `@postcss-go/vite-loader`    | `packages/vite-loader`    | Vite adapter with maps, watch dependencies, and emitted assets     |
-| `@postcss-go/compat`         | `packages/postcss-compat` | Upstream compatibility harness                                     |
+| Package                                    | Path                      | Role                                                               |
+| ------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
+| `github.com/postcss-go/postcss-go/pkg/api` | `pkg/api`                 | Go library API for parse, process, stringify, and source maps      |
+| `@postcss-go/core`                         | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
+| `@postcss-go/webpack-loader`               | `packages/webpack-loader` | Webpack 5 adapter without a `postcss-loader` dependency            |
+| `@postcss-go/vite-loader`                  | `packages/vite-loader`    | Vite adapter with maps, watch dependencies, and emitted assets     |
+| `@postcss-go/compat`                       | `packages/postcss-compat` | Upstream compatibility harness                                     |
 
 ## Documentation
 
 - [Website](https://postcss-go.github.io/)
+- [Go API](docs/go-api.md)
 - [Architecture](docs/architecture.md)
 - [Contributing](docs/contributing.md)
 

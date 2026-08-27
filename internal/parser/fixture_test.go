@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/sourcemap"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 )
 
 func TestParseFixtureSimpleRule(t *testing.T) {

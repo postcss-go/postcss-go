@@ -3,7 +3,7 @@ package codec
 import (
 	"encoding/binary"
 
-	"postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/ast"
 )
 
 func encodeNodeRaws(dst []byte, node ast.Node) ([]byte, error) {

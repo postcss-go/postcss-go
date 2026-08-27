@@ -13,7 +13,7 @@ import (
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
 	"github.com/creachadair/jrpc2/handler"
-	"postcss-go/internal/jsbridge"
+	"github.com/postcss-go/postcss-go/internal/jsbridge"
 )
 
 type nopWriteCloser struct{}

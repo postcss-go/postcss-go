@@ -78,7 +78,11 @@ pnpm changeset
 Select the affected package(s), choose the semver bump, and commit the
 generated file under `.changeset/`. The release workflow creates a release PR
 that updates package versions and changelogs. After that PR is merged, it
-builds and publishes the public packages to npm.
+builds and publishes the public packages to npm and tags the matching Go
+module release (`v0.0.x`, aligned with `@postcss-go/core`; first Go release
+is `v0.0.5`). Merging Go API changes also triggers
+`.github/workflows/go-module-release.yml` to push the tag when npm has already
+shipped that version.
 
 Useful local checks and commands:
 
@@ -86,6 +90,8 @@ Useful local checks and commands:
 pnpm changeset:check
 pnpm changeset:version
 pnpm release
+node ./scripts/check-go-module-path.mjs
+node ./scripts/smoke-go-module.mjs
 ```
 
 `pnpm release` requires all eight validated native addons to be installed in
@@ -94,6 +100,8 @@ and verifies that they are unchanged before publishing.
 
 Publishing requires the repository `NPM_TOKEN` secret. The compatibility
 harness and shared helper packages remain private; the shared runtime and
-declarations are bundled into `@postcss-go/core`.
+declarations are bundled into `@postcss-go/core`. The Go library is published
+via Git tags on the root module (`github.com/postcss-go/postcss-go`); see
+[Go API](go-api.md) for install and usage details.
 
 GitHub Actions runs the same validation across Ubuntu, macOS, and Windows. A scheduled workflow keeps the vendored PostCSS tests in sync.

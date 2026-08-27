@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"postcss-go/internal/ast"
-	"postcss-go/internal/codec"
-	"postcss-go/internal/postcss"
-	"postcss-go/internal/result"
-	"postcss-go/internal/stringifier"
+	"github.com/postcss-go/postcss-go/internal/ast"
+	"github.com/postcss-go/postcss-go/internal/codec"
+	"github.com/postcss-go/postcss-go/internal/postcss"
+	"github.com/postcss-go/postcss-go/internal/result"
+	"github.com/postcss-go/postcss-go/internal/stringifier"
 )
 
 // Operation identifies an operation on the private Go/C boundary.

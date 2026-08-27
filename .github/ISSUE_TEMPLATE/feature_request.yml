@@ -21,6 +21,7 @@ body:
         - '@postcss-go/core (Node.js API / CLI)'
         - '@postcss-go/webpack-loader'
         - '@postcss-go/vite-loader'
+        - 'Go API (github.com/postcss-go/postcss-go/pkg/api)'
         - Go engine (parse / transform / stringify / source maps)
         - Native addon (@postcss-go/native-*)
         - WASM (@postcss-go/core/wasm)
