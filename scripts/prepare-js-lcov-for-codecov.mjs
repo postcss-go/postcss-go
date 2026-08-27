@@ -26,6 +26,10 @@ const reports = [
     file: 'packages/postcss-compat/coverage/lcov.info',
     prefix: 'packages/postcss-compat/',
   },
+  {
+    file: 'packages/vite-loader/coverage/lcov.info',
+    prefix: 'packages/vite-loader/',
+  },
 ];
 
 let rewritten = 0;

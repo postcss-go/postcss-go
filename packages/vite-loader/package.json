@@ -1,0 +1,60 @@
+{
+  "name": "@postcss-go/vite-loader",
+  "version": "0.0.3",
+  "description": "Vite plugin for the postcss-go engine.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@postcss-go/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "vite": "^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^6.0.3",
+    "unplugin-dts": "^1.0.3",
+    "vite": "^8.1.5",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "css",
+    "postcss",
+    "postcss-go",
+    "vite",
+    "vite-plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/postcss-go/postcss-go.git"
+  },
+  "bugs": {
+    "url": "https://github.com/postcss-go/postcss-go/issues"
+  },
+  "homepage": "https://postcss-go.github.io/",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

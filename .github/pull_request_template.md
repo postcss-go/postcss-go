@@ -27,6 +27,7 @@ Fixes #
 
 - [ ] `@postcss-go/core`
 - [ ] `@postcss-go/webpack-loader`
+- [ ] `@postcss-go/vite-loader`
 - [ ] Go engine
 - [ ] Native addon
 - [ ] WASM

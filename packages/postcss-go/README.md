@@ -80,6 +80,36 @@ its configuration contract.
 Custom parsers, syntax implementations, stringifiers, and `LazyResult` are not
 supported.
 
+## Vite
+
+Use the dedicated `@postcss-go/vite-loader` package. It runs before Vite's
+built-in CSS pipeline and forwards source maps, warnings, watched dependencies,
+and emitted assets:
+
+```bash
+npm i -D @postcss-go/core @postcss-go/vite-loader vite
+```
+
+```js
+// vite.config.js
+import postcssGo from '@postcss-go/vite-loader';
+import autoprefixer from 'autoprefixer';
+
+export default {
+  plugins: [
+    postcssGo({
+      postcssOptions: {
+        config: false,
+        plugins: [autoprefixer()],
+      },
+    }),
+  ],
+};
+```
+
+See the [`@postcss-go/vite-loader` documentation](../vite-loader/README.md) for
+configuration lookup, source-map defaults, and supported CSS request types.
+
 ## Config
 
 The built-in config loader supports `postcss.config.js`, `.cjs`, `.mjs`, and the
@@ -167,7 +197,8 @@ child-process, WASM, or PostCSS fallback in Node.
 1. Install `@postcss-go/core` and remove `postcss`, `postcss-load-config`, and
    `postcss-reporter` if nothing else uses them. For Webpack, replace
    `postcss-loader` with `@postcss-go/webpack-loader` so the `postcss` peer is
-   no longer required.
+   no longer required. For Vite, add `@postcss-go/vite-loader` to the Vite
+   plugin list.
 2. Replace the CLI command with `postcss-go`; keep a supported
    `postcss.config.*` file and plugin list.
 3. Replace implicit `LazyResult` reads with `await processor.process(...)`, or
@@ -184,4 +215,5 @@ child-process, WASM, or PostCSS fallback in Node.
 pnpm --filter @postcss-go/core test
 pnpm --filter @postcss-go/core test:cli
 pnpm --filter @postcss-go/webpack-loader test
+pnpm --filter @postcss-go/vite-loader test
 ```

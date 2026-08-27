@@ -24,6 +24,7 @@
 | ---------------------------- | ------------------------- | ------------------------------------------------------------------ |
 | `@postcss-go/core`           | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
 | `@postcss-go/webpack-loader` | `packages/webpack-loader` | Webpack 5 adapter without a `postcss-loader` dependency            |
+| `@postcss-go/vite-loader`    | `packages/vite-loader`    | Vite adapter with maps, watch dependencies, and emitted assets     |
 | `@postcss-go/compat`         | `packages/postcss-compat` | Upstream compatibility harness                                     |
 
 ## Documentation
