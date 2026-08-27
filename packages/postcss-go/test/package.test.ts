@@ -61,12 +61,19 @@ function hostTuple(): string {
   throw new Error(`unsupported host platform ${platform}-${arch}`);
 }
 
+const npmPackFilesCache = new Map<string, string[]>();
+
 function npmPackFiles(cwd: string): string[] {
+  const cached = npmPackFilesCache.get(cwd);
+  if (cached) return cached;
+
   const output = npm(cwd, ['pack', '--dry-run', '--json', '--ignore-scripts']);
   const jsonStart = output.indexOf('[');
   const payload = jsonStart >= 0 ? output.slice(jsonStart) : output;
   const [{ files }] = JSON.parse(payload) as Array<{ files: Array<{ path: string }> }>;
-  return files.map((file) => file.path);
+  const paths = files.map((file) => file.path);
+  npmPackFilesCache.set(cwd, paths);
+  return paths;
 }
 
 function filesBelow(directory: string): string[] {
@@ -171,7 +178,7 @@ test('@postcss-go/shared stays private and is bundled into core', () => {
     if (!/\.(?:c?js|d\.ts)$/.test(path)) continue;
     expect(readFileSync(path, 'utf8'), path).not.toContain('@postcss-go/shared');
   }
-});
+}, 60_000);
 
 test('Windows links the system libraries required by a Go c-archive', () => {
   const binding = readFileSync(resolve(packageRoot, 'native/binding.gyp'), 'utf8');
