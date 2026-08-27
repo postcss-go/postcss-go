@@ -756,6 +756,38 @@ test('insertBefore and insertAfter reject nodes that are not children', () => {
   );
 });
 
+test('insertAfter moves proxied children instead of cloning them', () => {
+  const root = new Root({
+    nodes: [
+      new Rule({
+        selector: '.hero',
+        nodes: [
+          new Declaration({ prop: 'display', value: 'flex' }),
+          new Rule({ selector: '& h1', nodes: [new Declaration({ prop: 'margin', value: '0' })] }),
+          new Rule({
+            selector: '& .cta',
+            nodes: [new Declaration({ prop: 'border-radius', value: '999px' })],
+          }),
+        ],
+      }),
+    ],
+  });
+  const hero = root.first as Rule;
+  const h1 = hero.nodes![1];
+  const cta = hero.nodes![2];
+
+  hero.after(h1.toProxy());
+  expect(root.nodes![1]).toBe(h1);
+  expect(root.nodes).toEqual([hero, h1]);
+  expect(root.index(h1)).toBe(1);
+  expect(hero.nodes).toHaveLength(2);
+
+  h1.after(cta.toProxy());
+  expect(root.nodes).toEqual([hero, h1, cta]);
+  expect(root.index(cta)).toBe(2);
+  expect(hero.nodes).toHaveLength(1);
+});
+
 test('moves children between roots while preserving ignored before raws', () => {
   const source = new Root({
     nodes: [

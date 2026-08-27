@@ -188,6 +188,9 @@ importers:
       postcss-import:
         specifier: 16.1.1
         version: 16.1.1(postcss@8.5.15)
+      postcss-nested:
+        specifier: 8.0.1
+        version: 8.0.1(postcss@8.5.15)
       unplugin-dts:
         specifier: ^1.0.3
         version: 1.0.3(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.61.1)(typescript@6.0.3)(vite@8.1.5(@types/node@22.19.20)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(lightningcss@1.33.0)(postcss@8.5.15))
@@ -2267,6 +2270,12 @@ packages:
     engines: {node: ^10 || ^12 || >= 14}
     peerDependencies:
       postcss: ^8.1.0
+
+  postcss-nested@8.0.1:
+    resolution: {integrity: sha512-PvSIwDVh1NTw939iu4FBK+oeZfSm0cbErFAjXCTPiStammzobBNE2SiQNezy8Xp+Oud2uLXaLpTauv3UdxWjbQ==}
+    engines: {node: ^22.0.0 || ^24.0.0 || >= 26.0.0}
+    peerDependencies:
+      postcss: ^8.2.14
 
   postcss-parser-tests@8.9.0:
     resolution: {integrity: sha512-WGbGB0FMGoaaBz5AVLXscO76ibgm1ZjBD2weWHhFQSrQ8HyVhNqZDLZSVejIZSd7pQ7SX73EUTHZjx3Jbg60zw==}
@@ -4677,6 +4686,11 @@ snapshots:
     dependencies:
       icss-utils: 5.1.0(postcss@8.5.22)
       postcss: 8.5.22
+
+  postcss-nested@8.0.1(postcss@8.5.15):
+    dependencies:
+      postcss: 8.5.15
+      postcss-selector-parser: 7.1.5
 
   postcss-parser-tests@8.9.0:
     dependencies:

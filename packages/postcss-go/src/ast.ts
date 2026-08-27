@@ -133,8 +133,18 @@ function isNode(value: unknown): value is Node {
   return value instanceof Node;
 }
 
-function asNode(value: Node | AstDTO | NodeInit): Node {
+/** Unwrap plugin-facing proxies before container mutations (matches upstream PostCSS normalize). */
+function unwrapNode(value: unknown): Node | undefined {
+  if (value && typeof value === 'object' && 'proxyOf' in value) {
+    return (value as { proxyOf: Node }).proxyOf;
+  }
   if (isNode(value)) return value;
+  return undefined;
+}
+
+function asNode(value: Node | AstDTO | NodeInit): Node {
+  const unwrapped = unwrapNode(value);
+  if (unwrapped) return unwrapped;
   const node = value as NodeInit & { type?: NodeType; nodes?: NodeChild[] };
   switch (node.type) {
     case 'root':
@@ -794,25 +804,29 @@ export class Container<Child extends Node = ChildNode> extends Node {
   }
 
   insertBefore(existing: Node | number, ...children: NodeChild[]): this {
-    const initialIndex = this.index(existing);
-    if (typeof existing !== 'number' && initialIndex < 0) {
+    let index = this.index(existing);
+    if (typeof existing !== 'number' && index < 0) {
       throw new Error('Node is not a child of this container');
     }
-    const sample = this.nodes?.[initialIndex];
-    const nodes = this.normalize(children, sample, initialIndex === 0 ? 'prepend' : undefined);
-    const index = typeof existing === 'number' ? initialIndex : this.index(existing);
+    const sample = this.nodes?.[index];
+    const nodes = this.normalize(children, sample, index === 0 ? 'prepend' : undefined);
+    if (typeof existing !== 'number') {
+      index = this.index(existing);
+    }
     this.insertBeforeIndex(index, nodes, sample);
     return this;
   }
 
   insertAfter(existing: Node | number, ...children: NodeChild[]): this {
-    const initialIndex = this.index(existing);
-    if (typeof existing !== 'number' && initialIndex < 0) {
+    let index = this.index(existing);
+    const sample = this.nodes?.[index];
+    const nodes = this.normalize(children, sample);
+    if (typeof existing !== 'number') {
+      index = this.index(existing);
+    }
+    if (typeof existing !== 'number' && index < 0) {
       throw new Error('Node is not a child of this container');
     }
-    const sample = this.nodes?.[initialIndex];
-    const nodes = this.normalize(children, sample);
-    const index = typeof existing === 'number' ? initialIndex : this.index(existing);
     this.insertBeforeIndex(index + 1, nodes, sample);
     return this;
   }
@@ -869,7 +883,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
         );
         continue;
       }
-      const node = asNode(child as NodeInput);
+      const node = asNode((unwrapNode(child) ?? child) as NodeInput);
       if (this.type !== 'document' && node.type === 'root') {
         nodes.push(...[...((node as Root).nodes ?? [])]);
       } else {
