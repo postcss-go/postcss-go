@@ -27,5 +27,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git author for tagging
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Tag and push Go module release
         run: node ./scripts/tag-go-module.mjs
