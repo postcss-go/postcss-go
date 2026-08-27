@@ -20,13 +20,12 @@
 
 ## Packages
 
-| Package                                    | Path                      | Role                                                               |
-| ------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
-| `github.com/postcss-go/postcss-go/pkg/api` | `pkg/api`                 | Go library API for parse, process, stringify, and source maps      |
-| `@postcss-go/core`                         | `packages/postcss-go`     | Node.js / TypeScript API, browser WASM via `@postcss-go/core/wasm` |
-| `@postcss-go/webpack-loader`               | `packages/webpack-loader` | Webpack 5 adapter without a `postcss-loader` dependency            |
-| `@postcss-go/vite-loader`                  | `packages/vite-loader`    | Vite adapter with maps, watch dependencies, and emitted assets     |
-| `@postcss-go/compat`                       | `packages/postcss-compat` | Upstream compatibility harness                                     |
+| Package                                    | Path                      | Version                                                                                                                                 |
+| ------------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `github.com/postcss-go/postcss-go/pkg/api` | `pkg/api`                 |                                                                                                                                         |
+| `@postcss-go/core`                         | `packages/postcss-go`     | [![npm version](https://img.shields.io/npm/v/@postcss-go/core.svg)](https://www.npmjs.com/package/@postcss-go/core)                     |
+| `@postcss-go/webpack-loader`               | `packages/webpack-loader` | [![npm version](https://img.shields.io/npm/v/@postcss-go/webpack-loader.svg)](https://www.npmjs.com/package/@postcss-go/webpack-loader) |
+| `@postcss-go/vite-loader`                  | `packages/vite-loader`    | [![npm version](https://img.shields.io/npm/v/@postcss-go/vite-loader.svg)](https://www.npmjs.com/package/@postcss-go/vite-loader)       |
 
 ## Documentation
 
