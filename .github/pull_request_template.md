@@ -8,8 +8,6 @@
 
 <!-- Link issues with "Fixes #123" or "Relates to #123". Use "N/A" if none. -->
 
-Fixes #
-
 ## Type of change
 
 - [ ] Bug fix
@@ -29,8 +27,6 @@ Fixes #
 - [ ] `@postcss-go/webpack-loader`
 - [ ] `@postcss-go/vite-loader`
 - [ ] Go engine
-- [ ] Native addon
-- [ ] WASM
 - [ ] Docs / repo tooling
 - [ ] Other:
 
