@@ -227,7 +227,11 @@ It also prices a single **synchronous** crossing, by building two things that do
 - a Node-API addon — Go compiled with `-buildmode=c-archive`, linked into a `.node` through a thin C shim
 - a wasip1 reactor module — Go compiled with `//go:wasmexport` and `-buildmode=c-shared`, callable synchronously from Node
 
-Both spike artifacts under `benchmark/boundary/` are isolated in nested modules (`napi/go.mod`, `wasm/go.mod`) so their cgo and WASM code never reaches `go build ./...` or CI. The production native path lives in `internal/nativeaddon`, `internal/nativebridge`, and `packages/postcss-go/native`.
+Both spike artifacts under `benchmark/boundary/` are gated by build tags (`boundary_napi`
+for the NAPI c-archive, `wasip1` for the WASM reactor) so their cgo and WASM code
+never reaches default `go build ./...` or CI. Build them via `pnpm bench:boundary`
+or the commands in `benchmark/run-boundary.mjs`. The production native path lives
+in `internal/nativeaddon`, `internal/nativebridge`, and `packages/postcss-go/native`.
 
 ### The two halves
 

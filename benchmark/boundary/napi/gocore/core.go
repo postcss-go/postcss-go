@@ -1,3 +1,5 @@
+//go:build boundary_napi
+
 // Package main is built as a c-archive and linked into the spike Node addon.
 // It stands in for a future internal/nativeapi package: a handle table over
 // AST-shaped nodes plus the flat C entry points a NAPI shim would call.

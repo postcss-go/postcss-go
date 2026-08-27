@@ -37,18 +37,29 @@ function run(command, args, options = {}) {
 
 if (runJavaScript) {
   const napiDir = resolve(boundaryDir, 'napi');
-  const wasmDir = resolve(boundaryDir, 'wasm');
 
   console.log('=== Building the Go c-archive and Node addon ===');
-  run('go', ['build', '-buildmode=c-archive', '-o', 'go-out/libcore.a', './gocore'], {
-    cwd: napiDir,
-    env: { ...process.env, CGO_ENABLED: '1' },
-  });
+  run(
+    'go',
+    [
+      'build',
+      '-tags',
+      'boundary_napi',
+      '-buildmode=c-archive',
+      '-o',
+      'go-out/libcore.a',
+      './benchmark/boundary/napi/gocore',
+    ],
+    {
+      cwd: repoRoot,
+      env: { ...process.env, CGO_ENABLED: '1' },
+    },
+  );
   run('npx', ['--yes', 'node-gyp', 'configure', 'build'], { cwd: napiDir });
 
   console.log('\n=== Building the wasip1 reactor module ===');
-  run('go', ['build', '-buildmode=c-shared', '-o', 'core.wasm', '.'], {
-    cwd: wasmDir,
+  run('go', ['build', '-buildmode=c-shared', '-o', 'core.wasm', './benchmark/boundary/wasm'], {
+    cwd: repoRoot,
     env: { ...process.env, GOOS: 'wasip1', GOARCH: 'wasm' },
   });
 

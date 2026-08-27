@@ -1,3 +1,5 @@
+//go:build boundary_napi
+
 package main
 
 import "C"
