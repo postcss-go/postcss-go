@@ -80,6 +80,47 @@ its configuration contract.
 Custom parsers, syntax implementations, stringifiers, and `LazyResult` are not
 supported.
 
+## Rspack
+
+Use the dedicated `@postcss-go/rspack-loader` package. It calls this package
+directly and does not depend on `postcss` or the official `postcss-loader`:
+
+```bash
+npm i -D @postcss-go/core @postcss-go/rspack-loader @rspack/core
+```
+
+```js
+// rspack.config.cjs
+const autoprefixer = require('autoprefixer');
+
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /\.css$/i,
+        use: [
+          'css-loader',
+          {
+            loader: '@postcss-go/rspack-loader',
+            options: {
+              sourceMap: true,
+              postcssOptions: {
+                config: false,
+                plugins: [autoprefixer()],
+              },
+            },
+          },
+        ],
+      },
+    ],
+  },
+};
+```
+
+See the [`@postcss-go/rspack-loader` documentation](../rspack-loader/README.md) for
+its configuration contract. The Webpack and Rspack loaders share the same
+processing options, source-map, warning, dependency, and asset behavior.
+
 ## Vite
 
 Use the dedicated `@postcss-go/vite-loader` package. It runs before Vite's
@@ -197,8 +238,8 @@ child-process, WASM, or PostCSS fallback in Node.
 1. Install `@postcss-go/core` and remove `postcss`, `postcss-load-config`, and
    `postcss-reporter` if nothing else uses them. For Webpack, replace
    `postcss-loader` with `@postcss-go/webpack-loader` so the `postcss` peer is
-   no longer required. For Vite, add `@postcss-go/vite-loader` to the Vite
-   plugin list.
+   no longer required. For Rspack, use `@postcss-go/rspack-loader` the same way.
+   For Vite, add `@postcss-go/vite-loader` to the Vite plugin list.
 2. Replace the CLI command with `postcss-go`; keep a supported
    `postcss.config.*` file and plugin list.
 3. Replace implicit `LazyResult` reads with `await processor.process(...)`, or
@@ -215,5 +256,6 @@ child-process, WASM, or PostCSS fallback in Node.
 pnpm --filter @postcss-go/core test
 pnpm --filter @postcss-go/core test:cli
 pnpm --filter @postcss-go/webpack-loader test
+pnpm --filter @postcss-go/rspack-loader test
 pnpm --filter @postcss-go/vite-loader test
 ```

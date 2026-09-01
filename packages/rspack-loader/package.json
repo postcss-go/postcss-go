@@ -1,0 +1,69 @@
+{
+  "name": "@postcss-go/rspack-loader",
+  "version": "0.0.5",
+  "description": "Rspack loader for the postcss-go engine.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "prepublishOnly": "pnpm run build",
+    "build": "vite build",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@postcss-go/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@rspack/core": "^1.0.0 || ^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@rspack/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@rspack/core": "^1.7.12",
+    "@types/node": "^22.10.1",
+    "css-loader": "^7.1.2",
+    "source-map-js": "^1.2.1",
+    "typescript": "^6.0.3",
+    "unplugin-dts": "^1.0.3",
+    "vite": "^8.1.5",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "css",
+    "postcss",
+    "postcss-go",
+    "rspack",
+    "rspack-loader"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/postcss-go/postcss-go.git"
+  },
+  "bugs": {
+    "url": "https://github.com/postcss-go/postcss-go/issues"
+  },
+  "homepage": "https://postcss-go.github.io/",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

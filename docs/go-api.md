@@ -68,15 +68,15 @@ result, err := processor.Process(".btn { color: red; }")
 
 ## Capabilities
 
-| Capability                 | Go API | npm `@postcss-go/core` |
-| -------------------------- | ------ | ---------------------- |
-| Parse / stringify          | Yes    | Yes                    |
-| Source maps                | Yes    | Yes                    |
-| Go-native plugins          | Yes    | No                     |
-| JavaScript PostCSS plugins | No     | Yes                    |
-| CLI                        | No     | Yes                    |
-| Webpack / Vite loaders     | No     | Yes                    |
-| Browser WASM               | No     | Yes                    |
+| Capability                      | Go API | npm `@postcss-go/core` |
+| ------------------------------- | ------ | ---------------------- |
+| Parse / stringify               | Yes    | Yes                    |
+| Source maps                     | Yes    | Yes                    |
+| Go-native plugins               | Yes    | No                     |
+| JavaScript PostCSS plugins      | No     | Yes                    |
+| CLI                             | No     | Yes                    |
+| Webpack / Rspack / Vite loaders | No     | Yes                    |
+| Browser WASM                    | No     | Yes                    |
 
 ## Documentation
 

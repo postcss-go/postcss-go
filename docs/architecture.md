@@ -99,6 +99,9 @@ sequenceDiagram
 - **webpack-loader** — thin Webpack 5 adapter for options, previous maps,
   warnings, dependency messages, emitted assets, and AST metadata; calls core
   directly without depending on the official `postcss-loader`
+- **rspack-loader** — thin Rspack adapter with the same options, previous maps,
+  warnings, dependency messages, emitted assets, and AST metadata contract as
+  the Webpack loader; calls core directly without depending on `postcss-loader`
 - **vite-loader** — pre-transform Vite adapter for CSS, config lookup, source
   maps, warnings, watch dependencies, and emitted assets; prevents duplicate
   automatic PostCSS config execution unless Vite has an explicit PostCSS setup
