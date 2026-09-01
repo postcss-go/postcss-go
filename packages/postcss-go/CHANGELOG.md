@@ -1,5 +1,7 @@
 # @postcss-go/core
 
+## 0.0.6
+
 ## 0.0.5
 
 ### Minor Changes
