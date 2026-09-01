@@ -6,6 +6,7 @@
     [
       "@postcss-go/core",
       "@postcss-go/webpack-loader",
+      "@postcss-go/rspack-loader",
       "@postcss-go/vite-loader",
       "@postcss-go/native-darwin-arm64",
       "@postcss-go/native-darwin-x64",

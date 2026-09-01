@@ -25,6 +25,7 @@
 
 - [ ] `@postcss-go/core`
 - [ ] `@postcss-go/webpack-loader`
+- [ ] `@postcss-go/rspack-loader`
 - [ ] `@postcss-go/vite-loader`
 - [ ] Go engine
 - [ ] Docs / repo tooling

@@ -25,6 +25,7 @@
 | `github.com/postcss-go/postcss-go/pkg/api` | `pkg/api`                 |                                                                                                                                         |
 | `@postcss-go/core`                         | `packages/postcss-go`     | [![npm version](https://img.shields.io/npm/v/@postcss-go/core.svg)](https://www.npmjs.com/package/@postcss-go/core)                     |
 | `@postcss-go/webpack-loader`               | `packages/webpack-loader` | [![npm version](https://img.shields.io/npm/v/@postcss-go/webpack-loader.svg)](https://www.npmjs.com/package/@postcss-go/webpack-loader) |
+| `@postcss-go/rspack-loader`                | `packages/rspack-loader`  | [![npm version](https://img.shields.io/npm/v/@postcss-go/rspack-loader.svg)](https://www.npmjs.com/package/@postcss-go/rspack-loader)   |
 | `@postcss-go/vite-loader`                  | `packages/vite-loader`    | [![npm version](https://img.shields.io/npm/v/@postcss-go/vite-loader.svg)](https://www.npmjs.com/package/@postcss-go/vite-loader)       |
 
 ## Documentation
