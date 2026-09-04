@@ -24,9 +24,7 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "check": {
-      "dependsOn": ["^build"]
-    },
+    "check": {},
     "test": {
       "dependsOn": ["build", "^build"]
     },
