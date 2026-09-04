@@ -324,6 +324,50 @@ test('works with at-rule params', () => {
   is(css, '@media (mobile) {}')
 })
 
+function trackUnwrap(): [string[], Plugin] {
+  let order: string[] = []
+  let plugin: Plugin = {
+    postcssPlugin: 'unwrap-nested',
+    RootExit() {
+      order.push('RootExit')
+    },
+    Rule(rule) {
+      order.push('Rule ' + rule.selector)
+      rule.each(child => {
+        if (child.type === 'rule') {
+          child.selector = rule.selector + ' ' + child.selector
+          rule.after(child)
+        }
+      })
+    }
+  }
+  return [order, plugin]
+}
+
+test('visits nodes inserted after the current one before exit events', () => {
+  let [order, plugin] = trackUnwrap()
+  postcss([plugin]).process('a { b { c {} } }', { from: 'a.css' }).css
+  equal(order, [
+    'Rule a',
+    'Rule a b',
+    'Rule a b c',
+    'RootExit',
+    'Rule a',
+    'Rule a b',
+    'RootExit'
+  ])
+})
+
+test('visits inserted siblings equally in sync and async walks', async () => {
+  let [syncOrder, syncPlugin] = trackUnwrap()
+  postcss([syncPlugin]).process('a { b { c {} } }', { from: 'a.css' }).css
+
+  let [asyncOrder, asyncPlugin] = trackUnwrap()
+  await postcss([asyncPlugin]).process('a { b { c {} } }', { from: 'a.css' })
+
+  equal(asyncOrder, syncOrder)
+})
+
 test('wraps node to proxies', () => {
   let proxy: any
   let root: Root | undefined
@@ -1600,6 +1644,29 @@ test('append works after reassigning nodes through .parent', async () => {
     css,
     '@media (min-width:640px) { .page { width: auto; } .nested { width: auto } }'
   )
+})
+
+test('does not overflow the stack on deeply nested nodes', () => {
+  // The recursive sync walking crashed at ~3000 levels of nesting
+  let depth = 6000
+  let css = 'a{'.repeat(depth) + 'color:black' + '}'.repeat(depth)
+
+  let visited = 0
+  let plugin: Plugin = {
+    Declaration(decl) {
+      decl.value = 'red'
+      visited += 1
+    },
+    postcssPlugin: 'deep-changer'
+  }
+
+  let result = postcss([plugin]).process(postcss.parse(css), {
+    from: undefined
+  }).css
+
+  // The changed declaration is revisited on the second pass
+  is(visited, 2)
+  is(result, 'a{'.repeat(depth) + 'color:red' + '}'.repeat(depth))
 })
 
 test.run()

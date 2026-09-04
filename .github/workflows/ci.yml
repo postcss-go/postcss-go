@@ -89,6 +89,9 @@ jobs:
       - name: Lint JS
         run: pnpm lint
 
+      - name: Typecheck packages
+        run: pnpm check
+
       - name: Vet Go
         run: go vet ./...
 

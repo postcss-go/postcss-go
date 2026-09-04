@@ -314,6 +314,26 @@ test('toJSON() converts custom properties', () => {
   })
 })
 
+test('toJSON() converts nodes in custom properties', () => {
+  let root = new Root() as any
+  root._cache = [1, { toJSON: () => 'hack' }]
+  root._node = new Rule({ selector: 'a' })
+
+  equal(root.toJSON(), {
+    _cache: [1, 'hack'],
+    _node: {
+      nodes: [],
+      raws: {},
+      selector: 'a',
+      type: 'rule'
+    },
+    inputs: [],
+    nodes: [],
+    raws: {},
+    type: 'root'
+  })
+})
+
 test('raw() has shortcut to stringifier', () => {
   let rule = new Rule({ selector: 'a' })
   is(rule.raw('before'), '')
@@ -521,6 +541,17 @@ test('positionBy() returns position for word after AST mutations', () => {
 
   equal(a.positionBy({ word: 'two' }), { column: 2, line: 3, offset: 14 })
   equal(two.positionBy({ word: 'two' }), { column: 2, line: 3, offset: 14 })
+})
+
+test('positionBy() returns position when offset is missing', () => {
+  let css = parse('a {  one: X  }')
+  let a = css.first as Rule
+  let one = a.first as Declaration
+
+  // @ts-expect-error Testing non-standard AST
+  if (one.source?.start) delete one.source.start.offset
+
+  equal(one.positionBy(), { column: 6, line: 1, offset: 5 })
 })
 
 test('positionBy() returns position for index', () => {
@@ -846,6 +877,16 @@ test('rangeBy() returns range for index and endIndex', () => {
   equal(one.rangeBy({ endIndex: 3, index: 1 }), {
     end: { column: 9, line: 1, offset: 8 },
     start: { column: 7, line: 1, offset: 6 }
+  })
+})
+
+test('rangeBy() returns range for index 0', () => {
+  let css = parse('a {  one: X  }')
+  let a = css.first as Rule
+  let one = a.first as Declaration
+  equal(one.rangeBy({ index: 0 }), {
+    end: { column: 7, line: 1, offset: 6 },
+    start: { column: 6, line: 1, offset: 5 }
   })
 })
 

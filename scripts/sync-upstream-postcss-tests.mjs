@@ -9,8 +9,22 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const upstreamRepo = process.env.UPSTREAM_REPO ?? 'https://github.com/postcss/postcss';
 const upstreamRef = process.argv[2] ?? process.env.UPSTREAM_REF ?? 'main';
-const targetDir = process.env.TARGET_DIR ?? path.join(repoRoot, 'vendor', 'postcss');
+const defaultTargetDir = path.join(repoRoot, 'vendor', 'postcss');
+const targetDir = process.env.TARGET_DIR ?? defaultTargetDir;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'postcss-go-sync-'));
+
+const harnessDependencies = [
+  'nanoid',
+  'picocolors',
+  'source-map-js',
+  'concat-with-sourcemaps',
+  'nanodelay',
+  'nanospy',
+  'postcss-parser-tests',
+  'strip-ansi',
+  'ts-node',
+  'uvu',
+];
 
 function cleanup() {
   fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -86,6 +100,27 @@ const extracted = path.join(tmpDir, sourceDir);
 fs.cpSync(path.join(extracted, 'test'), path.join(targetDir, 'test'), { recursive: true });
 fs.cpSync(path.join(extracted, 'lib'), path.join(targetDir, 'lib'), { recursive: true });
 fs.copyFileSync(path.join(extracted, 'package.json'), path.join(targetDir, 'package.json'));
+
+// Keep the compatibility harness on the exact helper versions used by the
+// vendored upstream suite. A detached TARGET_DIR is used by the drift check,
+// so only update the workspace manifest during a real sync.
+if (path.resolve(targetDir) === path.resolve(defaultTargetDir)) {
+  const upstreamPackage = JSON.parse(fs.readFileSync(path.join(extracted, 'package.json'), 'utf8'));
+  const compatPackagePath = path.join(repoRoot, 'packages', 'postcss-compat', 'package.json');
+  const compatPackage = JSON.parse(fs.readFileSync(compatPackagePath, 'utf8'));
+
+  for (const name of harnessDependencies) {
+    const version = upstreamPackage.dependencies?.[name] ?? upstreamPackage.devDependencies?.[name];
+    if (!version) continue;
+    if (name in (compatPackage.dependencies ?? {})) {
+      compatPackage.dependencies[name] = version;
+    } else if (name in (compatPackage.devDependencies ?? {})) {
+      compatPackage.devDependencies[name] = version;
+    }
+  }
+
+  fs.writeFileSync(compatPackagePath, `${JSON.stringify(compatPackage, null, 2)}\n`);
+}
 
 if (process.env.SKIP_PREPARE_COMPAT !== '1') {
   run(process.execPath, [path.join(scriptDir, 'prepare-upstream-compat.mjs')], {

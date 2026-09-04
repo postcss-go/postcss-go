@@ -22,6 +22,17 @@ func TestClearSourceMapAnnotationsRemovesSameLineSpacing(t *testing.T) {
 	}
 }
 
+func TestClearSourceMapAnnotationsKeepsNonAnnotationHashComments(t *testing.T) {
+	css := "/*#region layout */\na{}\n/*# sourceMappingURL=x.map */\n/*#endregion */\n"
+	want := "/*#region layout */\na{}\n/*#endregion */\n"
+	if got := ClearSourceMapAnnotations(css); got != want {
+		t.Fatalf("non-annotation comments changed:\n got: %q\nwant: %q", got, want)
+	}
+	if got := ClearSourceMapAnnotations("/*#region */\na{}"); got != "/*#region */\na{}" {
+		t.Fatalf("trailing non-annotation comment changed: %q", got)
+	}
+}
+
 func TestNoWorkSourceMapUsesInputLineEnding(t *testing.T) {
 	result, err := NoWorkWithSourceMap("a {\r\n}", "", SourceMapOptions{
 		From: "a.css",

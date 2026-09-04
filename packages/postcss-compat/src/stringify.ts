@@ -11,6 +11,7 @@ type PostCSSNode = {
     input?: {
       file?: string;
       css?: string;
+      hasBOM?: boolean;
       map?: { text?: string; mapFile?: string };
     };
   };
@@ -34,13 +35,16 @@ type Builder = (css: string, node?: PostCSSNode, type?: string) => void;
 
 type DtoContext = { nextId: number };
 
-function dtoOf(
+function shallowDtoOf(
   node: PostCSSNode,
-  includeInput = false,
-  materializeRaw: boolean | 'afterOnly' = true,
-  context: DtoContext = { nextId: 0 },
+  includeInput: boolean,
+  materializeRaw: boolean | 'afterOnly',
+  context: DtoContext,
 ): AstDto {
   const dto: AstDto = { type: node.type, raws: { ...(node.raws || {}) } };
+  if (node.type === 'root' && node.source?.input?.hasBOM) {
+    dto.raws.bom = true;
+  }
   if (!node.source && node.type === 'decl' && dto.raws.between === ': ') {
     delete dto.raws.between;
   }
@@ -163,8 +167,35 @@ function dtoOf(
     default:
       throw new Error(`Unsupported PostCSS AST node type: ${node.type}`);
   }
-  if (node.nodes) dto.nodes = node.nodes.map((child) => dtoOf(child, false, 'afterOnly', context));
   return dto;
+}
+
+function flatDtoOf(
+  node: PostCSSNode,
+  includeInput = false,
+  materializeRaw: boolean | 'afterOnly' = true,
+  context: DtoContext = { nextId: 0 },
+): Array<{ childCount: number; node: AstDto }> {
+  const result: Array<{ childCount: number; node: AstDto }> = [];
+  const stack: Array<{
+    includeInput: boolean;
+    materializeRaw: boolean | 'afterOnly';
+    node: PostCSSNode;
+  }> = [{ includeInput, materializeRaw, node }];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const children = current.node.nodes ?? [];
+    result.push({
+      childCount: children.length,
+      node: shallowDtoOf(current.node, current.includeInput, current.materializeRaw, context),
+    });
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ includeInput: false, materializeRaw: 'afterOnly', node: children[index] });
+    }
+  }
+
+  return result;
 }
 
 function defaultBetween(node: PostCSSNode): string | undefined {
@@ -173,15 +204,23 @@ function defaultBetween(node: PostCSSNode): string | undefined {
   return undefined;
 }
 
-function flattenNodes(node: PostCSSNode, result: PostCSSNode[] = []): PostCSSNode[] {
-  result.push(node);
-  if (node.nodes) for (const child of node.nodes) flattenNodes(child, result);
+function flattenNodes(node: PostCSSNode): PostCSSNode[] {
+  const result: PostCSSNode[] = [];
+  const stack = [node];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    result.push(current);
+    if (!current.nodes) continue;
+    for (let index = current.nodes.length - 1; index >= 0; index -= 1) {
+      stack.push(current.nodes[index]);
+    }
+  }
   return result;
 }
 
 function stringify(node: PostCSSNode, builder?: Builder): string | void {
   const result = call('stringify', {
-    ast: dtoOf(node, true),
+    flatAst: flatDtoOf(node, true),
     builder: Boolean(builder),
   }) as {
     css: string;

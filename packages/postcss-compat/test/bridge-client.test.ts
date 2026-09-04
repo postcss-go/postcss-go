@@ -18,6 +18,7 @@ function withBridgeClient(options, run) {
     responses,
     readErrorOnce,
     writeError,
+    maxWrite,
     envBinary,
     invalidFd = false,
     spawnSyncResponse,
@@ -31,7 +32,7 @@ function withBridgeClient(options, run) {
   const originalExecFileSync = childProcess.execFileSync;
   const originalWriteSync = fs.writeSync;
   const originalReadSync = fs.readSync;
-  const calls = { spawn: [], spawnSync: [] };
+  const calls = { spawn: [], spawnSync: [], writes: 0 };
   const queue = (responses ?? (response === undefined ? [] : [response])).map((item) =>
     Buffer.from(`${typeof item === 'string' ? item : JSON.stringify(item)}\n`),
   );
@@ -74,9 +75,10 @@ function withBridgeClient(options, run) {
       stderr: spawnSyncStderr,
     };
   };
-  fs.writeSync = () => {
+  fs.writeSync = (fd, buffer, offset, length) => {
     if (writeError) throw writeError;
-    return 0;
+    calls.writes += 1;
+    return Math.min(length, maxWrite ?? length);
   };
   fs.readSync = (fd, buffer, offset, length) => {
     if (fd !== 42) return originalReadSync(fd, buffer, offset, length, null);
@@ -155,6 +157,19 @@ test('bridge-client.cjs retries stdout reads after EAGAIN', () => {
     },
     ({ bridge }) => {
       expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+    },
+  );
+});
+
+test('bridge-client.cjs completes partial writes', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+      maxWrite: 7,
+    },
+    ({ bridge, calls }) => {
+      expect(bridge.callSync('parse', { css: 'a{}'.repeat(20) })).toEqual({ ok: true });
+      expect(calls.writes).toBeGreaterThan(1);
     },
   );
 });

@@ -65,7 +65,7 @@ function sourceOf(dto: SourceDto | undefined, input: unknown) {
   };
 }
 
-function nodeOf(dto: NodeDto, input: unknown): any {
+function createNode(dto: NodeDto, input: unknown): any {
   const defaults: Record<string, unknown> = { raws: dto.raws || {} };
   if (dto.source) {
     defaults.source = sourceOf(dto.source, input);
@@ -108,10 +108,25 @@ function nodeOf(dto: NodeDto, input: unknown): any {
       throw new Error(`Unsupported Go AST node type: ${dto.type}`);
   }
 
-  if (dto.nodes && dto.nodes.length) {
-    node.append(dto.nodes.map((child) => nodeOf(child, input)));
-  }
   return node;
+}
+
+function nodeOf(dto: NodeDto, input: unknown): any {
+  const root = createNode(dto, input);
+  const stack: Array<{ dto: NodeDto; node: any }> = [{ dto, node: root }];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (!current.dto.nodes?.length) continue;
+
+    const children = current.dto.nodes.map((child) => createNode(child, input));
+    current.node.append(children);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ dto: current.dto.nodes[index], node: children[index] });
+    }
+  }
+
+  return root;
 }
 
 const trailingSourceMapAnnotation = /(?:\r?\n|\s)*\/\*#\s*sourceMappingURL=[\s\S]*?\*\/\s*$/;
@@ -139,7 +154,7 @@ function syntaxErrorFromBridge(error: unknown) {
   const line = bridgeError.line;
   const column =
     bridgeError.column === undefined && bridgeError.input?.sourceMapPresent
-      ? 0
+      ? 1
       : bridgeError.column;
   let reason = bridgeError.reason || bridgeError.message;
   if (reason === 'Unclosed block: missing closing brace') {

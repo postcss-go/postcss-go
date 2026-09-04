@@ -284,14 +284,60 @@ test('uses source map path as a root', () => {
     '* div {\n  color: red;\n  }\n/*# sourceMappingURL=maps/a.map */',
     { from }
   )
-  equal(root.source?.input.origin(1, 3, 1, 5), {
-    column: 4,
-    endColumn: 7,
+  equal(root.source?.input.origin(1, 4, 1, 6), {
+    column: 5,
+    endColumn: 8,
     endLine: 3,
     file: join(dir, '..', 'test.scss'),
     line: 3,
     url: pathToFileURL(join(dir, '..', 'test.scss')).href
   })
+})
+
+test('does not load map from non-.map file', () => {
+  let from = join(dir, 'a.css')
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'a.txt'), map)
+  let input = parse('a{}\n/*# sourceMappingURL=a.txt */', { from }).source
+    ?.input
+  type(input?.map, 'undefined')
+})
+
+test('does not load map from outside the from folder', () => {
+  let from = join(dir, 'subdir', 'a.css')
+  mkdirSync(dir)
+  mkdirSync(join(dir, 'subdir'))
+  writeFileSync(join(dir, 'outside.map'), map)
+  let input = parse('a{}\n/*# sourceMappingURL=../outside.map */', { from })
+    .source?.input
+  type(input?.map, 'undefined')
+})
+
+test('does not load relative map without from', () => {
+  let cwd = join(dir, 'subdir')
+  mkdirSync(dir)
+  mkdirSync(cwd)
+  writeFileSync(join(cwd, 'previous.map'), map)
+  let previousCwd = process.cwd()
+  try {
+    process.chdir(cwd)
+    let input = parse('a{}\n/*# sourceMappingURL=previous.map */').source?.input
+    type(input?.map, 'undefined')
+  } finally {
+    process.chdir(previousCwd)
+  }
+})
+
+test('loads map from outside the from folder with unsafeMap', () => {
+  let from = join(dir, 'subdir', 'a.css')
+  mkdirSync(dir)
+  mkdirSync(join(dir, 'subdir'))
+  writeFileSync(join(dir, 'outside.map'), map)
+  let input = parse('a{}\n/*# sourceMappingURL=../outside.map */', {
+    from,
+    unsafeMap: true
+  }).source?.input
+  is(input?.map.text, map)
 })
 
 test('uses current file path for source map', () => {
@@ -359,7 +405,7 @@ test('works with index map', () => {
       }
     }
   })
-  is((root as any).source.input.origin(1, 1).file, join(__dirname, 'b.css'))
+  is((root as any).source.input.origin(1, 2).file, join(__dirname, 'b.css'))
 })
 
 test.run()

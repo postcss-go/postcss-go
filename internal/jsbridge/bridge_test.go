@@ -363,6 +363,49 @@ func TestStringifyBuilderAndComplexDTORoundTrip(t *testing.T) {
 	}
 }
 
+func TestStringifyFlatASTDeepAndMalformed(t *testing.T) {
+	const depth = 6000
+	flat := make([]FlatNodeDTO, 0, depth+2)
+	flat = append(flat, FlatNodeDTO{
+		Node:       &NodeDTO{Type: "root", Raws: ast.Raws{"after": ""}},
+		ChildCount: 1,
+	})
+	for range depth {
+		flat = append(flat, FlatNodeDTO{
+			Node: &NodeDTO{
+				Type:     "rule",
+				Selector: "a",
+				Raws:     ast.Raws{"after": "", "before": "", "between": ""},
+			},
+			ChildCount: 1,
+		})
+	}
+	flat = append(flat, FlatNodeDTO{
+		Node: &NodeDTO{Type: "decl", Prop: "color", Value: "red", Raws: ast.Raws{"before": "", "between": ":"}},
+	})
+
+	result, err := StringifyRPC(context.Background(), StringifyParams{FlatAST: flat, Builder: true})
+	if err != nil {
+		t.Fatalf("deep flat stringify: %v", err)
+	}
+	want := strings.Repeat("a{", depth) + "color:red" + strings.Repeat("}", depth)
+	if result.CSS != want || len(result.Parts) == 0 {
+		t.Fatalf("deep flat stringify mismatch: css=%d want=%d parts=%d", len(result.CSS), len(want), len(result.Parts))
+	}
+
+	badCases := [][]FlatNodeDTO{
+		{{Node: &NodeDTO{Type: "root"}, ChildCount: 1}},
+		{{Node: &NodeDTO{Type: "decl", Prop: "a"}, ChildCount: 1}},
+		{{Node: &NodeDTO{Type: "root"}}, {Node: &NodeDTO{Type: "rule", Selector: "a"}}},
+		{{Node: nil}},
+	}
+	for _, bad := range badCases {
+		if _, err := FromFlatDTO(bad); err == nil {
+			t.Fatalf("expected malformed flat AST to fail: %#v", bad)
+		}
+	}
+}
+
 func TestSourceBridgeDTOHelpersAndFindBlockEnd(t *testing.T) {
 	parseRes, err := ParseRPC(context.Background(), ParseParams{
 		CSS:     `.a { content: "\{"; background: url('x)'); /* }*/ color: red; }`,
@@ -485,6 +528,28 @@ func TestToDTOOwnSemicolonAndUnsupportedType(t *testing.T) {
 
 	if _, err := toDTO(unsupportedNode{}, true); err == nil {
 		t.Fatal("expected unsupported node type error")
+	}
+}
+
+func TestParseRPCOwnSemicolonSourceEnd(t *testing.T) {
+	tests := []struct {
+		css          string
+		line, column int
+	}{
+		{css: ".a{}  ;", line: 1, column: 7},
+		{css: "a{b:c} ;", line: 1, column: 8},
+		{css: "a{b:c} ;\n", line: 1, column: 8},
+	}
+	for _, test := range tests {
+		css := test.css
+		result, err := ParseRPC(context.Background(), ParseParams{CSS: css})
+		if err != nil {
+			t.Fatalf("parse %q: %v", css, err)
+		}
+		end := result.Root.Nodes[0].Source.End
+		if end.Offset != len(css) || end.Line != test.line || end.Column != test.column {
+			t.Fatalf("source end for %q: got %#v, want offset=%d line=%d column=%d", css, end, len(css), test.line, test.column)
+		}
 	}
 }
 

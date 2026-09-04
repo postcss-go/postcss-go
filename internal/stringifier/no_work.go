@@ -21,14 +21,20 @@ type noWorkMapPayload struct {
 // horizontal whitespace before each annotation are removed; trailing
 // whitespace-only suffixes are dropped.
 func ClearSourceMapAnnotations(css string) string {
+	searchEnd := len(css)
 	for {
-		start := strings.LastIndex(css, "/*#")
+		start := strings.LastIndex(css[:searchEnd], "/*#")
 		if start < 0 {
 			return css
 		}
 		endOffset := strings.Index(css[start+3:], "*/")
 		if endOffset < 0 {
-			return css
+			searchEnd = start
+			continue
+		}
+		if body := strings.TrimSpace(css[start+3 : start+3+endOffset]); !strings.HasPrefix(body, "sourceMappingURL=") {
+			searchEnd = start
+			continue
 		}
 		end := start + 3 + endOffset + 2
 		for start > 0 && isAnnotationLeadByte(css[start-1]) {
@@ -39,6 +45,7 @@ func ClearSourceMapAnnotations(css string) string {
 			suffix = ""
 		}
 		css = css[:start] + suffix
+		searchEnd = len(css)
 	}
 }
 
