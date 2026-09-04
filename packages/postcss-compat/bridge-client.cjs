@@ -11,7 +11,7 @@ let bridgeBinary = null;
 let bridgeProcess = null;
 let nextId = 1;
 /** null = unknown; false = persistent stdio fds work; true = use one-shot spawnSync (Windows). */
-let useSpawnSync = null;
+let useSpawnSync = process.env.POSTCSS_GO_COMPAT_SPAWN_SYNC === '1' ? true : null;
 
 function repositoryRoot() {
   return path.resolve(__dirname, '../..');
@@ -50,7 +50,12 @@ function cleanup() {
   if (bridgeDir) fs.rmSync(bridgeDir, { recursive: true, force: true });
   bridgeDir = null;
   bridgeBinary = null;
-  useSpawnSync = null;
+  useSpawnSync = process.env.POSTCSS_GO_COMPAT_SPAWN_SYNC === '1' ? true : null;
+}
+
+function close() {
+  process.removeListener('exit', cleanup);
+  cleanup();
 }
 
 function inputURL(file) {
@@ -79,20 +84,43 @@ function pipeFd(stream) {
 
 function readLineSync(fd) {
   const chunks = [];
-  const byte = Buffer.allocUnsafe(1);
+  const buffer = Buffer.allocUnsafe(64 * 1024);
   const pause = new Int32Array(new SharedArrayBuffer(4));
   while (true) {
     let count;
     try {
-      count = fs.readSync(fd, byte, 0, 1, null);
+      count = fs.readSync(fd, buffer, 0, buffer.length, null);
     } catch (error) {
       if (error.code !== 'EAGAIN' && error.code !== 'EWOULDBLOCK') throw error;
       Atomics.wait(pause, 0, 0, 1);
       continue;
     }
     if (count === 0) throw new Error('postcss-go bridge closed its output');
-    if (byte[0] === 10) return Buffer.concat(chunks).toString('utf8');
-    chunks.push(Buffer.from(byte));
+    const newline = buffer.indexOf(10, 0);
+    if (newline >= 0 && newline < count) {
+      chunks.push(Buffer.from(buffer.subarray(0, newline)));
+      return Buffer.concat(chunks).toString('utf8');
+    }
+    chunks.push(Buffer.from(buffer.subarray(0, count)));
+  }
+}
+
+function writeAllSync(fd, text) {
+  const data = Buffer.from(text);
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  let offset = 0;
+  while (offset < data.length) {
+    try {
+      const written = fs.writeSync(fd, data, offset, data.length - offset, null);
+      if (written === 0) {
+        Atomics.wait(pause, 0, 0, 1);
+        continue;
+      }
+      offset += written;
+    } catch (error) {
+      if (error.code !== 'EAGAIN' && error.code !== 'EWOULDBLOCK') throw error;
+      Atomics.wait(pause, 0, 0, 1);
+    }
   }
 }
 
@@ -137,9 +165,70 @@ function callSyncSpawn(request) {
   return parseBridgeMessage(output, true);
 }
 
+// JSON.stringify recurses and overflows around a few thousand nested AST
+// nodes. The compatibility contract intentionally exercises deeper trees, so
+// serialize plain bridge payloads with an explicit stack.
+function stringifyDeep(value) {
+  let output = '';
+  const stack = [{ kind: 'value', value, inArray: false }];
+  const ancestors = new WeakSet();
+
+  while (stack.length > 0) {
+    const entry = stack.pop();
+    if (entry.kind === 'text') {
+      output += entry.value;
+      continue;
+    }
+    if (entry.kind === 'leave') {
+      ancestors.delete(entry.value);
+      continue;
+    }
+
+    const current = entry.value;
+    if (current === null || typeof current !== 'object') {
+      const encoded = JSON.stringify(current);
+      output += encoded === undefined ? (entry.inArray ? 'null' : '') : encoded;
+      continue;
+    }
+
+    if (ancestors.has(current)) {
+      throw new TypeError('Converting circular structure to JSON');
+    }
+    ancestors.add(current);
+
+    if (Array.isArray(current)) {
+      output += '[';
+      stack.push({ kind: 'leave', value: current });
+      stack.push({ kind: 'text', value: ']' });
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        stack.push({ kind: 'value', value: current[index], inArray: true });
+        if (index > 0) stack.push({ kind: 'text', value: ',' });
+      }
+      continue;
+    }
+
+    const keys = Object.keys(current).filter((key) => {
+      const type = typeof current[key];
+      return type !== 'undefined' && type !== 'function' && type !== 'symbol';
+    });
+    output += '{';
+    stack.push({ kind: 'leave', value: current });
+    stack.push({ kind: 'text', value: '}' });
+    for (let index = keys.length - 1; index >= 0; index -= 1) {
+      const key = keys[index];
+      stack.push({ kind: 'value', value: current[key], inArray: false });
+      stack.push({ kind: 'text', value: ':' });
+      stack.push({ kind: 'text', value: JSON.stringify(key) });
+      if (index > 0) stack.push({ kind: 'text', value: ',' });
+    }
+  }
+
+  return output;
+}
+
 function callSync(method, params) {
   const id = nextId++;
-  const request = JSON.stringify({
+  const request = stringifyDeep({
     jsonrpc: '2.0',
     id,
     method,
@@ -163,7 +252,7 @@ function callSync(method, params) {
 
   let output;
   try {
-    fs.writeSync(stdinFd, `${request}\n`);
+    writeAllSync(stdinFd, `${request}\n`);
     output = readLineSync(stdoutFd);
   } catch (error) {
     bridgeProcess = null;
@@ -222,7 +311,7 @@ function createBridgeError(payload) {
 module.exports = {
   callSync,
   createError: createBridgeError,
-  close: cleanup,
+  close,
 };
 
 process.once('exit', cleanup);

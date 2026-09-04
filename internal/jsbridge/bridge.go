@@ -122,9 +122,15 @@ type NoWorkResult struct {
 }
 
 type StringifyParams struct {
-	AST     *NodeDTO    `json:"ast"`
-	Builder bool        `json:"builder,omitempty"`
-	Options RequestOpts `json:"options,omitempty"`
+	AST     *NodeDTO      `json:"ast"`
+	FlatAST []FlatNodeDTO `json:"flatAst,omitempty"`
+	Builder bool          `json:"builder,omitempty"`
+	Options RequestOpts   `json:"options,omitempty"`
+}
+
+type FlatNodeDTO struct {
+	Node       *NodeDTO `json:"node"`
+	ChildCount int      `json:"childCount"`
 }
 
 type StringifyResult struct {
@@ -209,10 +215,15 @@ func NoWorkRPC(_ context.Context, params NoWorkParams) (*NoWorkResult, error) {
 }
 
 func StringifyRPC(_ context.Context, params StringifyParams) (*StringifyResult, error) {
-	if params.AST == nil {
+	var node ast.Node
+	var err error
+	if len(params.FlatAST) > 0 {
+		node, err = FromFlatDTO(params.FlatAST)
+	} else if params.AST != nil {
+		node, err = FromDTO(params.AST)
+	} else {
 		return nil, fmt.Errorf("missing ast payload")
 	}
-	node, err := FromDTO(params.AST)
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +262,38 @@ func SourceToBridgeDTO(
 		return nil
 	}
 	return &dto
+}
+
+// RuleSourceToBridgeDTO reports a rule's own-semicolon end the way PostCSS
+// does: line/column on the semicolon character, offset one past it. The parser
+// may include a following line break in the recorded end offset; walk that
+// back so neither column nor offset consumes the newline.
+func RuleSourceToBridgeDTO(
+	loc *postcss.SourceLocation,
+	hasOwnSemicolon, includeInput bool,
+) *SourceLocationDTO {
+	if !hasOwnSemicolon {
+		return sourceToDTO(loc, true, true, false, includeInput)
+	}
+	dto := sourceToDTO(loc, false, false, false, includeInput)
+	if dto == nil {
+		return nil
+	}
+	if loc.Input == nil || len(loc.Input.CSS) == 0 || dto.End.Offset <= dto.Start.Offset {
+		if dto.End.Column > 1 {
+			dto.End.Column--
+		}
+		return dto
+	}
+	offset := min(dto.End.Offset-1, len(loc.Input.CSS)-1)
+	for offset > dto.Start.Offset && (loc.Input.CSS[offset] == '\n' || loc.Input.CSS[offset] == '\r') {
+		offset--
+	}
+	position := loc.Input.FromOffset(offset)
+	dto.End.Line = position.Line
+	dto.End.Column = position.Column
+	dto.End.Offset = offset + 1
+	return dto
 }
 
 // FillSourceDTO writes PostCSS-facing source-column adjustments into dst without
@@ -295,10 +338,8 @@ func toDTO(node ast.Node, includeInput bool) (*NodeDTO, error) {
 		if err != nil {
 			return nil, err
 		}
-		ruleSource := sourceToDTO(current.Source(), true, true, current.RawFormattingReadOnly()["ownSemicolon"] == ";", includeInput)
-		if current.RawFormattingReadOnly()["ownSemicolon"] == ";" && ruleSource != nil {
-			ruleSource.End.Column++
-		}
+		ownSemicolon, _ := current.RawFormattingReadOnly()["ownSemicolon"].(string)
+		ruleSource := RuleSourceToBridgeDTO(current.Source(), ownSemicolon != "", includeInput)
 		return &NodeDTO{
 			Type:     string(ast.NodeRule),
 			Selector: current.Selector,
@@ -345,6 +386,77 @@ func toDTO(node ast.Node, includeInput bool) (*NodeDTO, error) {
 
 func FromDTO(dto *NodeDTO) (ast.Node, error) {
 	return fromDTO(dto, nil)
+}
+
+// FromFlatDTO rebuilds a preorder AST without recursive JSON nesting. The
+// compatibility bridge uses this form so deeply nested, valid PostCSS trees do
+// not hit encoding/json's maximum nesting depth.
+func FromFlatDTO(nodes []FlatNodeDTO) (ast.Node, error) {
+	if len(nodes) == 0 || nodes[0].Node == nil {
+		return nil, fmt.Errorf("empty flat ast")
+	}
+	if nodes[0].ChildCount < 0 || len(nodes[0].Node.Nodes) > 0 {
+		return nil, fmt.Errorf("invalid flat ast node at index 0")
+	}
+	root, err := fromDTO(nodes[0].Node, nil)
+	if err != nil {
+		return nil, err
+	}
+	type frame struct {
+		container ast.Container
+		input     *postcss.Input
+		remaining int
+	}
+	stack := make([]frame, 0, 32)
+	if nodes[0].ChildCount > 0 {
+		container, ok := root.(ast.Container)
+		if !ok {
+			return nil, fmt.Errorf("flat ast node %q cannot have children", nodes[0].Node.Type)
+		}
+		stack = append(stack, frame{container: container, input: sourceInput(root, nil), remaining: nodes[0].ChildCount})
+	}
+
+	for index := 1; index < len(nodes); index++ {
+		for len(stack) > 0 && stack[len(stack)-1].remaining == 0 {
+			stack = stack[:len(stack)-1]
+		}
+		if len(stack) == 0 {
+			return nil, fmt.Errorf("flat ast has an unexpected node at index %d", index)
+		}
+		entry := nodes[index]
+		if entry.Node == nil || entry.ChildCount < 0 || len(entry.Node.Nodes) > 0 {
+			return nil, fmt.Errorf("invalid flat ast node at index %d", index)
+		}
+		parent := &stack[len(stack)-1]
+		child, childErr := fromDTO(entry.Node, parent.input)
+		if childErr != nil {
+			return nil, childErr
+		}
+		ast.AppendParsed(parent.container, child)
+		parent.remaining--
+		if entry.ChildCount > 0 {
+			container, ok := child.(ast.Container)
+			if !ok {
+				return nil, fmt.Errorf("flat ast node %q cannot have children", entry.Node.Type)
+			}
+			stack = append(stack, frame{container: container, input: sourceInput(child, parent.input), remaining: entry.ChildCount})
+		}
+	}
+
+	for len(stack) > 0 && stack[len(stack)-1].remaining == 0 {
+		stack = stack[:len(stack)-1]
+	}
+	if len(stack) != 0 {
+		return nil, fmt.Errorf("flat ast ended before all children were provided")
+	}
+	return root, nil
+}
+
+func sourceInput(node ast.Node, fallback *postcss.Input) *postcss.Input {
+	if source := node.Source(); source != nil && source.Input != nil {
+		return source.Input
+	}
+	return fallback
 }
 
 func fromDTO(dto *NodeDTO, inheritedInput *postcss.Input) (ast.Node, error) {

@@ -1,5 +1,5 @@
 import { test } from 'uvu'
-import { instance, is, throws } from 'uvu/assert'
+import { equal, instance, is, throws } from 'uvu/assert'
 import * as v8 from 'v8'
 
 import postcss, { Declaration, Input, Root, Rule } from '../lib/postcss.js'
@@ -40,6 +40,19 @@ test('rehydrates a JSON AST', () => {
   )
 })
 
+test('preserves node raws when rehydrating a JSON AST', () => {
+  let css = 'a {}\nb {}\n\nc {}\n'
+  let root = postcss.parse(css)
+
+  let rehydrated = postcss.fromJSON(
+    JSON.parse(JSON.stringify(root.toJSON()))
+  ) as Root
+
+  is(rehydrated.toString(), css)
+  is(rehydrated.nodes[1].raws.before, '\n')
+  is(rehydrated.nodes[2].raws.before, '\n\n')
+})
+
 test('rehydrates an array of Nodes via JSON.stringify', () => {
   let root = postcss.parse('.cls { color: orange; }')
 
@@ -54,6 +67,16 @@ test('throws when rehydrating an invalid JSON AST', () => {
   throws(() => {
     postcss.fromJSON({ type: 'not-a-node-type' })
   }, 'Unknown node type: not-a-node-type')
+})
+
+test('does not allow to change prototype', () => {
+  let node = postcss.fromJSON(
+    JSON.parse(
+      '{"type":"decl","prop":"color","value":"red","__proto__":{"hijacked":true}}'
+    )
+  )
+  // @ts-expect-error
+  equal(typeof node.hijacked, 'undefined')
 })
 
 test.run()

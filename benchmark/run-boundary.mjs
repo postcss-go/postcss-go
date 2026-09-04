@@ -47,7 +47,7 @@ if (runJavaScript) {
       'boundary_napi',
       '-buildmode=c-archive',
       '-o',
-      'go-out/libcore.a',
+      'benchmark/boundary/napi/go-out/libcore.a',
       './benchmark/boundary/napi/gocore',
     ],
     {
@@ -58,10 +58,20 @@ if (runJavaScript) {
   run('npx', ['--yes', 'node-gyp', 'configure', 'build'], { cwd: napiDir });
 
   console.log('\n=== Building the wasip1 reactor module ===');
-  run('go', ['build', '-buildmode=c-shared', '-o', 'core.wasm', './benchmark/boundary/wasm'], {
-    cwd: repoRoot,
-    env: { ...process.env, GOOS: 'wasip1', GOARCH: 'wasm' },
-  });
+  run(
+    'go',
+    [
+      'build',
+      '-buildmode=c-shared',
+      '-o',
+      'benchmark/boundary/wasm/core.wasm',
+      './benchmark/boundary/wasm',
+    ],
+    {
+      cwd: repoRoot,
+      env: { ...process.env, GOOS: 'wasip1', GOARCH: 'wasm' },
+    },
+  );
 
   const steps = [
     ['01-hydration.mjs', '01-hydration.json'],

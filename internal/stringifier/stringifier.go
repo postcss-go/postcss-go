@@ -104,6 +104,7 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int,
 		}
 		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
 	case *ast.Root:
+		appendBuilderPart(parts, rootBOM(current), id, "start")
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(cache, child, depth, index)), 0, "")
 			writeBuilderNode(parts, child, depth, next, cache)
@@ -164,6 +165,7 @@ func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotat
 		writeChildren(writer, current.Nodes, depth, false, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
+		writer.writeString(rootBOM(current))
 		writeChildren(writer, current.Nodes, depth, true, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
@@ -201,6 +203,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writeMappedChildren(writer, current.Nodes, depth)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
+		writer.writeString(rootBOM(current))
 		writeMappedChildren(writer, current.Nodes, depth)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
@@ -630,6 +633,9 @@ func atRuleHeader(node *ast.AtRule) string {
 
 func atRuleAfterName(node *ast.AtRule, params string) string {
 	if text, ok := ast.LookupRawString(node, "afterName"); ok {
+		if text == "" && params != "" && !atRuleNameEnd(params[0]) {
+			return " "
+		}
 		return text
 	}
 	if params != "" {
@@ -647,6 +653,15 @@ func atRuleAfterName(node *ast.AtRule, params string) string {
 		return " "
 	}
 	return ""
+}
+
+func atRuleNameEnd(ch byte) bool {
+	switch ch {
+	case '\t', '\n', '\f', '\r', ' ', '"', '#', '\'', '(', ')', '/', ';', '[', '\\', ']', '{', '}':
+		return true
+	default:
+		return false
+	}
 }
 
 func declarationText(cache *renderCache, node *ast.Declaration) string {
@@ -808,7 +823,7 @@ func rawBeforeDetected(cache *renderCache, parent ast.Container, node ast.Node) 
 		}
 		if value, ok := lookupRaw(sibling, "before"); ok {
 			if text, ok := value.(string); ok {
-				return text, true
+				return whitespaceOnly(text), true
 			}
 		}
 	}
@@ -818,11 +833,20 @@ func rawBeforeDetected(cache *renderCache, parent ast.Container, node ast.Node) 
 		}
 		if value, ok := lookupRaw(sibling, "before"); ok {
 			if text, ok := value.(string); ok {
-				return text, true
+				return whitespaceOnly(text), true
 			}
 		}
 	}
 	return "", false
+}
+
+func whitespaceOnly(text string) string {
+	return strings.Map(func(char rune) rune {
+		if unicode.IsSpace(char) {
+			return char
+		}
+		return -1
+	}, text)
 }
 
 func inferSiblingRaw(parent ast.Container, key string, nodeType ast.NodeType) (string, bool) {
@@ -922,5 +946,32 @@ func needsSemicolon(parent ast.Container, node ast.Node) bool {
 	}
 	// Parsed containers record their semicolon style explicitly. For manually
 	// constructed containers, match PostCSS's default and omit the final one.
+	if nodeIndex >= 0 && nodeIndex < len(children)-1 {
+		if declaration, ok := node.(*ast.Declaration); ok && isCustomProperty(declaration) {
+			return true
+		}
+	}
 	return nodeIndex < lastSignificant || rawBool(parent, "semicolon", false)
+}
+
+func isCustomProperty(node *ast.Declaration) bool {
+	if !strings.HasPrefix(node.Prop, "--") {
+		return false
+	}
+	before, ok := ast.LookupRawString(node, "before")
+	if !ok || before == "" {
+		return true
+	}
+	last, _ := utf8.DecodeLastRuneInString(before)
+	return unicode.IsSpace(last)
+}
+
+func rootBOM(node *ast.Root) string {
+	if rawBool(node, "bom", false) {
+		return "\uFEFF"
+	}
+	if source := node.Source(); source != nil && source.Input != nil && source.Input.HasBOM {
+		return "\uFEFF"
+	}
+	return ""
 }

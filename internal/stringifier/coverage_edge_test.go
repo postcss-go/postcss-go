@@ -955,3 +955,68 @@ func TestDirectEligibleAndStringifyEdges(t *testing.T) {
 		t.Fatalf("annotation survived: %q", stripped)
 	}
 }
+
+func TestPatchCoverageHelpers(t *testing.T) {
+	if !atRuleNameEnd(' ') || !atRuleNameEnd('{') || atRuleNameEnd('x') {
+		t.Fatalf("atRuleNameEnd classification failed")
+	}
+	emptyAfter := ast.NewAtRule("media", "screen")
+	emptyAfter.RawFormatting()["afterName"] = ""
+	if got := atRuleAfterName(emptyAfter, "screen"); got != " " {
+		t.Fatalf("empty afterName before params must insert space, got %q", got)
+	}
+	parenParams := ast.NewAtRule("supports", "(display:grid)")
+	parenParams.RawFormatting()["afterName"] = ""
+	if got := atRuleAfterName(parenParams, "(display:grid)"); got != "" {
+		t.Fatalf("empty afterName before delimiter must stay empty, got %q", got)
+	}
+
+	if got := whitespaceOnly(" \tkeep\n"); got != " \t\n" {
+		t.Fatalf("whitespaceOnly: %q", got)
+	}
+
+	root := ast.NewRoot()
+	first := ast.NewDeclaration("--size", "1px")
+	first.RawFormatting()["before"] = "  "
+	second := ast.NewDeclaration("color", "red")
+	rule := ast.NewRule(":root")
+	rule.Append(first, second)
+	root.Append(rule)
+	if !needsSemicolon(rule, first) {
+		t.Fatal("custom property before final decl needs semicolon")
+	}
+	nonCustom := ast.NewDeclaration("width", "1px")
+	nonCustom.RawFormatting()["before"] = "/*x*/"
+	if isCustomProperty(nonCustom) {
+		t.Fatal("non-custom prop must not match")
+	}
+	spaced := ast.NewDeclaration("--gap", "0")
+	spaced.RawFormatting()["before"] = "\n  "
+	if !isCustomProperty(spaced) {
+		t.Fatal("custom property with trailing space before must match")
+	}
+	nospace := ast.NewDeclaration("--gap", "0")
+	nospace.RawFormatting()["before"] = "/*x*/"
+	if isCustomProperty(nospace) {
+		t.Fatal("custom property without trailing space before must not match")
+	}
+
+	bomRoot := ast.NewRoot()
+	bomRoot.RawFormatting()["bom"] = true
+	if rootBOM(bomRoot) != "\uFEFF" {
+		t.Fatal("raw bom flag must emit BOM")
+	}
+	if got := Stringify(bomRoot); got != "\uFEFF" {
+		t.Fatalf("empty bom root stringify: %q", got)
+	}
+	input, err := sourcemap.NewInput("a{}", sourcemap.Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("input: %v", err)
+	}
+	input.HasBOM = true
+	sourced := ast.NewRoot()
+	sourced.SetSource(&sourcemap.Location{Input: input})
+	if rootBOM(sourced) != "\uFEFF" {
+		t.Fatal("input HasBOM must emit BOM")
+	}
+}

@@ -30,6 +30,14 @@ const reports = [
     file: 'packages/vite-loader/coverage/lcov.info',
     prefix: 'packages/vite-loader/',
   },
+  {
+    file: 'packages/webpack-loader/coverage/lcov.info',
+    prefix: 'packages/webpack-loader/',
+  },
+  {
+    file: 'packages/rspack-loader/coverage/lcov.info',
+    prefix: 'packages/rspack-loader/',
+  },
 ];
 
 let rewritten = 0;

@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 
 afterEach(() => {
   delete process.env.POSTCSS_GO_COMPAT_BRIDGE_BIN;
+  delete process.env.POSTCSS_GO_COMPAT_SPAWN_SYNC;
 });
 
 function withBridgeClient(options, run) {
@@ -18,6 +19,10 @@ function withBridgeClient(options, run) {
     responses,
     readErrorOnce,
     writeError,
+    writeErrorOnce,
+    writeZeroOnce,
+    maxWrite,
+    maxRead,
     envBinary,
     invalidFd = false,
     spawnSyncResponse,
@@ -31,13 +36,15 @@ function withBridgeClient(options, run) {
   const originalExecFileSync = childProcess.execFileSync;
   const originalWriteSync = fs.writeSync;
   const originalReadSync = fs.readSync;
-  const calls = { spawn: [], spawnSync: [] };
+  const calls = { spawn: [], spawnSync: [], writes: 0, requests: [] };
   const queue = (responses ?? (response === undefined ? [] : [response])).map((item) =>
     Buffer.from(`${typeof item === 'string' ? item : JSON.stringify(item)}\n`),
   );
   let queueIndex = 0;
   let outputOffset = 0;
   let threwReadError = false;
+  let threwWriteError = false;
+  let returnedZeroWrite = false;
   let killed = false;
 
   if (envBinary) {
@@ -74,9 +81,23 @@ function withBridgeClient(options, run) {
       stderr: spawnSyncStderr,
     };
   };
-  fs.writeSync = () => {
+  fs.writeSync = (fd, buffer, offset, length) => {
     if (writeError) throw writeError;
-    return 0;
+    if (writeErrorOnce && !threwWriteError) {
+      threwWriteError = true;
+      const error = new Error('resource temporarily unavailable');
+      error.code = writeErrorOnce;
+      throw error;
+    }
+    if (writeZeroOnce && !returnedZeroWrite) {
+      returnedZeroWrite = true;
+      calls.writes += 1;
+      return 0;
+    }
+    const written = Math.min(length, maxWrite ?? length);
+    calls.writes += 1;
+    calls.requests.push(buffer.subarray(offset, offset + written).toString('utf8'));
+    return written;
   };
   fs.readSync = (fd, buffer, offset, length) => {
     if (fd !== 42) return originalReadSync(fd, buffer, offset, length, null);
@@ -90,12 +111,15 @@ function withBridgeClient(options, run) {
       throw new Error('unexpected extra read from mocked bridge stdout');
     }
     const output = queue[queueIndex];
-    buffer[offset] = output[outputOffset++];
+    const remaining = output.length - outputOffset;
+    const copied = Math.min(length, remaining, maxRead ?? remaining);
+    output.copy(buffer, offset, outputOffset, outputOffset + copied);
+    outputOffset += copied;
     if (outputOffset >= output.length) {
       queueIndex += 1;
       outputOffset = 0;
     }
-    return 1;
+    return copied;
   };
 
   const bridgePath = require.resolve('../bridge-client.cjs');
@@ -155,6 +179,37 @@ test('bridge-client.cjs retries stdout reads after EAGAIN', () => {
     },
     ({ bridge }) => {
       expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+    },
+  );
+});
+
+test('bridge-client.cjs completes partial writes', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+      maxWrite: 7,
+    },
+    ({ bridge, calls }) => {
+      expect(bridge.callSync('parse', { css: 'a{}'.repeat(20) })).toEqual({ ok: true });
+      expect(calls.writes).toBeGreaterThan(1);
+      expect(JSON.parse(calls.requests.join('').trim())).toMatchObject({
+        jsonrpc: '2.0',
+        method: 'parse',
+        params: { css: 'a{}'.repeat(20) },
+      });
+    },
+  );
+});
+
+test('bridge-client.cjs retries a zero-byte stdin write', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+      writeZeroOnce: true,
+    },
+    ({ bridge, calls }) => {
+      expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+      expect(calls.writes).toBe(2);
     },
   );
 });
@@ -369,4 +424,84 @@ test('bridge-client.cjs createError fills input metadata and file URLs', () => {
     });
     expect(withoutFile.input.url).toBeUndefined();
   });
+});
+
+test('bridge-client.cjs retries stdin writes after EAGAIN', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+      writeErrorOnce: 'EAGAIN',
+    },
+    ({ bridge, calls }) => {
+      expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+      expect(calls.writes).toBeGreaterThan(0);
+    },
+  );
+});
+
+test('bridge-client.cjs reassembles stdout across partial reads', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+      maxRead: 8,
+    },
+    ({ bridge }) => {
+      expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+    },
+  );
+});
+
+test('bridge-client.cjs stringifyDeep serializes arrays and skips non-JSON values', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+    },
+    ({ bridge, calls }) => {
+      const sharedNode = { type: 'rule' };
+      expect(
+        bridge.callSync('stringify', {
+          nodes: [sharedNode, sharedNode, undefined],
+          skip: () => 'fn',
+          marker: Symbol('x'),
+          empty: undefined,
+        }),
+      ).toEqual({ ok: true });
+      const request = calls.requests.join('');
+      expect(JSON.parse(request).params.nodes).toEqual([{ type: 'rule' }, { type: 'rule' }, null]);
+      expect(request).not.toContain('skip');
+      expect(request).not.toContain('marker');
+      expect(request).not.toContain('"empty"');
+    },
+  );
+});
+
+test('bridge-client.cjs stringifyDeep rejects circular values', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+    },
+    ({ bridge, calls }) => {
+      const params = { css: 'a{}' };
+      params.circular = params;
+      expect(() => bridge.callSync('parse', params)).toThrowError(
+        /Converting circular structure to JSON/,
+      );
+      expect(calls.spawn).toHaveLength(0);
+      expect(calls.writes).toBe(0);
+    },
+  );
+});
+
+test('bridge-client.cjs forces spawnSync when POSTCSS_GO_COMPAT_SPAWN_SYNC=1', () => {
+  process.env.POSTCSS_GO_COMPAT_SPAWN_SYNC = '1';
+  withBridgeClient(
+    {
+      spawnSyncResponse: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+    },
+    ({ bridge, calls }) => {
+      expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+      expect(calls.spawn).toHaveLength(0);
+      expect(calls.spawnSync).toHaveLength(1);
+    },
+  );
 });

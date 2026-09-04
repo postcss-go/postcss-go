@@ -68,10 +68,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .turbo
-          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}-v2
           restore-keys: |
-            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
-            turbo-${{ runner.os }}-
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-v2-
+            turbo-${{ runner.os }}-v2-
 
       - name: Check JS formatting
         run: pnpm format:check
@@ -100,6 +100,11 @@ jobs:
 
       - name: Build packages
         run: pnpm build
+
+      # Bypass Turborepo for shared so typecheck never sees a stale/partial
+      # cache restore that omits dist/*.d.ts (vite dual-format + unplugin-dts).
+      - name: Typecheck packages
+        run: pnpm --filter @postcss-go/shared build && pnpm check
 
   browser-wasm:
     name: Core CSS Contract / Browser WASM

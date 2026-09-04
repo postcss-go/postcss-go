@@ -80,7 +80,8 @@ async function runLoader(
   const configured = await resolveLoaderOptions(loaderContext, loaderOptions);
   const { plugins, processOptions } = await resolveProcessConfiguration(loaderContext, configured);
   const useSourceMap = loaderOptions.sourceMap ?? loaderContext.sourceMap ?? false;
-  configureSourceMap(processOptions, useSourceMap, sourceMap, loaderContext.context);
+  const resourceContext = resolveResourceContext(loaderContext);
+  configureSourceMap(processOptions, useSourceMap, sourceMap, resourceContext);
 
   const result = await postcssGo(plugins).process(String(content), processOptions);
   emitWarnings(loaderContext, result.warnings());
@@ -88,7 +89,7 @@ async function runLoader(
 
   let outputMap = result.map?.toJSON() as SourceMapJson | undefined;
   if (outputMap && useSourceMap) {
-    outputMap = normalizeOutputSourceMap(outputMap, loaderContext.context);
+    outputMap = normalizeOutputSourceMap(outputMap, resourceContext);
   }
 
   return {
@@ -350,6 +351,10 @@ function errorWithoutStack(message: string, cause: unknown): Error {
 
 function resolveMode(loaderContext: LoaderContext<PostcssGoLoaderOptions>): string {
   return loaderContext.mode ?? process.env.NODE_ENV ?? 'development';
+}
+
+function resolveResourceContext(loaderContext: LoaderContext<PostcssGoLoaderOptions>): string {
+  return loaderContext.context ?? path.dirname(loaderContext.resourcePath);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

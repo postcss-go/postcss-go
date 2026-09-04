@@ -27,14 +27,14 @@ func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
 		return nil, err
 	}
 	p := &Parser{
-		input:       css,
-		tok:         tokenizer.New(css, tokenizer.Options{}),
+		input:       input.CSS,
+		tok:         tokenizer.New(input.CSS, tokenizer.Options{}),
 		root:        ast.NewRoot(),
 		src:         input,
 		stmtBuf:     make([]tokenizer.Token, 0, 32),
 		trackSource: input.TracksSource(),
 	}
-	p.root.Nodes = make([]ast.Node, 0, estimateTopLevelCapacity(len(css)))
+	p.root.Nodes = make([]ast.Node, 0, estimateTopLevelCapacity(len(input.CSS)))
 	if err := p.parseInto(p.root, false); err != nil {
 		return nil, err
 	}
@@ -43,9 +43,9 @@ func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
 			ast.SetRawBool(p.root, "semicolon", false)
 		}
 	}
-	p.root.SetRange(ast.SourceRange{Start: 0, End: len(css)})
+	p.root.SetRange(ast.SourceRange{Start: 0, End: len(input.CSS)})
 	if p.trackSource {
-		p.root.SetSource(input.Location(input.FromOffset(0), input.FromOffset(len(css))))
+		p.root.SetSource(input.Location(input.FromOffset(0), input.FromOffset(len(input.CSS))))
 	}
 	return p.root, nil
 }
@@ -360,12 +360,18 @@ func (p *Parser) freeSemicolon(container ast.Container, tokens []tokenizer.Token
 		} else {
 			ast.SetRawString(node, "ownSemicolon", own)
 		}
-		if node.Source() != nil {
-			end := p.tok.Position()
-			if strings.HasPrefix(own, " ") {
-				end++
-			}
-			p.extendSourceTo(node, end)
+		// Match PostCSS freeSemicolon: line/column sit on the semicolon token,
+		// while offset is exclusive (one past the semicolon), so a trailing
+		// newline after `} ;` is not part of the rule's source end.
+		if p.trackSource && node.Source() != nil && len(tokens) > 0 {
+			semi := tokens[len(tokens)-1]
+			end := semi.Start + 1
+			start := node.Source().Start.Offset
+			node.SetRange(ast.SourceRange{Start: start, End: end})
+			var loc sourcemap.Location
+			p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(semi.Start), &loc)
+			loc.End.Offset = end
+			node.SetSource(&loc)
 		}
 	case *ast.Declaration:
 		ast.SetRawBool(container, "semicolon", true)
