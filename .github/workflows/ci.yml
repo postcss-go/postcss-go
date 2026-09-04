@@ -89,9 +89,6 @@ jobs:
       - name: Lint JS
         run: pnpm lint
 
-      - name: Typecheck packages
-        run: pnpm check
-
       - name: Vet Go
         run: go vet ./...
 
@@ -103,6 +100,9 @@ jobs:
 
       - name: Build packages
         run: pnpm build
+
+      - name: Typecheck packages
+        run: pnpm check
 
   browser-wasm:
     name: Core CSS Contract / Browser WASM

@@ -264,9 +264,10 @@ func SourceToBridgeDTO(
 	return &dto
 }
 
-// RuleSourceToBridgeDTO preserves the end offset recorded for a rule's own
-// semicolon while reporting the semicolon's line and column. The parser may
-// include the following line break in that offset for PostCSS compatibility.
+// RuleSourceToBridgeDTO reports a rule's own-semicolon end the way PostCSS
+// does: line/column on the semicolon character, offset one past it. The parser
+// may include a following line break in the recorded end offset; walk that
+// back so neither column nor offset consumes the newline.
 func RuleSourceToBridgeDTO(
 	loc *postcss.SourceLocation,
 	hasOwnSemicolon, includeInput bool,
@@ -291,6 +292,7 @@ func RuleSourceToBridgeDTO(
 	position := loc.Input.FromOffset(offset)
 	dto.End.Line = position.Line
 	dto.End.Column = position.Column
+	dto.End.Offset = offset + 1
 	return dto
 }
 

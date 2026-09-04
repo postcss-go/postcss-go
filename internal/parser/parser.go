@@ -360,12 +360,18 @@ func (p *Parser) freeSemicolon(container ast.Container, tokens []tokenizer.Token
 		} else {
 			ast.SetRawString(node, "ownSemicolon", own)
 		}
-		if node.Source() != nil {
-			end := p.tok.Position()
-			if strings.HasPrefix(own, " ") {
-				end++
-			}
-			p.extendSourceTo(node, end)
+		// Match PostCSS freeSemicolon: line/column sit on the semicolon token,
+		// while offset is exclusive (one past the semicolon), so a trailing
+		// newline after `} ;` is not part of the rule's source end.
+		if p.trackSource && node.Source() != nil && len(tokens) > 0 {
+			semi := tokens[len(tokens)-1]
+			end := semi.Start + 1
+			start := node.Source().Start.Offset
+			node.SetRange(ast.SourceRange{Start: start, End: end})
+			var loc sourcemap.Location
+			p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(semi.Start), &loc)
+			loc.End.Offset = end
+			node.SetSource(&loc)
 		}
 	case *ast.Declaration:
 		ast.SetRawBool(container, "semicolon", true)

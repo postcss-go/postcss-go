@@ -533,12 +533,13 @@ func TestToDTOOwnSemicolonAndUnsupportedType(t *testing.T) {
 
 func TestParseRPCOwnSemicolonSourceEnd(t *testing.T) {
 	tests := []struct {
-		css          string
-		line, column int
+		css                  string
+		offset, line, column int
 	}{
-		{css: ".a{}  ;", line: 1, column: 7},
-		{css: "a{b:c} ;", line: 1, column: 8},
-		{css: "a{b:c} ;\n", line: 1, column: 8},
+		{css: ".a{}  ;", offset: 7, line: 1, column: 7},
+		{css: "a{b:c} ;", offset: 8, line: 1, column: 8},
+		// Trailing newline after the free semicolon must not be part of the end.
+		{css: "a{b:c} ;\n", offset: 8, line: 1, column: 8},
 	}
 	for _, test := range tests {
 		css := test.css
@@ -547,8 +548,8 @@ func TestParseRPCOwnSemicolonSourceEnd(t *testing.T) {
 			t.Fatalf("parse %q: %v", css, err)
 		}
 		end := result.Root.Nodes[0].Source.End
-		if end.Offset != len(css) || end.Line != test.line || end.Column != test.column {
-			t.Fatalf("source end for %q: got %#v, want offset=%d line=%d column=%d", css, end, len(css), test.line, test.column)
+		if end.Offset != test.offset || end.Line != test.line || end.Column != test.column {
+			t.Fatalf("source end for %q: got %#v, want offset=%d line=%d column=%d", css, end, test.offset, test.line, test.column)
 		}
 	}
 }
