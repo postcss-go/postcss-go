@@ -3,6 +3,7 @@ let { is } = require('uvu/assert')
 
 let {
   AtRule,
+  Comment,
   Declaration,
   Document,
   Node,
@@ -157,6 +158,88 @@ test('clones semicolon only from rules with children', () => {
   is(str.raw(css.first, 'semicolon'), true)
 })
 
+test('terminates childless at-rule followed by a comment', () => {
+  let css = parse('a {}\n/* comment */')
+  css.insertBefore(css.last, new AtRule({ name: 'import', params: '"x.css"' }))
+
+  is(css.toString(), 'a {}\n@import "x.css";\n/* comment */')
+  is(
+    parse(css.toString())
+      .nodes.map(i => i.type)
+      .join(','),
+    'rule,atrule,comment'
+  )
+})
+
+test('terminates nested childless at-rule followed by a comment', () => {
+  let css = parse('@media screen {\n  a {}\n}')
+  css.first.append(new AtRule({ name: 'import', params: '"y.css"' }))
+  css.first.append(new Comment({ text: 'note' }))
+
+  is(
+    css.toString(),
+    '@media screen {\n  a {}\n  @import "y.css";\n  /* note */\n}'
+  )
+  is(
+    parse(css.toString())
+      .first.nodes.map(i => i.type)
+      .join(','),
+    'rule,atrule,comment'
+  )
+})
+
+test('terminates custom property followed by a comment', () => {
+  let css = parse('a{--x:red}')
+  css.first.append(new Comment({ text: 'note' }))
+
+  is(css.toString(), 'a{--x:red;/* note */}')
+  is(
+    parse(css.toString())
+      .first.nodes.map(i => i.type)
+      .join(','),
+    'decl,comment'
+  )
+})
+
+test('terminates custom property with !important before a comment', () => {
+  let css = parse('a{--x:red !important}')
+  css.first.first.after(new Comment({ text: 'note' }))
+
+  is(css.toString(), 'a{--x:red !important;/* note */}')
+  is(
+    parse(css.toString())
+      .first.nodes.map(i => i.type)
+      .join(','),
+    'decl,comment'
+  )
+})
+
+test('keeps hack-prefixed property before a comment unchanged', () => {
+  for (let css of ['a{*--x:red/*c*/}', 'a{_--x:red/*c*/}']) {
+    let root = parse(css)
+    is(root.toString(), css)
+    is(
+      parse(root.toString())
+        .first.nodes.map(i => i.type)
+        .join(','),
+      'decl,comment'
+    )
+  }
+})
+
+test('terminates indented custom property followed by a comment', () => {
+  let css = parse('a{  --x:red}')
+  css.first.first.after(new Comment({ text: 'note' }))
+
+  is(css.toString(), 'a{  --x:red;  /* note */}')
+  is(
+    parse(css.toString())
+      .first.nodes.map(i => i.type)
+      .join(','),
+    'decl,comment'
+  )
+})
+
 test('clones only spaces in before', () => {
   let css = parse('a{*one:1}')
   css.first.append({ prop: 'two', value: '2' })
@@ -301,7 +384,7 @@ test('escapes </style & <!-- with \\3c CSS escape', () => {
     '\\3c /style> {}\n' +
       '@media \\3c style>;\n' +
       '/* \\3c /style>\\3c !--\\3c style> */\n' +
-      'a {\n' +
+      '\\3c /style>a {\n' +
       '    color: \\3c /style>' +
       '\\3c /style>}'
   )
@@ -340,19 +423,58 @@ test('always calls raw to retrieve raws', () => {
     customStringifier.stringify(node)
   }
   let result = root.toString(stringify)
-  is(result, [
-    '',
-    'RAW(rule, before, undefined)',
-    'a',
-    'RAW(rule, between, beforeOpen)',
-    '{',
-    'RAW(decl, before, undefined)',
-    'color',
-    'RAW(decl, between, colon)',
-    'black;',
-    'RAW(rule, after, undefined)',
-    '}'
-  ].join('\n'))
+  is(
+    result,
+    [
+      '',
+      'RAW(rule, before, undefined)',
+      'a',
+      'RAW(rule, between, beforeOpen)',
+      '{',
+      'RAW(decl, before, undefined)',
+      'color',
+      'RAW(decl, between, colon)',
+      'black;',
+      'RAW(rule, after, undefined)',
+      '}'
+    ].join('\n')
+  )
+})
+
+test('adds space before params set on an at-rule parsed without them', () => {
+  let root = parse('@layer{a{color:black}}')
+  root.first.params = 'utilities'
+  is(root.toString(), '@layer utilities{a{color:black}}')
+
+  let media = parse('@media;').first
+  media.params = 'print'
+  is(media.toString(), '@media print')
+})
+
+test('keeps params glued to at-rule name when CSS allows it', () => {
+  let root = parse('@media(min-width:0){}')
+  root.first.params = '(min-width:1px)'
+  is(root.toString(), '@media(min-width:1px){}')
+
+  let imported = parse('@import"a.css"').first
+  imported.params = '"b.css"'
+  is(imported.toString(), '@import"b.css"')
+})
+
+test('supports subclasses with overridden traversal methods', () => {
+  class CustomStringifier extends Stringifier {
+    rule(node) {
+      super.rule(node)
+    }
+  }
+
+  let css = 'a{color:black};@media screen{b{}}'
+  let result = ''
+  let custom = new CustomStringifier(i => {
+    result += i
+  })
+  custom.stringify(parse(css))
+  is(result, css)
 })
 
 test.run()
