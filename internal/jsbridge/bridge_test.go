@@ -554,6 +554,95 @@ func TestParseRPCOwnSemicolonSourceEnd(t *testing.T) {
 	}
 }
 
+func TestRuleSourceToBridgeDTOOwnSemicolonEdges(t *testing.T) {
+	css := "a{}\n;\n"
+	input, err := postcss.NewInput(css, sourcemap.Options{TrackSource: true})
+	if err != nil {
+		t.Fatalf("input: %v", err)
+	}
+	// End offset past the trailing newline; bridge should walk back to ";".
+	loc := &postcss.SourceLocation{
+		Start: input.FromOffset(0),
+		End:   input.FromOffset(len(css)),
+		Input: input,
+	}
+	dto := RuleSourceToBridgeDTO(loc, true, true)
+	if dto == nil || dto.End.Offset != 5 || dto.End.Line != 2 || dto.End.Column != 1 {
+		t.Fatalf("newline walk-back: got %#v, want offset=5 line=2 column=1", dto)
+	}
+
+	empty := &postcss.SourceLocation{
+		Start: postcss.Position{Line: 1, Column: 1, Offset: 0},
+		End:   postcss.Position{Line: 1, Column: 3, Offset: 2},
+		Input: &postcss.Input{CSS: ""},
+	}
+	fallback := RuleSourceToBridgeDTO(empty, true, false)
+	if fallback == nil || fallback.End.Column != 2 {
+		t.Fatalf("empty CSS fallback: got %#v", fallback)
+	}
+
+	if RuleSourceToBridgeDTO(nil, true, false) != nil {
+		t.Fatal("nil location should yield nil DTO")
+	}
+	plain := RuleSourceToBridgeDTO(loc, false, true)
+	if plain == nil || plain.End.Offset != len(css) {
+		t.Fatalf("without ownSemicolon should keep raw end, got %#v", plain)
+	}
+}
+
+func TestFromFlatDTOErrorAndSourceInputPaths(t *testing.T) {
+	if _, err := FromFlatDTO([]FlatNodeDTO{{Node: &NodeDTO{Type: "mystery"}}}); err == nil {
+		t.Fatal("expected unknown root type to fail")
+	}
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root"}, ChildCount: 1},
+		{Node: nil},
+	}); err == nil {
+		t.Fatal("expected nil child node to fail")
+	}
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root"}, ChildCount: 1},
+		{Node: &NodeDTO{Type: "rule", Selector: "a"}, ChildCount: -1},
+	}); err == nil {
+		t.Fatal("expected negative childCount to fail")
+	}
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root"}, ChildCount: 1},
+		{Node: &NodeDTO{Type: "mystery"}},
+	}); err == nil {
+		t.Fatal("expected unknown child type to fail")
+	}
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root"}, ChildCount: 1},
+		{Node: &NodeDTO{Type: "decl", Prop: "color", Value: "red"}, ChildCount: 1},
+	}); err == nil {
+		t.Fatal("expected non-container childCount to fail")
+	}
+
+	// Completing a nested frame should pop finished parents before appending
+	// the next sibling, and sourceInput should prefer a child's own input.
+	css := "a{color:red}b{}"
+	parseRes, err := ParseRPC(context.Background(), ParseParams{CSS: css, Options: RequestOpts{From: "flat.css"}})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := parseRes.Root
+	flat := []FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root", Source: root.Source, Raws: root.Raws}, ChildCount: 2},
+		{Node: root.Nodes[0], ChildCount: 1},
+		{Node: root.Nodes[0].Nodes[0]},
+		{Node: root.Nodes[1]},
+	}
+	node, err := FromFlatDTO(flat)
+	if err != nil {
+		t.Fatalf("valid nested flat AST: %v", err)
+	}
+	built, err := ToDTO(node)
+	if err != nil || len(built.Nodes) != 2 || built.Nodes[0].Source == nil || built.Nodes[0].Source.File == "" {
+		t.Fatalf("expected sourced round-trip, got %#v err=%v", built, err)
+	}
+}
+
 type unsupportedNode struct{}
 
 func (unsupportedNode) Type() ast.NodeType              { return "x" }
