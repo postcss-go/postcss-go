@@ -361,11 +361,9 @@ func (p *Parser) freeSemicolon(container ast.Container, tokens []tokenizer.Token
 			ast.SetRawString(node, "ownSemicolon", own)
 		}
 		if node.Source() != nil {
-			end := p.tok.Position()
-			if strings.HasPrefix(own, " ") {
-				end++
-			}
-			p.extendSourceTo(node, end)
+			// Match upstream PostCSS: ownSemicolon may include spaces before
+			// the semicolon, but source.end is exclusive after the semicolon.
+			p.extendSourceTo(node, p.tok.Position())
 		}
 	case *ast.Declaration:
 		ast.SetRawBool(container, "semicolon", true)

@@ -295,10 +295,9 @@ func toDTO(node ast.Node, includeInput bool) (*NodeDTO, error) {
 		if err != nil {
 			return nil, err
 		}
-		ruleSource := sourceToDTO(current.Source(), true, true, current.RawFormattingReadOnly()["ownSemicolon"] == ";", includeInput)
-		if current.RawFormattingReadOnly()["ownSemicolon"] == ";" && ruleSource != nil {
-			ruleSource.End.Column++
-		}
+		own, _ := current.RawFormattingReadOnly()["ownSemicolon"].(string)
+		ruleSource := sourceToDTO(current.Source(), true, true, false, includeInput)
+		fixOwnSemicolonEnd(ruleSource, current.Source(), own)
 		return &NodeDTO{
 			Type:     string(ast.NodeRule),
 			Selector: current.Selector,
@@ -464,6 +463,25 @@ func sourceToDTO(loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn,
 	}
 	sourceToDTOInto(&dto, loc, nodeEnd, block, preserveEndColumn, includeInput)
 	return &dto
+}
+
+// FixOwnSemicolonEnd aligns rule source.end with upstream PostCSS: exclusive
+// offset after the semicolon, column on the semicolon itself. ownSemicolon may
+// also contain spaces before the semicolon.
+func FixOwnSemicolonEnd(dto *SourceLocationDTO, loc *postcss.SourceLocation, ownSemicolon string) {
+	fixOwnSemicolonEnd(dto, loc, ownSemicolon)
+}
+
+func fixOwnSemicolonEnd(dto *SourceLocationDTO, loc *postcss.SourceLocation, ownSemicolon string) {
+	if ownSemicolon == "" || dto == nil || loc == nil || loc.Input == nil {
+		return
+	}
+	if dto.End.Offset <= dto.Start.Offset {
+		return
+	}
+	pos := loc.Input.FromOffset(dto.End.Offset - 1)
+	dto.End.Line = pos.Line
+	dto.End.Column = pos.Column
 }
 
 func sourceToDTOInto(dto *SourceLocationDTO, loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool) {

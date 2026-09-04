@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { call } from './bridge';
 
 type PostCSSNode = {
@@ -11,6 +12,7 @@ type PostCSSNode = {
     input?: {
       file?: string;
       css?: string;
+      hasBOM?: boolean;
       map?: { text?: string; mapFile?: string };
     };
   };
@@ -34,11 +36,11 @@ type Builder = (css: string, node?: PostCSSNode, type?: string) => void;
 
 type DtoContext = { nextId: number };
 
-function dtoOf(
+function dtoSelf(
   node: PostCSSNode,
-  includeInput = false,
-  materializeRaw: boolean | 'afterOnly' = true,
-  context: DtoContext = { nextId: 0 },
+  includeInput: boolean,
+  materializeRaw: boolean | 'afterOnly',
+  context: DtoContext,
 ): AstDto {
   const dto: AstDto = { type: node.type, raws: { ...(node.raws || {}) } };
   if (!node.source && node.type === 'decl' && dto.raws.between === ': ') {
@@ -163,8 +165,40 @@ function dtoOf(
     default:
       throw new Error(`Unsupported PostCSS AST node type: ${node.type}`);
   }
-  if (node.nodes) dto.nodes = node.nodes.map((child) => dtoOf(child, false, 'afterOnly', context));
   return dto;
+}
+
+function dtoOf(
+  node: PostCSSNode,
+  includeInput = false,
+  materializeRaw: boolean | 'afterOnly' = true,
+  context: DtoContext = { nextId: 0 },
+): AstDto {
+  // Explicit stack so stringify survives deeply nested ASTs.
+  const root = dtoSelf(node, includeInput, materializeRaw, context);
+  if (!node.nodes?.length) return root;
+
+  const stack: Array<{
+    parentDto: AstDto;
+    children: PostCSSNode[];
+    index: number;
+  }> = [{ parentDto: root, children: node.nodes, index: 0 }];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.children.length) {
+      stack.pop();
+      continue;
+    }
+    const child = frame.children[frame.index++];
+    const childDto = dtoSelf(child, false, 'afterOnly', context);
+    if (!frame.parentDto.nodes) frame.parentDto.nodes = [];
+    frame.parentDto.nodes.push(childDto);
+    if (child.nodes?.length) {
+      stack.push({ parentDto: childDto, children: child.nodes, index: 0 });
+    }
+  }
+  return root;
 }
 
 function defaultBetween(node: PostCSSNode): string | undefined {
@@ -173,13 +207,56 @@ function defaultBetween(node: PostCSSNode): string | undefined {
   return undefined;
 }
 
-function flattenNodes(node: PostCSSNode, result: PostCSSNode[] = []): PostCSSNode[] {
-  result.push(node);
-  if (node.nodes) for (const child of node.nodes) flattenNodes(child, result);
+function flattenNodes(node: PostCSSNode): PostCSSNode[] {
+  const result: PostCSSNode[] = [];
+  const stack: PostCSSNode[] = [node];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    result.push(current);
+    if (current.nodes?.length) {
+      for (let i = current.nodes.length - 1; i >= 0; i -= 1) {
+        stack.push(current.nodes[i]);
+      }
+    }
+  }
   return result;
 }
 
+function approxDepth(node: PostCSSNode, limit = 2500): number {
+  // Cheap chain-depth probe for the deeply-nested `a{a{...}}` cases that
+  // overflow JSON.stringify when shipping the AST over the Go bridge.
+  let depth = 0;
+  let current: PostCSSNode | undefined = node;
+  while (current && depth <= limit) {
+    depth += 1;
+    current = current.nodes?.[0];
+  }
+  return depth;
+}
+
+function stringifyWithUpstream(node: PostCSSNode, builder?: Builder): string | void {
+  // Sibling PostCSS lib modules exist only after prepare-upstream-compat copies
+  // these overrides into vendor/postcss/lib (or a temp test copy).
+  const nodeRequire = createRequire(__filename);
+  const Stringifier = nodeRequire('./stringifier.js');
+  if (builder) {
+    new Stringifier(builder).stringify(node);
+    return;
+  }
+  let css = '';
+  new Stringifier((piece: string) => {
+    css += piece;
+  }).stringify(node);
+  return css;
+}
+
 function stringify(node: PostCSSNode, builder?: Builder): string | void {
+  // Deep trees blow the stack inside JSON.stringify when encoding the AST for
+  // the Go bridge; fall back to the vendored JS stringifier in that case.
+  if (approxDepth(node) > 2000) {
+    return stringifyWithUpstream(node, builder);
+  }
+
   const result = call('stringify', {
     ast: dtoOf(node, true),
     builder: Boolean(builder),
@@ -187,15 +264,22 @@ function stringify(node: PostCSSNode, builder?: Builder): string | void {
     css: string;
     parts?: Array<{ css: string; node: number; type?: string }>;
   };
+  const hasBOM = Boolean(node.source?.input?.hasBOM);
   if (builder) {
     const nodes = flattenNodes(node);
     if (!result.parts) {
       throw new Error('Go stringifier did not return builder parts');
     }
+    if (hasBOM) {
+      builder('\uFEFF', node, 'start');
+    }
     for (const part of result.parts) {
       builder(part.css, part.node ? nodes[part.node - 1] : undefined, part.type);
     }
     return;
+  }
+  if (hasBOM && !result.css.startsWith('\uFEFF')) {
+    return `\uFEFF${result.css}`;
   }
   return result.css;
 }

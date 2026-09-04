@@ -65,7 +65,7 @@ function sourceOf(dto: SourceDto | undefined, input: unknown) {
   };
 }
 
-function nodeOf(dto: NodeDto, input: unknown): any {
+function createNode(dto: NodeDto, input: unknown): any {
   const defaults: Record<string, unknown> = { raws: dto.raws || {} };
   if (dto.source) {
     defaults.source = sourceOf(dto.source, input);
@@ -74,44 +74,57 @@ function nodeOf(dto: NodeDto, input: unknown): any {
     }
   }
 
-  let node: any;
   switch (dto.type) {
     case 'root':
-      node = new Root(defaults);
-      break;
+      return new Root(defaults);
     case 'document':
-      node = new Document(defaults);
-      break;
+      return new Document(defaults);
     case 'rule':
-      node = new Rule({ ...defaults, selector: dto.selector || '' });
-      break;
+      return new Rule({ ...defaults, selector: dto.selector || '' });
     case 'atrule':
-      node = new AtRule({
+      return new AtRule({
         ...defaults,
         name: dto.name,
         params: dto.params || '',
         ...(dto.block ? { nodes: [] } : {}),
       });
-      break;
     case 'decl':
-      node = new Declaration({
+      return new Declaration({
         ...defaults,
         prop: dto.prop,
         value: dto.value,
         important: dto.important,
       });
-      break;
     case 'comment':
-      node = new Comment({ ...defaults, text: dto.text });
-      break;
+      return new Comment({ ...defaults, text: dto.text });
     default:
       throw new Error(`Unsupported Go AST node type: ${dto.type}`);
   }
+}
 
-  if (dto.nodes && dto.nodes.length) {
-    node.append(dto.nodes.map((child) => nodeOf(child, input)));
+function nodeOf(dto: NodeDto, input: unknown): any {
+  // Explicit stack instead of recursive hydration so deeply nested ASTs
+  // (thousands of levels) do not overflow the JS call stack.
+  const root = createNode(dto, input);
+  if (!dto.nodes?.length) return root;
+
+  const stack: Array<{ parent: any; children: NodeDto[]; index: number }> = [
+    { parent: root, children: dto.nodes, index: 0 },
+  ];
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.children.length) {
+      stack.pop();
+      continue;
+    }
+    const childDto = frame.children[frame.index++];
+    const child = createNode(childDto, input);
+    frame.parent.append(child);
+    if (childDto.nodes?.length) {
+      stack.push({ parent: child, children: childDto.nodes, index: 0 });
+    }
   }
-  return node;
+  return root;
 }
 
 const trailingSourceMapAnnotation = /(?:\r?\n|\s)*\/\*#\s*sourceMappingURL=[\s\S]*?\*\/\s*$/;
@@ -137,9 +150,12 @@ function syntaxErrorFromBridge(error: unknown) {
   if (!bridgeError || bridgeError.name !== 'CssSyntaxError') return error;
 
   const line = bridgeError.line;
+  // Upstream PostCSS maps source-map columns to 1-based positions. When the
+  // bridge omits column 0 via JSON omitempty, treat a present previous map as
+  // column 1 rather than the historical column 0 quirk.
   const column =
     bridgeError.column === undefined && bridgeError.input?.sourceMapPresent
-      ? 0
+      ? 1
       : bridgeError.column;
   let reason = bridgeError.reason || bridgeError.message;
   if (reason === 'Unclosed block: missing closing brace') {

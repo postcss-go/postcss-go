@@ -62,7 +62,7 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeASTSource(dst, current.Source(), false, false, false, includeInput)
+		dst = encodeASTSource(dst, current.Source(), false, false, false, includeInput, "")
 		return encodeASTChildren(dst, current.Children())
 	case *ast.Root:
 		dst = append(dst, tagRoot)
@@ -70,7 +70,7 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeASTSource(dst, current.Source(), false, false, false, includeInput)
+		dst = encodeASTSource(dst, current.Source(), false, false, false, includeInput, "")
 		return encodeASTChildren(dst, current.Children())
 	case *ast.Rule:
 		dst = append(dst, tagRule)
@@ -79,8 +79,7 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		ownSemicolon := lookupRawString(current, "ownSemicolon") == ";"
-		dst = encodeASTSource(dst, current.Source(), true, true, ownSemicolon, includeInput)
+		dst = encodeASTSource(dst, current.Source(), true, true, false, includeInput, lookupRawString(current, "ownSemicolon"))
 		return encodeASTChildren(dst, current.Children())
 	case *ast.AtRule:
 		dst = append(dst, tagAtRule)
@@ -95,7 +94,7 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeASTSource(dst, current.Source(), true, current.Block, false, includeInput)
+		dst = encodeASTSource(dst, current.Source(), true, current.Block, false, includeInput, "")
 		return encodeASTChildren(dst, current.Children())
 	case *ast.Declaration:
 		dst = append(dst, tagDecl)
@@ -110,7 +109,7 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		dst = encodeASTSource(dst, current.Source(), true, false, false, includeInput)
+		dst = encodeASTSource(dst, current.Source(), true, false, false, includeInput, "")
 		return dst, nil
 	case *ast.Comment:
 		dst = append(dst, tagComment)
@@ -120,7 +119,7 @@ func encodeASTNode(dst []byte, node ast.Node, includeInput bool) ([]byte, error)
 			return nil, err
 		}
 		preserveEndColumn := current.Source() != nil && current.Source().Input != nil && current.Source().Input.HasSourceMap()
-		dst = encodeASTSource(dst, current.Source(), true, false, preserveEndColumn, includeInput)
+		dst = encodeASTSource(dst, current.Source(), true, false, preserveEndColumn, includeInput, "")
 		return dst, nil
 	default:
 		return nil, fmt.Errorf("codec: unsupported node type %T", node)
@@ -196,16 +195,12 @@ func encodeDTONode(dst []byte, node *jsbridge.NodeDTO) ([]byte, error) {
 	return dst, nil
 }
 
-func encodeASTSource(dst []byte, loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool) []byte {
+func encodeASTSource(dst []byte, loc *postcss.SourceLocation, nodeEnd, block, preserveEndColumn, includeInput bool, ownSemicolon string) []byte {
 	var source jsbridge.SourceLocationDTO
 	if !jsbridge.FillSourceDTO(&source, loc, nodeEnd, block, preserveEndColumn, includeInput) {
 		return append(dst, 0)
 	}
-	// Rules with raws.ownSemicolon == ";" bump the end column after the shared
-	// sourceToDTO adjustments, matching ToDTO.
-	if preserveEndColumn && nodeEnd && block {
-		source.End.Column++
-	}
+	jsbridge.FixOwnSemicolonEnd(&source, loc, ownSemicolon)
 	return encodeSource(dst, &source)
 }
 
