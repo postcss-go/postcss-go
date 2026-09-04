@@ -59,7 +59,7 @@ jobs:
         run: node ./scripts/install-native-artifacts.mjs
 
       - name: Typecheck packages
-        run: pnpm check
+        run: pnpm --filter @postcss-go/shared build && pnpm check
 
       - name: Snapshot validated native addons
         run: node ./scripts/check-native-artifacts.mjs snapshot "$RUNNER_TEMP/native-artifacts.json"

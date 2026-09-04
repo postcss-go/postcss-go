@@ -20,6 +20,7 @@ function withBridgeClient(options, run) {
     readErrorOnce,
     writeError,
     writeErrorOnce,
+    writeZeroOnce,
     maxWrite,
     maxRead,
     envBinary,
@@ -43,6 +44,7 @@ function withBridgeClient(options, run) {
   let outputOffset = 0;
   let threwReadError = false;
   let threwWriteError = false;
+  let returnedZeroWrite = false;
   let killed = false;
 
   if (envBinary) {
@@ -87,9 +89,15 @@ function withBridgeClient(options, run) {
       error.code = writeErrorOnce;
       throw error;
     }
+    if (writeZeroOnce && !returnedZeroWrite) {
+      returnedZeroWrite = true;
+      calls.writes += 1;
+      return 0;
+    }
+    const written = Math.min(length, maxWrite ?? length);
     calls.writes += 1;
-    calls.requests.push(Buffer.from(buffer, offset, length).toString('utf8'));
-    return Math.min(length, maxWrite ?? length);
+    calls.requests.push(buffer.subarray(offset, offset + written).toString('utf8'));
+    return written;
   };
   fs.readSync = (fd, buffer, offset, length) => {
     if (fd !== 42) return originalReadSync(fd, buffer, offset, length, null);
@@ -184,6 +192,24 @@ test('bridge-client.cjs completes partial writes', () => {
     ({ bridge, calls }) => {
       expect(bridge.callSync('parse', { css: 'a{}'.repeat(20) })).toEqual({ ok: true });
       expect(calls.writes).toBeGreaterThan(1);
+      expect(JSON.parse(calls.requests.join('').trim())).toMatchObject({
+        jsonrpc: '2.0',
+        method: 'parse',
+        params: { css: 'a{}'.repeat(20) },
+      });
+    },
+  );
+});
+
+test('bridge-client.cjs retries a zero-byte stdin write', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+      writeZeroOnce: true,
+    },
+    ({ bridge, calls }) => {
+      expect(bridge.callSync('parse', { css: 'a{}' })).toEqual({ ok: true });
+      expect(calls.writes).toBe(2);
     },
   );
 });
@@ -431,19 +457,37 @@ test('bridge-client.cjs stringifyDeep serializes arrays and skips non-JSON value
       response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
     },
     ({ bridge, calls }) => {
+      const sharedNode = { type: 'rule' };
       expect(
         bridge.callSync('stringify', {
-          nodes: [{ type: 'rule' }, undefined],
+          nodes: [sharedNode, sharedNode, undefined],
           skip: () => 'fn',
           marker: Symbol('x'),
           empty: undefined,
         }),
       ).toEqual({ ok: true });
       const request = calls.requests.join('');
-      expect(request).toContain('"nodes":[{"type":"rule"},null]');
+      expect(JSON.parse(request).params.nodes).toEqual([{ type: 'rule' }, { type: 'rule' }, null]);
       expect(request).not.toContain('skip');
       expect(request).not.toContain('marker');
       expect(request).not.toContain('"empty"');
+    },
+  );
+});
+
+test('bridge-client.cjs stringifyDeep rejects circular values', () => {
+  withBridgeClient(
+    {
+      response: { jsonrpc: '2.0', id: 1, result: { ok: true } },
+    },
+    ({ bridge, calls }) => {
+      const params = { css: 'a{}' };
+      params.circular = params;
+      expect(() => bridge.callSync('parse', params)).toThrowError(
+        /Converting circular structure to JSON/,
+      );
+      expect(calls.spawn).toHaveLength(0);
+      expect(calls.writes).toBe(0);
     },
   );
 });

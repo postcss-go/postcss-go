@@ -111,7 +111,12 @@ function writeAllSync(fd, text) {
   let offset = 0;
   while (offset < data.length) {
     try {
-      offset += fs.writeSync(fd, data, offset, data.length - offset, null);
+      const written = fs.writeSync(fd, data, offset, data.length - offset, null);
+      if (written === 0) {
+        Atomics.wait(pause, 0, 0, 1);
+        continue;
+      }
+      offset += written;
     } catch (error) {
       if (error.code !== 'EAGAIN' && error.code !== 'EWOULDBLOCK') throw error;
       Atomics.wait(pause, 0, 0, 1);
@@ -166,11 +171,16 @@ function callSyncSpawn(request) {
 function stringifyDeep(value) {
   let output = '';
   const stack = [{ kind: 'value', value, inArray: false }];
+  const ancestors = new WeakSet();
 
   while (stack.length > 0) {
     const entry = stack.pop();
     if (entry.kind === 'text') {
       output += entry.value;
+      continue;
+    }
+    if (entry.kind === 'leave') {
+      ancestors.delete(entry.value);
       continue;
     }
 
@@ -181,8 +191,14 @@ function stringifyDeep(value) {
       continue;
     }
 
+    if (ancestors.has(current)) {
+      throw new TypeError('Converting circular structure to JSON');
+    }
+    ancestors.add(current);
+
     if (Array.isArray(current)) {
       output += '[';
+      stack.push({ kind: 'leave', value: current });
       stack.push({ kind: 'text', value: ']' });
       for (let index = current.length - 1; index >= 0; index -= 1) {
         stack.push({ kind: 'value', value: current[index], inArray: true });
@@ -196,6 +212,7 @@ function stringifyDeep(value) {
       return type !== 'undefined' && type !== 'function' && type !== 'symbol';
     });
     output += '{';
+    stack.push({ kind: 'leave', value: current });
     stack.push({ kind: 'text', value: '}' });
     for (let index = keys.length - 1; index >= 0; index -= 1) {
       const key = keys[index];

@@ -591,6 +591,16 @@ func TestRuleSourceToBridgeDTOOwnSemicolonEdges(t *testing.T) {
 }
 
 func TestFromFlatDTOErrorAndSourceInputPaths(t *testing.T) {
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root"}, ChildCount: -1},
+	}); err == nil {
+		t.Fatal("expected negative root childCount to fail")
+	}
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root", Nodes: []*NodeDTO{{Type: "rule", Selector: "a"}}}},
+	}); err == nil {
+		t.Fatal("expected nested children in a flat root node to fail")
+	}
 	if _, err := FromFlatDTO([]FlatNodeDTO{{Node: &NodeDTO{Type: "mystery"}}}); err == nil {
 		t.Fatal("expected unknown root type to fail")
 	}
@@ -605,6 +615,12 @@ func TestFromFlatDTOErrorAndSourceInputPaths(t *testing.T) {
 		{Node: &NodeDTO{Type: "rule", Selector: "a"}, ChildCount: -1},
 	}); err == nil {
 		t.Fatal("expected negative childCount to fail")
+	}
+	if _, err := FromFlatDTO([]FlatNodeDTO{
+		{Node: &NodeDTO{Type: "root"}, ChildCount: 1},
+		{Node: &NodeDTO{Type: "rule", Selector: "a", Nodes: []*NodeDTO{{Type: "decl"}}}},
+	}); err == nil {
+		t.Fatal("expected nested children in a flat child node to fail")
 	}
 	if _, err := FromFlatDTO([]FlatNodeDTO{
 		{Node: &NodeDTO{Type: "root"}, ChildCount: 1},
@@ -627,9 +643,11 @@ func TestFromFlatDTOErrorAndSourceInputPaths(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	root := parseRes.Root
+	firstRule := *root.Nodes[0]
+	firstRule.Nodes = nil
 	flat := []FlatNodeDTO{
 		{Node: &NodeDTO{Type: "root", Source: root.Source, Raws: root.Raws}, ChildCount: 2},
-		{Node: root.Nodes[0], ChildCount: 1},
+		{Node: &firstRule, ChildCount: 1},
 		{Node: root.Nodes[0].Nodes[0]},
 		{Node: root.Nodes[1]},
 	}

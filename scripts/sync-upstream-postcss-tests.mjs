@@ -12,6 +12,7 @@ const upstreamRef = process.argv[2] ?? process.env.UPSTREAM_REF ?? 'main';
 const defaultTargetDir = path.join(repoRoot, 'vendor', 'postcss');
 const targetDir = process.env.TARGET_DIR ?? defaultTargetDir;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'postcss-go-sync-'));
+const fetchTimeoutMs = 30_000;
 
 const harnessDependencies = [
   'nanoid',
@@ -46,7 +47,7 @@ async function fetchWithRetry(url, attempts = 3) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(fetchTimeoutMs) });
       if (
         response.ok ||
         (response.status < 500 && response.status !== 408 && response.status !== 429)

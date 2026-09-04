@@ -36,7 +36,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck packages
-        run: pnpm check
+        run: pnpm --filter @postcss-go/shared build && pnpm check
 
       - name: Test synchronized upstream baseline
         run: pnpm test:upstream

@@ -395,6 +395,9 @@ func FromFlatDTO(nodes []FlatNodeDTO) (ast.Node, error) {
 	if len(nodes) == 0 || nodes[0].Node == nil {
 		return nil, fmt.Errorf("empty flat ast")
 	}
+	if nodes[0].ChildCount < 0 || len(nodes[0].Node.Nodes) > 0 {
+		return nil, fmt.Errorf("invalid flat ast node at index 0")
+	}
 	root, err := fromDTO(nodes[0].Node, nil)
 	if err != nil {
 		return nil, err
@@ -421,7 +424,7 @@ func FromFlatDTO(nodes []FlatNodeDTO) (ast.Node, error) {
 			return nil, fmt.Errorf("flat ast has an unexpected node at index %d", index)
 		}
 		entry := nodes[index]
-		if entry.Node == nil || entry.ChildCount < 0 {
+		if entry.Node == nil || entry.ChildCount < 0 || len(entry.Node.Nodes) > 0 {
 			return nil, fmt.Errorf("invalid flat ast node at index %d", index)
 		}
 		parent := &stack[len(stack)-1]
