@@ -970,6 +970,14 @@ func TestPatchCoverageHelpers(t *testing.T) {
 	if got := atRuleAfterName(parenParams, "(display:grid)"); got != "" {
 		t.Fatalf("empty afterName before delimiter must stay empty, got %q", got)
 	}
+	colonParams := ast.NewAtRule("namespace", ":root")
+	colonParams.RawFormatting()["afterName"] = ""
+	if got := atRuleAfterName(colonParams, ":root"); got != "" {
+		t.Fatalf("empty afterName before ':' must stay empty, got %q", got)
+	}
+	if !atRuleNameEnd(':') {
+		t.Fatal("':' must end an at-rule name for afterName spacing")
+	}
 
 	if got := whitespaceOnly(" \tkeep\n"); got != " \t\n" {
 		t.Fatalf("whitespaceOnly: %q", got)
@@ -984,6 +992,28 @@ func TestPatchCoverageHelpers(t *testing.T) {
 	root.Append(rule)
 	if !needsSemicolon(rule, first) {
 		t.Fatal("custom property before final decl needs semicolon")
+	}
+	orphan := ast.NewDeclaration("color", "blue")
+	if needsSemicolon(rule, orphan) {
+		t.Fatal("node outside parent must not need semicolon")
+	}
+
+	importAt := ast.NewAtRule("import", `"x.css"`)
+	trailing := ast.NewComment("keep")
+	root.Append(importAt, trailing)
+	if !needsSemicolon(root, importAt) {
+		t.Fatal("childless at-rule before trailing comment needs semicolon")
+	}
+	blockAt := ast.NewAtRule("media", "all")
+	blockAt.Block = true
+	root.Append(blockAt, ast.NewComment("after-block"))
+	if needsSemicolon(root, blockAt) {
+		t.Fatal("block at-rule must not emit a trailing semicolon")
+	}
+	styled := ast.NewRule("div")
+	root.Append(styled, ast.NewComment("after-rule"))
+	if needsSemicolon(root, styled) {
+		t.Fatal("rule before trailing comment must not force semicolon")
 	}
 	nonCustom := ast.NewDeclaration("width", "1px")
 	nonCustom.RawFormatting()["before"] = "/*x*/"

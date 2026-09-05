@@ -261,22 +261,17 @@ function stringify(node: PostCSSNode, builder?: Builder): string | void {
     css: string;
     parts?: Array<{ css: string; node: number; type?: string }>;
   };
-  const hasBOM = Boolean(node.source?.input?.hasBOM);
+  // BOM is emitted by the Go stringifier via raws.bom / Input.HasBOM; do not
+  // prepend another copy here or builder-mode cases like bom.css double it.
   if (builder) {
     const nodes = flattenNodes(node);
     if (!result.parts) {
       throw new Error('Go stringifier did not return builder parts');
     }
-    if (hasBOM) {
-      builder('\uFEFF', node, 'start');
-    }
     for (const part of result.parts) {
       builder(part.css, part.node ? nodes[part.node - 1] : undefined, part.type);
     }
     return;
-  }
-  if (hasBOM && !result.css.startsWith('\uFEFF')) {
-    return `\uFEFF${result.css}`;
   }
   return result.css;
 }
