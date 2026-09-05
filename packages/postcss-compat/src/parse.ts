@@ -74,44 +74,37 @@ function createNode(dto: NodeDto, input: unknown): any {
     }
   }
 
-  let node: any;
   switch (dto.type) {
     case 'root':
-      node = new Root(defaults);
-      break;
+      return new Root(defaults);
     case 'document':
-      node = new Document(defaults);
-      break;
+      return new Document(defaults);
     case 'rule':
-      node = new Rule({ ...defaults, selector: dto.selector || '' });
-      break;
+      return new Rule({ ...defaults, selector: dto.selector || '' });
     case 'atrule':
-      node = new AtRule({
+      return new AtRule({
         ...defaults,
         name: dto.name,
         params: dto.params || '',
         ...(dto.block ? { nodes: [] } : {}),
       });
-      break;
     case 'decl':
-      node = new Declaration({
+      return new Declaration({
         ...defaults,
         prop: dto.prop,
         value: dto.value,
         important: dto.important,
       });
-      break;
     case 'comment':
-      node = new Comment({ ...defaults, text: dto.text });
-      break;
+      return new Comment({ ...defaults, text: dto.text });
     default:
       throw new Error(`Unsupported Go AST node type: ${dto.type}`);
   }
-
-  return node;
 }
 
 function nodeOf(dto: NodeDto, input: unknown): any {
+  // Explicit stack instead of recursive hydration so deeply nested ASTs
+  // (thousands of levels) do not overflow the JS call stack.
   const root = createNode(dto, input);
   const stack: Array<{ dto: NodeDto; node: any }> = [{ dto, node: root }];
 
@@ -152,6 +145,9 @@ function syntaxErrorFromBridge(error: unknown) {
   if (!bridgeError || bridgeError.name !== 'CssSyntaxError') return error;
 
   const line = bridgeError.line;
+  // Upstream PostCSS maps source-map columns to 1-based positions. When the
+  // bridge omits column 0 via JSON omitempty, treat a present previous map as
+  // column 1 rather than the historical column 0 quirk.
   const column =
     bridgeError.column === undefined && bridgeError.input?.sourceMapPresent
       ? 1

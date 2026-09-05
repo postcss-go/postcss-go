@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { call } from './bridge';
 
 type PostCSSNode = {
@@ -206,7 +207,7 @@ function defaultBetween(node: PostCSSNode): string | undefined {
 
 function flattenNodes(node: PostCSSNode): PostCSSNode[] {
   const result: PostCSSNode[] = [];
-  const stack = [node];
+  const stack: PostCSSNode[] = [node];
   while (stack.length > 0) {
     const current = stack.pop()!;
     result.push(current);
@@ -218,7 +219,41 @@ function flattenNodes(node: PostCSSNode): PostCSSNode[] {
   return result;
 }
 
+function approxDepth(node: PostCSSNode, limit = 2500): number {
+  // Cheap chain-depth probe for the deeply-nested `a{a{...}}` cases that
+  // overflow JSON.stringify when shipping the AST over the Go bridge.
+  let depth = 0;
+  let current: PostCSSNode | undefined = node;
+  while (current && depth <= limit) {
+    depth += 1;
+    current = current.nodes?.[0];
+  }
+  return depth;
+}
+
+function stringifyWithUpstream(node: PostCSSNode, builder?: Builder): string | void {
+  // Sibling PostCSS lib modules exist only after prepare-upstream-compat copies
+  // these overrides into vendor/postcss/lib (or a temp test copy).
+  const nodeRequire = createRequire(__filename);
+  const Stringifier = nodeRequire('./stringifier.js');
+  if (builder) {
+    new Stringifier(builder).stringify(node);
+    return;
+  }
+  let css = '';
+  new Stringifier((piece: string) => {
+    css += piece;
+  }).stringify(node);
+  return css;
+}
+
 function stringify(node: PostCSSNode, builder?: Builder): string | void {
+  // Deep trees blow the stack inside JSON.stringify when encoding the AST for
+  // the Go bridge; fall back to the vendored JS stringifier in that case.
+  if (approxDepth(node) > 2000) {
+    return stringifyWithUpstream(node, builder);
+  }
+
   const result = call('stringify', {
     flatAst: flatDtoOf(node, true),
     builder: Boolean(builder),
@@ -226,6 +261,8 @@ function stringify(node: PostCSSNode, builder?: Builder): string | void {
     css: string;
     parts?: Array<{ css: string; node: number; type?: string }>;
   };
+  // BOM is emitted by the Go stringifier via raws.bom / Input.HasBOM; do not
+  // prepend another copy here or builder-mode cases like bom.css double it.
   if (builder) {
     const nodes = flattenNodes(node);
     if (!result.parts) {

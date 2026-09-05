@@ -1,6 +1,7 @@
 package stringifier
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -633,6 +634,8 @@ func atRuleHeader(node *ast.AtRule) string {
 
 func atRuleAfterName(node *ast.AtRule, params string) string {
 	if text, ok := ast.LookupRawString(node, "afterName"); ok {
+		// Match upstream: an explicit empty afterName still needs a space when
+		// params were assigned later and would otherwise glue to the name.
 		if text == "" && params != "" && !atRuleNameEnd(params[0]) {
 			return " "
 		}
@@ -657,7 +660,7 @@ func atRuleAfterName(node *ast.AtRule, params string) string {
 
 func atRuleNameEnd(ch byte) bool {
 	switch ch {
-	case '\t', '\n', '\f', '\r', ' ', '"', '#', '\'', '(', ')', '/', ';', '[', '\\', ']', '{', '}':
+	case '\t', '\n', '\f', '\r', ' ', '"', '#', '\'', '(', ')', '/', ':', ';', '[', '\\', ']', '{', '}':
 		return true
 	default:
 		return false
@@ -743,13 +746,17 @@ func nodeBeforeDocument(node ast.Node, depth, index int) string {
 
 // escapeHTMLInCSS protects CSS embedded in an HTML style context, matching
 // PostCSS's default stringifier behavior.
+var (
+	styleTagEscape    = regexp.MustCompile(`(?i)<(/?style\b)`)
+	commentOpenEscape = regexp.MustCompile(`<(!--)`)
+)
+
 func escapeHTMLInCSS(value string) string {
 	if !strings.Contains(value, "<") {
 		return value
 	}
-	value = strings.ReplaceAll(value, "</style", `\3c /style`)
-	value = strings.ReplaceAll(value, "<style", `\3c style`)
-	value = strings.ReplaceAll(value, "<!--", `\3c !--`)
+	value = styleTagEscape.ReplaceAllString(value, `\3c $1`)
+	value = commentOpenEscape.ReplaceAllString(value, `\3c $1`)
 	return value
 }
 
@@ -840,6 +847,8 @@ func rawBeforeDetected(cache *renderCache, parent ast.Container, node ast.Node) 
 	return "", false
 }
 
+// whitespaceOnly mirrors PostCSS before-sample cleanup: keep only
+// whitespace from a sibling `before` so content like `</style>` is not copied.
 func whitespaceOnly(text string) string {
 	return strings.Map(func(char rune) rune {
 		if unicode.IsSpace(char) {
@@ -944,14 +953,28 @@ func needsSemicolon(parent ast.Container, node ast.Node) bool {
 			lastSignificant = index
 		}
 	}
+	if nodeIndex < 0 {
+		return false
+	}
 	// Parsed containers record their semicolon style explicitly. For manually
 	// constructed containers, match PostCSS's default and omit the final one.
-	if nodeIndex >= 0 && nodeIndex < len(children)-1 {
-		if declaration, ok := node.(*ast.Declaration); ok && isCustomProperty(declaration) {
-			return true
-		}
+	if nodeIndex < lastSignificant || rawBool(parent, "semicolon", false) {
+		return true
 	}
-	return nodeIndex < lastSignificant || rawBool(parent, "semicolon", false)
+	// Custom properties and childless at-rules must still terminate when more
+	// siblings follow (typically comments); otherwise re-parsing folds those
+	// siblings into the value/prelude.
+	if nodeIndex >= len(children)-1 {
+		return false
+	}
+	switch current := node.(type) {
+	case *ast.AtRule:
+		return !current.Block
+	case *ast.Declaration:
+		return isCustomProperty(current)
+	default:
+		return false
+	}
 }
 
 func isCustomProperty(node *ast.Declaration) bool {

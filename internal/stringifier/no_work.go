@@ -17,9 +17,10 @@ type noWorkMapPayload struct {
 }
 
 // ClearSourceMapAnnotations mirrors the raw-CSS annotation cleanup used by
-// PostCSS's no-work map generator (`/*#` comments). Leading newlines and
-// horizontal whitespace before each annotation are removed; trailing
-// whitespace-only suffixes are dropped.
+// PostCSS's no-work map generator. Only `sourceMappingURL` comments are
+// removed; other `/*#...*/` comments (for example `#region`) are kept.
+// Leading newlines and horizontal whitespace before each annotation are
+// removed; trailing whitespace-only suffixes are dropped.
 func ClearSourceMapAnnotations(css string) string {
 	searchEnd := len(css)
 	for {
