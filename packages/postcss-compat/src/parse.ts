@@ -106,24 +106,19 @@ function nodeOf(dto: NodeDto, input: unknown): any {
   // Explicit stack instead of recursive hydration so deeply nested ASTs
   // (thousands of levels) do not overflow the JS call stack.
   const root = createNode(dto, input);
-  if (!dto.nodes?.length) return root;
+  const stack: Array<{ dto: NodeDto; node: any }> = [{ dto, node: root }];
 
-  const stack: Array<{ parent: any; children: NodeDto[]; index: number }> = [
-    { parent: root, children: dto.nodes, index: 0 },
-  ];
   while (stack.length > 0) {
-    const frame = stack[stack.length - 1];
-    if (frame.index >= frame.children.length) {
-      stack.pop();
-      continue;
-    }
-    const childDto = frame.children[frame.index++];
-    const child = createNode(childDto, input);
-    frame.parent.append(child);
-    if (childDto.nodes?.length) {
-      stack.push({ parent: child, children: childDto.nodes, index: 0 });
+    const current = stack.pop()!;
+    if (!current.dto.nodes?.length) continue;
+
+    const children = current.dto.nodes.map((child) => createNode(child, input));
+    current.node.append(children);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ dto: current.dto.nodes[index], node: children[index] });
     }
   }
+
   return root;
 }
 

@@ -88,6 +88,15 @@ let wasmSyncCssHelpersBlocked = 0;
 /** PostCSS stores the clean flag on a symbol so Object.keys skips it. */
 const isClean = Symbol('isClean');
 
+type NodeRuntimeState<T extends Node> = {
+  [isClean]?: boolean;
+  proxyCache?: T;
+};
+
+function nodeRuntimeState<T extends Node>(node: T): NodeRuntimeState<T> {
+  return node as unknown as NodeRuntimeState<T>;
+}
+
 const syncCssUnavailable =
   'helpers.postcss.parse, AST string insertion, Node#toString(), and helpers.postcss.stringify require the Node N-API backend; the browser WASM Worker backend is asynchronous only';
 
@@ -361,17 +370,17 @@ export class Node {
   }
 
   get isClean(): boolean {
-    return (this as Node & { [isClean]?: boolean })[isClean] === true;
+    return nodeRuntimeState(this)[isClean] === true;
   }
 
   markClean(): this {
-    (this as Node & { [isClean]: boolean })[isClean] = true;
+    nodeRuntimeState(this)[isClean] = true;
     return this;
   }
 
   markDirty(): this {
     if (!this.isClean) return this;
-    (this as Node & { [isClean]: boolean })[isClean] = false;
+    nodeRuntimeState(this)[isClean] = false;
     if (this.parent) this.parent.markDirty();
     return this;
   }
@@ -586,11 +595,11 @@ export class Node {
   }
 
   toProxy(): this {
-    const cache = (this as Node & { proxyCache?: this }).proxyCache;
-    if (!cache) {
-      (this as Node & { proxyCache: this }).proxyCache = new Proxy(this, this.getProxyProcessor());
+    const state = nodeRuntimeState(this);
+    if (!state.proxyCache) {
+      state.proxyCache = new Proxy(this, this.getProxyProcessor());
     }
-    return (this as Node & { proxyCache: this }).proxyCache;
+    return state.proxyCache;
   }
 
   toString(stringifier?: Stringifier | StringifierSyntax): string {
@@ -676,7 +685,11 @@ export class Node {
   }
 }
 
-type ContainerWithWalkState = Container & { lastEach?: number; indexes?: Map<number, number> };
+type ContainerWalkState = { lastEach?: number; indexes?: Map<number, number> };
+
+function containerWalkState<Child extends Node>(container: Container<Child>): ContainerWalkState {
+  return container as unknown as ContainerWalkState;
+}
 
 export class Container<Child extends Node = ChildNode> extends Node {
   nodes: Child[] | undefined;
@@ -773,7 +786,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
   }
 
   private getIterator(): number {
-    const state = this as ContainerWithWalkState;
+    const state = containerWalkState(this);
     if (!state.lastEach) state.lastEach = 0;
     if (!state.indexes) state.indexes = new Map();
     state.lastEach += 1;
@@ -784,7 +797,7 @@ export class Container<Child extends Node = ChildNode> extends Node {
 
   each(callback: WalkCallback<Child>): false | undefined {
     if (!this.nodes) return undefined;
-    const state = this as ContainerWithWalkState;
+    const state = containerWalkState(this);
     const iterator = this.getIterator();
     let result: unknown;
     while ((state.indexes!.get(iterator) ?? 0) < this.nodes.length) {
@@ -804,9 +817,10 @@ export class Container<Child extends Node = ChildNode> extends Node {
     for (const child of [...children].reverse()) {
       const nodes = this.normalize([child], this.first, 'prepend').reverse();
       for (const node of nodes) this.nodes.unshift(node as Child);
-      if ((this as ContainerWithWalkState).indexes) {
-        for (const [id, index] of (this as ContainerWithWalkState).indexes!) {
-          (this as ContainerWithWalkState).indexes!.set(id, index + nodes.length);
+      const state = containerWalkState(this);
+      if (state.indexes) {
+        for (const [id, index] of state.indexes) {
+          state.indexes.set(id, index + nodes.length);
         }
       }
       added += nodes.length;
@@ -856,10 +870,10 @@ export class Container<Child extends Node = ChildNode> extends Node {
     if (detached.length) this.inheritBefore(detached, sample ?? this.nodes?.[index]);
     for (const node of detached) node.setParent(this);
     this.nodes?.splice(index, 0, ...(children as Child[]));
-    if ((this as ContainerWithWalkState).indexes) {
-      for (const [id, iteratorIndex] of (this as ContainerWithWalkState).indexes!) {
-        if (index <= iteratorIndex)
-          (this as ContainerWithWalkState).indexes!.set(id, iteratorIndex + children.length);
+    const state = containerWalkState(this);
+    if (state.indexes) {
+      for (const [id, iteratorIndex] of state.indexes) {
+        if (index <= iteratorIndex) state.indexes.set(id, iteratorIndex + children.length);
       }
     }
     if (children.length) this.markDirty();
@@ -925,10 +939,10 @@ export class Container<Child extends Node = ChildNode> extends Node {
     if (index < 0) throw new Error('Node is not a child of this container');
     this.nodes?.[index]?.setParent(undefined);
     this.nodes?.splice(index, 1);
-    if ((this as ContainerWithWalkState).indexes) {
-      for (const [id, iteratorIndex] of (this as ContainerWithWalkState).indexes!) {
-        if (iteratorIndex >= index)
-          (this as ContainerWithWalkState).indexes!.set(id, iteratorIndex - 1);
+    const state = containerWalkState(this);
+    if (state.indexes) {
+      for (const [id, iteratorIndex] of state.indexes) {
+        if (iteratorIndex >= index) state.indexes.set(id, iteratorIndex - 1);
       }
     }
     this.markDirty();
@@ -1405,10 +1419,11 @@ function cloneNode<T extends Node>(node: T, parent?: Container<any>): T {
     }
   }
   if (node instanceof Container) {
-    delete (cloned as ContainerWithWalkState).lastEach;
-    delete (cloned as ContainerWithWalkState).indexes;
+    const state = containerWalkState(cloned as unknown as Container<Node>);
+    delete state.lastEach;
+    delete state.indexes;
   }
-  delete (cloned as Node & { [isClean]?: boolean })[isClean];
+  delete nodeRuntimeState(cloned)[isClean];
   cloned.setParent(parent);
   return cloned;
 }

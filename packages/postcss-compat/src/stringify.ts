@@ -36,13 +36,16 @@ type Builder = (css: string, node?: PostCSSNode, type?: string) => void;
 
 type DtoContext = { nextId: number };
 
-function dtoSelf(
+function shallowDtoOf(
   node: PostCSSNode,
   includeInput: boolean,
   materializeRaw: boolean | 'afterOnly',
   context: DtoContext,
 ): AstDto {
   const dto: AstDto = { type: node.type, raws: { ...(node.raws || {}) } };
+  if (node.type === 'root' && node.source?.input?.hasBOM) {
+    dto.raws.bom = true;
+  }
   if (!node.source && node.type === 'decl' && dto.raws.between === ': ') {
     delete dto.raws.between;
   }
@@ -168,37 +171,32 @@ function dtoSelf(
   return dto;
 }
 
-function dtoOf(
+function flatDtoOf(
   node: PostCSSNode,
   includeInput = false,
   materializeRaw: boolean | 'afterOnly' = true,
   context: DtoContext = { nextId: 0 },
-): AstDto {
-  // Explicit stack so stringify survives deeply nested ASTs.
-  const root = dtoSelf(node, includeInput, materializeRaw, context);
-  if (!node.nodes?.length) return root;
-
+): Array<{ childCount: number; node: AstDto }> {
+  const result: Array<{ childCount: number; node: AstDto }> = [];
   const stack: Array<{
-    parentDto: AstDto;
-    children: PostCSSNode[];
-    index: number;
-  }> = [{ parentDto: root, children: node.nodes, index: 0 }];
+    includeInput: boolean;
+    materializeRaw: boolean | 'afterOnly';
+    node: PostCSSNode;
+  }> = [{ includeInput, materializeRaw, node }];
 
   while (stack.length > 0) {
-    const frame = stack[stack.length - 1];
-    if (frame.index >= frame.children.length) {
-      stack.pop();
-      continue;
-    }
-    const child = frame.children[frame.index++];
-    const childDto = dtoSelf(child, false, 'afterOnly', context);
-    if (!frame.parentDto.nodes) frame.parentDto.nodes = [];
-    frame.parentDto.nodes.push(childDto);
-    if (child.nodes?.length) {
-      stack.push({ parentDto: childDto, children: child.nodes, index: 0 });
+    const current = stack.pop()!;
+    const children = current.node.nodes ?? [];
+    result.push({
+      childCount: children.length,
+      node: shallowDtoOf(current.node, current.includeInput, current.materializeRaw, context),
+    });
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ includeInput: false, materializeRaw: 'afterOnly', node: children[index] });
     }
   }
-  return root;
+
+  return result;
 }
 
 function defaultBetween(node: PostCSSNode): string | undefined {
@@ -213,10 +211,9 @@ function flattenNodes(node: PostCSSNode): PostCSSNode[] {
   while (stack.length > 0) {
     const current = stack.pop()!;
     result.push(current);
-    if (current.nodes?.length) {
-      for (let i = current.nodes.length - 1; i >= 0; i -= 1) {
-        stack.push(current.nodes[i]);
-      }
+    if (!current.nodes) continue;
+    for (let index = current.nodes.length - 1; index >= 0; index -= 1) {
+      stack.push(current.nodes[index]);
     }
   }
   return result;
@@ -258,7 +255,7 @@ function stringify(node: PostCSSNode, builder?: Builder): string | void {
   }
 
   const result = call('stringify', {
-    ast: dtoOf(node, true),
+    flatAst: flatDtoOf(node, true),
     builder: Boolean(builder),
   }) as {
     css: string;

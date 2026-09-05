@@ -16,7 +16,7 @@
   "dependencies": {
     "@postcss-go/core": "workspace:*",
     "@postcss-go/shared": "workspace:*",
-    "nanoid": "^3.3.12",
+    "nanoid": "^3.3.18",
     "picocolors": "^1.1.1",
     "source-map-js": "^1.2.1"
   },
@@ -24,7 +24,7 @@
     "@types/node": "^22.10.1",
     "concat-with-sourcemaps": "^1.1.0",
     "nanodelay": "^1.0.8",
-    "nanospy": "^1.0.0",
+    "nanospy": "^2.0.2",
     "postcss-parser-tests": "^8.10.0",
     "strip-ansi": "^6.0.1",
     "ts-node": "^10.9.2",

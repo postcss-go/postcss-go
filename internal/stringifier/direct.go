@@ -157,6 +157,7 @@ func directWriteNode(writer cssWriter, node ast.Node, depth int, stripSourceMapA
 		directWriteChildren(writer, current.Nodes, depth, false, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
+		writer.writeString(rootBOM(current))
 		directWriteChildren(writer, current.Nodes, depth, true, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:

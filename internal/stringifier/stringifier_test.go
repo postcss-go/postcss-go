@@ -402,6 +402,34 @@ func TestParseStringifyPreservesCustomPropertyComments(t *testing.T) {
 	}
 }
 
+func TestStringifyPostCSS8528EdgeCases(t *testing.T) {
+	custom, err := parser.Parse("a{--x:red}", sourcemap.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom.First().(*ast.Rule).Append(ast.NewComment("note"))
+	if got, want := Stringify(custom), "a{--x:red;/* note */}"; got != want {
+		t.Fatalf("custom property before comment:\n got: %q\nwant: %q", got, want)
+	}
+
+	layer, err := parser.Parse("@layer{a{color:black}}", sourcemap.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	layer.First().(*ast.AtRule).Params = "utilities"
+	if got, want := Stringify(layer), "@layer utilities{a{color:black}}"; got != want {
+		t.Fatalf("mutated at-rule params:\n got: %q\nwant: %q", got, want)
+	}
+
+	bom, err := parser.Parse("\uFEFFa{}", sourcemap.Options{TrackSource: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := Stringify(bom), "\uFEFFa{}"; got != want {
+		t.Fatalf("BOM round-trip:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 func TestMappedStringifyPreservesOwnSemicolon(t *testing.T) {
 	root := ast.NewRoot()
 	rule := ast.NewRule(".a")

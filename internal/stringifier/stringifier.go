@@ -105,6 +105,7 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int,
 		}
 		appendBuilderPart(parts, rawString(current, "after", ""), 0, "")
 	case *ast.Root:
+		appendBuilderPart(parts, rootBOM(current), id, "start")
 		for index, child := range current.Nodes {
 			appendBuilderPart(parts, escapeHTMLInCSS(nodeBefore(cache, child, depth, index)), 0, "")
 			writeBuilderNode(parts, child, depth, next, cache)
@@ -165,6 +166,7 @@ func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotat
 		writeChildren(writer, current.Nodes, depth, false, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
+		writer.writeString(rootBOM(current))
 		writeChildren(writer, current.Nodes, depth, true, stripSourceMapAnnotations)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
@@ -202,6 +204,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writeMappedChildren(writer, current.Nodes, depth)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Root:
+		writer.writeString(rootBOM(current))
 		writeMappedChildren(writer, current.Nodes, depth)
 		writer.writeString(rawString(current, "after", ""))
 	case *ast.Rule:
@@ -633,7 +636,7 @@ func atRuleAfterName(node *ast.AtRule, params string) string {
 	if text, ok := ast.LookupRawString(node, "afterName"); ok {
 		// Match upstream: an explicit empty afterName still needs a space when
 		// params were assigned later and would otherwise glue to the name.
-		if text == "" && params != "" && !atNameEnd(params[0]) {
+		if text == "" && params != "" && !atRuleNameEnd(params[0]) {
 			return " "
 		}
 		return text
@@ -655,7 +658,7 @@ func atRuleAfterName(node *ast.AtRule, params string) string {
 	return ""
 }
 
-func atNameEnd(ch byte) bool {
+func atRuleNameEnd(ch byte) bool {
 	switch ch {
 	case '\t', '\n', '\f', '\r', ' ', '"', '#', '\'', '(', ')', '/', ':', ';', '[', '\\', ']', '{', '}':
 		return true
@@ -827,7 +830,7 @@ func rawBeforeDetected(cache *renderCache, parent ast.Container, node ast.Node) 
 		}
 		if value, ok := lookupRaw(sibling, "before"); ok {
 			if text, ok := value.(string); ok {
-				return sampleBeforeSpaces(text), true
+				return whitespaceOnly(text), true
 			}
 		}
 	}
@@ -837,24 +840,22 @@ func rawBeforeDetected(cache *renderCache, parent ast.Container, node ast.Node) 
 		}
 		if value, ok := lookupRaw(sibling, "before"); ok {
 			if text, ok := value.(string); ok {
-				return sampleBeforeSpaces(text), true
+				return whitespaceOnly(text), true
 			}
 		}
 	}
 	return "", false
 }
 
-// sampleBeforeSpaces mirrors PostCSS before-sample cleanup: keep only
+// whitespaceOnly mirrors PostCSS before-sample cleanup: keep only
 // whitespace from a sibling `before` so content like `</style>` is not copied.
-func sampleBeforeSpaces(text string) string {
-	var builder strings.Builder
-	builder.Grow(len(text))
-	for _, r := range text {
-		if unicode.IsSpace(r) {
-			builder.WriteRune(r)
+func whitespaceOnly(text string) string {
+	return strings.Map(func(char rune) rune {
+		if unicode.IsSpace(char) {
+			return char
 		}
-	}
-	return builder.String()
+		return -1
+	}, text)
 }
 
 func inferSiblingRaw(parent ast.Container, key string, nodeType ast.NodeType) (string, bool) {
@@ -970,13 +971,13 @@ func needsSemicolon(parent ast.Container, node ast.Node) bool {
 	case *ast.AtRule:
 		return !current.Block
 	case *ast.Declaration:
-		return isCustomPropertyDecl(current)
+		return isCustomProperty(current)
 	default:
 		return false
 	}
 }
 
-func isCustomPropertyDecl(node *ast.Declaration) bool {
+func isCustomProperty(node *ast.Declaration) bool {
 	if !strings.HasPrefix(node.Prop, "--") {
 		return false
 	}
@@ -985,6 +986,15 @@ func isCustomPropertyDecl(node *ast.Declaration) bool {
 		return true
 	}
 	last, _ := utf8.DecodeLastRuneInString(before)
-	// Hack prefixes like `*`/`_` live in `before`; those are not custom props.
 	return unicode.IsSpace(last)
+}
+
+func rootBOM(node *ast.Root) string {
+	if rawBool(node, "bom", false) {
+		return "\uFEFF"
+	}
+	if source := node.Source(); source != nil && source.Input != nil && source.Input.HasBOM {
+		return "\uFEFF"
+	}
+	return ""
 }
