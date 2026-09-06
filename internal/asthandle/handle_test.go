@@ -613,59 +613,39 @@ func TestErrorPathsAndIdentity(t *testing.T) {
 	}
 }
 
-func TestInternReusesZeroGeneration(t *testing.T) {
-	session := New()
-	defer session.Close()
-	first, err := session.NewDecl("a", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := session.Dispose(first); err != nil {
-		t.Fatal(err)
-	}
-	slot, _ := unpack(first)
-	session.slots[slot].gen = 0
-	next, err := session.NewDecl("b", "2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, gen := unpack(next)
-	if gen != 1 {
-		t.Fatalf("zero gen repaired: %d", gen)
+func TestDisposedIDsNeverRevive(t *testing.T) {
+	s := New()
+	defer s.Close()
+	first, _ := s.NewDecl("a", "1")
+	h := first
+	for i := 0; i < 1024; i++ {
+		if err := s.Dispose(h); err != nil {
+			t.Fatal(err)
+		}
+		h, _ = s.NewDecl("b", "2")
+		if h == first {
+			t.Fatal("stale ID revived")
+		}
+		if _, err := s.Type(first); !errors.Is(err, ErrStaleHandle) {
+			t.Fatal(err)
+		}
 	}
 }
 
-func TestDisposeRootAndReuseGenerationWrap(t *testing.T) {
-	session, root, err := Parse(".a { color: red; }")
-	if err != nil {
+func TestDisposeRoot(t *testing.T) {
+	s, root, _ := Parse("a {x:y}")
+	defer s.Close()
+	rule, _ := s.ChildAt(root, 0)
+	decl, _ := s.ChildAt(rule, 0)
+	if err := s.Dispose(root); err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
-	if err := session.Dispose(root); err != nil {
-		t.Fatal(err)
+	if s.Root() != 0 {
+		t.Fatal("root still live")
 	}
-	if session.Root() != 0 {
-		t.Fatal("root handle should clear")
-	}
-
-	session = New()
-	defer session.Close()
-	h, err := session.NewDecl("a", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	slot, _ := unpack(h)
-	session.slots[slot].gen = 255
-	wrapped := pack(slot, 255)
-	if err := session.Dispose(wrapped); err != nil {
-		t.Fatal(err)
-	}
-	next, err := session.NewDecl("b", "2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, gen := unpack(next)
-	if gen != 1 {
-		t.Fatalf("wrapped gen: %d", gen)
+	for _, id := range []Handle{root, rule, decl} {
+		if _, err := s.Parent(id); !errors.Is(err, ErrStaleHandle) {
+			t.Fatal(err)
+		}
 	}
 }

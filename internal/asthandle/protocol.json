@@ -1,0 +1,7 @@
+{
+  "major": 2,
+  "minor": 0,
+  "maxBatchSize": 4096,
+  "capabilities": [1],
+  "fields": ["Prop", "Value", "Selector", "Name", "Params", "Text"]
+}

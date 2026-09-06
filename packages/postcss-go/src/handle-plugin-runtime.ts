@@ -48,37 +48,40 @@ export function runHandleDeclarationPlugins(
   const session = new NativeHandleSession(addon);
   try {
     const root = session.parse(css);
-    const count = session.cursorWalkDecls(root);
+    for (const handles of session.declarationBatches()) {
+      const count = handles.length;
+      const props = session.readFields(handles, HANDLE_FIELD_PROP);
+      const values = session.readFields(handles, HANDLE_FIELD_VALUE);
+      let propsChanged = false;
+      let valuesChanged = false;
 
-    if (count === 0) return session.stringify(root);
-
-    const handles = session.walkBuffer.subarray(0, count);
-    const props = session.readFields(handles, HANDLE_FIELD_PROP);
-    const values = session.readFields(handles, HANDLE_FIELD_VALUE);
-    let propsChanged = false;
-
-    for (const plugin of plugins) {
-      if (typeof plugin === 'function') continue;
-      const visitor = (plugin as RuntimePlugin).Declaration;
-      if (!isSyncFunction(visitor)) continue;
       for (let i = 0; i < count; i += 1) {
         const stub = createHandleDeclarationStub(props[i], values[i]);
-        const returned = (
-          visitor as (decl: HandleDeclarationStub, helpers: unknown) => unknown
-        ).call(plugin, stub, unsupportedHandleHelpers);
-        if (isThenable(returned)) {
-          throw new HandleDeclarationUnsupportedError('async');
+        for (const plugin of plugins) {
+          if (typeof plugin === 'function') continue;
+          const visitor = (plugin as RuntimePlugin).Declaration;
+          if (!isSyncFunction(visitor)) continue;
+          const returned = (
+            visitor as (decl: HandleDeclarationStub, helpers: unknown) => unknown
+          ).call(plugin, stub, unsupportedHandleHelpers);
+          if (isThenable(returned)) {
+            void Promise.resolve(returned).catch(() => {});
+            throw new HandleDeclarationUnsupportedError('async');
+          }
         }
-        if (stub.value !== values[i]) values[i] = stub.value;
+        if (stub.value !== values[i]) {
+          values[i] = stub.value;
+          valuesChanged = true;
+        }
         if (stub.prop !== props[i]) {
           props[i] = stub.prop;
           propsChanged = true;
         }
       }
-    }
 
-    session.setFields(handles, HANDLE_FIELD_VALUE, values);
-    if (propsChanged) session.setFields(handles, HANDLE_FIELD_PROP, props);
+      if (valuesChanged) session.setFields(handles, HANDLE_FIELD_VALUE, values);
+      if (propsChanged) session.setFields(handles, HANDLE_FIELD_PROP, props);
+    }
     return session.stringify(root);
   } finally {
     session.close();

@@ -212,21 +212,22 @@ test('companion-library packages keep their runtime library beside the addon', (
   const addon = readFileSync(resolve(packageRoot, 'native/addon.c'), 'utf8');
   expect(addon).toContain('require_go_symbol("pcgoCall")');
   for (const symbol of [
-    'pcgoHandleParse',
-    'pcgoHandleClose',
-    'pcgoHandleType',
-    'pcgoHandleGetField',
-    'pcgoHandleSetField',
-    'pcgoHandleWalkDecls',
-    'pcgoHandleOpenCursor',
-    'pcgoHandleCursorNext',
-    'pcgoHandleCloseCursor',
-    'pcgoHandleReadFields',
-    'pcgoHandleSetFields',
-    'pcgoHandleNewDecl',
-    'pcgoHandleAppend',
-    'pcgoHandleDispose',
-    'pcgoHandleStringify',
+    'pcgoHandleParseV2',
+    'pcgoHandleSessionCountV2',
+    'pcgoHandleCloseV2',
+    'pcgoHandleTypeV2',
+    'pcgoHandleGetFieldV2',
+    'pcgoHandleSetFieldV2',
+    'pcgoHandleWalkDeclsV2',
+    'pcgoHandleOpenCursorV2',
+    'pcgoHandleCursorNextV2',
+    'pcgoHandleCloseCursorV2',
+    'pcgoHandleReadFieldsV2',
+    'pcgoHandleSetFieldsV2',
+    'pcgoHandleNewDeclV2',
+    'pcgoHandleAppendV2',
+    'pcgoHandleDisposeV2',
+    'pcgoHandleStringifyV2',
   ]) {
     expect(addon).toContain(`require_go_symbol("${symbol}")`);
   }

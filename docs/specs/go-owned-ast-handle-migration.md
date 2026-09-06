@@ -1,11 +1,15 @@
 # Go-Owned AST and Native Handle Migration
 
-- Status: Proposed
+- Status: In progress — session/protocol foundation; full facade pending
 - Target: `@postcss-go/core` native backend
-- Last updated: 2026-09-04
+- Last updated: 2026-09-06
 - Owners: TBD
 
 ## Summary
+
+See the [implementation checkpoint](../native-handle-v2-checkpoint.md) for the
+implemented subset, verification results, rollout restrictions, and remaining
+work. The phases below remain the target design, not a claim of completion.
 
 Move native PostCSS execution toward a Go-owned AST session while retaining JavaScript/TypeScript for the public PostCSS API, JavaScript plugin callbacks, configuration loading, and environment adapters.
 

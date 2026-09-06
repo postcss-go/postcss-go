@@ -292,9 +292,9 @@ function hasLiveAsyncPluginBridge(
 }
 
 /**
- * Fast path for declaration-only plugins that only rewrite prop/value.
- * Returns undefined when the run needs the live AST (source maps, cloneAfter,
- * parent, async visitors, helpers, …).
+ * Explicit experimental path for declaration-only prop/value rewrites.
+ * Auto mode stays on the complete facade; unsupported explicit runs throw
+ * without replaying callbacks on a different backend.
  */
 function tryHandleDeclarationResult(
   service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon'> & {
@@ -305,34 +305,36 @@ function tryHandleDeclarationResult(
   options: ProcessFileOptions,
   processor?: ResultProcessorFacade,
 ): PluginResult | undefined {
+  const mode =
+    typeof process === 'undefined' ? 'auto' : (process.env.POSTCSS_GO_NATIVE_AST ?? 'auto');
+  if (!['auto', 'handle', 'binary'].includes(mode))
+    throw new Error('invalid POSTCSS_GO_NATIVE_AST mode');
+  // Shape alone cannot prove what a JS callback will access. Until the full
+  // facade exists, automatic runs choose the compatible path BEFORE callbacks.
+  if (mode !== 'handle') return undefined;
   if (
     !service.handleAddon ||
     typeof service.parseSync !== 'function' ||
     !isHandleDeclarationPluginRun(plugins as AcceptedPlugin[]) ||
     options.map
   ) {
-    return undefined;
+    throw new HandleDeclarationUnsupportedError('plugin run or source maps');
   }
-  try {
-    const outputCss = runHandleDeclarationPlugins(
-      service.handleAddon,
-      css,
-      plugins as AcceptedPlugin[],
-    );
-    const result = createResult(
-      () => hydrateHandleOutputRoot(service, outputCss, css, options),
-      options,
-      plugins,
-      processor,
-    );
-    result.backend = service.capabilities?.backend;
-    result.css = outputCss;
-    fillDependencyParents(result);
-    return result;
-  } catch (error) {
-    if (error instanceof HandleDeclarationUnsupportedError) return undefined;
-    throw error;
-  }
+  const outputCss = runHandleDeclarationPlugins(
+    service.handleAddon,
+    css,
+    plugins as AcceptedPlugin[],
+  );
+  const result = createResult(
+    () => hydrateHandleOutputRoot(service, outputCss, css, options),
+    options,
+    plugins,
+    processor,
+  );
+  result.backend = service.capabilities?.backend;
+  result.css = outputCss;
+  fillDependencyParents(result);
+  return result;
 }
 
 /**

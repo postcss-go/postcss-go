@@ -170,7 +170,7 @@ func directWriteNode(writer cssWriter, node ast.Node, depth int, stripSourceMapA
 		writer.writeString(atRuleHeader(current))
 		if !current.Block {
 			writer.writeString(rawString(current, "between", ""))
-			if atRuleHasSemicolon(current) {
+			if writer.renderCache().atRuleHasSemicolon(current) {
 				writer.writeByte(';')
 			}
 			return
@@ -181,7 +181,7 @@ func directWriteNode(writer cssWriter, node ast.Node, depth int, stripSourceMapA
 		directWriteBlockClose(writer, current, childCount)
 	case *ast.Declaration:
 		directWriteDeclaration(writer, current)
-		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+		if parent := current.Parent(); parent != nil && writer.renderCache().needsSemicolon(parent, current) {
 			writer.writeByte(';')
 		}
 	case *ast.Comment:

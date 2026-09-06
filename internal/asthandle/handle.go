@@ -3,6 +3,8 @@
 // binary AST codec remains for full PostCSS compatibility and WASM transport.
 package asthandle
 
+//go:generate go run ./cmd/genprotocol
+
 import (
 	"errors"
 	"fmt"
@@ -13,27 +15,11 @@ import (
 	"github.com/postcss-go/postcss-go/internal/stringifier"
 )
 
-// Handle is an opaque node id. The low 24 bits are a slot; the high 8 bits are
-// a generation counter. Slot 0 is never a valid node.
+// Handle is a session-local opaque node id. IDs are never reused.
 type Handle uint32
-
-const (
-	slotBits = 24
-	slotMask = 1<<slotBits - 1
-	genShift = slotBits
-)
 
 // Field identifies a scalar node property readable or writable across the ABI.
 type Field int32
-
-const (
-	FieldProp Field = iota
-	FieldValue
-	FieldSelector
-	FieldName
-	FieldParams
-	FieldText
-)
 
 const (
 	TypeNone int32 = iota
@@ -53,10 +39,10 @@ var (
 	ErrBadField      = errors.New("asthandle: unsupported field for node")
 	ErrCursor        = errors.New("asthandle: invalid cursor")
 	ErrParse         = errors.New("asthandle: parse failed")
+	ErrCycle         = errors.New("asthandle: mutation would create a cycle")
 )
 
 type slotRecord struct {
-	gen  uint8
 	live bool
 	node ast.Node
 }
@@ -65,7 +51,6 @@ type slotRecord struct {
 // that minted them. Close invalidates every handle at once.
 type Session struct {
 	slots   []slotRecord
-	free    []uint32
 	byNode  map[ast.Node]uint32
 	root    Handle
 	closed  bool
@@ -76,14 +61,6 @@ type cursor struct {
 	handles []Handle
 	offset  int
 	open    bool
-}
-
-func pack(slot uint32, gen uint8) Handle {
-	return Handle(uint32(gen)<<genShift | slot&slotMask)
-}
-
-func unpack(h Handle) (slot uint32, gen uint8) {
-	return uint32(h) & slotMask, uint8(uint32(h) >> genShift)
 }
 
 // Parse builds a session from CSS and interns every node in the tree.
@@ -116,13 +93,7 @@ func (s *Session) Close() {
 	for i := range s.slots {
 		s.slots[i].live = false
 		s.slots[i].node = nil
-		if s.slots[i].gen == 255 {
-			s.slots[i].gen = 1
-		} else {
-			s.slots[i].gen++
-		}
 	}
-	s.free = s.free[:0]
 	s.byNode = nil
 	s.root = 0
 	for _, cur := range s.cursors {
@@ -140,22 +111,11 @@ func (s *Session) intern(n ast.Node) uint32 {
 	if slot, ok := s.byNode[n]; ok {
 		return slot
 	}
-	var slot uint32
-	if len(s.free) > 0 {
-		slot = s.free[len(s.free)-1]
-		s.free = s.free[:len(s.free)-1]
-		rec := &s.slots[slot]
-		rec.node = n
-		rec.live = true
-		if rec.gen == 0 {
-			rec.gen = 1
-		}
-		s.byNode[n] = slot
-		return slot
+	if uint64(len(s.slots)) > uint64(^uint32(0)) {
+		panic("asthandle: node ID space exhausted")
 	}
-	gen := uint8(1)
-	slot = uint32(len(s.slots))
-	s.slots = append(s.slots, slotRecord{gen: gen, live: true, node: n})
+	slot := uint32(len(s.slots))
+	s.slots = append(s.slots, slotRecord{live: true, node: n})
 	s.byNode[n] = slot
 	return slot
 }
@@ -173,19 +133,19 @@ func (s *Session) internTree(n ast.Node) {
 
 func (s *Session) mustHandle(n ast.Node) Handle {
 	slot := s.intern(n)
-	return pack(slot, s.slots[slot].gen)
+	return Handle(slot)
 }
 
 func (s *Session) lookup(h Handle) (ast.Node, error) {
 	if s == nil || s.closed {
 		return nil, ErrClosed
 	}
-	slot, gen := unpack(h)
+	slot := uint32(h)
 	if slot == 0 || int(slot) >= len(s.slots) {
 		return nil, ErrInvalidHandle
 	}
 	rec := s.slots[slot]
-	if !rec.live || rec.gen != gen {
+	if !rec.live {
 		return nil, ErrStaleHandle
 	}
 	return rec.node, nil
@@ -200,7 +160,7 @@ func (s *Session) Identity(n ast.Node) Handle {
 	if !ok {
 		return 0
 	}
-	return pack(slot, s.slots[slot].gen)
+	return Handle(slot)
 }
 
 func (s *Session) Type(h Handle) (int32, error) {
@@ -389,6 +349,11 @@ func (s *Session) Append(parent, child Handle) error {
 	if !ok {
 		return ErrNotContainer
 	}
+	for ancestor := parentNode; ancestor != nil; ancestor = ancestor.Parent() {
+		if ancestor == childNode {
+			return ErrCycle
+		}
+	}
 	container.Append(childNode)
 	return nil
 }
@@ -401,6 +366,14 @@ func (s *Session) InsertBefore(target, child Handle) error {
 	childNode, err := s.lookup(child)
 	if err != nil {
 		return err
+	}
+	if targetNode == childNode {
+		return nil
+	}
+	for ancestor := ast.Node(targetNode.Parent()); ancestor != nil; ancestor = ancestor.Parent() {
+		if ancestor == childNode {
+			return ErrCycle
+		}
 	}
 	return targetNode.Before(childNode)
 }
@@ -425,7 +398,7 @@ func (s *Session) Clone(h Handle) (Handle, error) {
 }
 
 // Dispose invalidates a handle. Attached nodes are removed from the tree first.
-// The slot is reused later with a bumped generation so stale ids fail lookup.
+// Tombstones prevent stale IDs from ever referring to replacement nodes.
 func (s *Session) Dispose(h Handle) error {
 	node, err := s.lookup(h)
 	if err != nil {
@@ -434,17 +407,20 @@ func (s *Session) Dispose(h Handle) error {
 	if node.Parent() != nil {
 		node.Remove()
 	}
-	slot, _ := unpack(h)
-	delete(s.byNode, node)
-	rec := &s.slots[slot]
-	rec.node = nil
-	rec.live = false
-	if rec.gen == 255 {
-		rec.gen = 1
-	} else {
-		rec.gen++
+	// Dispose the attached subtree, too: otherwise a child's Parent() could
+	// re-intern the disposed parent and resurrect it under a different ID.
+	stack := []ast.Node{node}
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if container, ok := current.(ast.Container); ok {
+			stack = append(stack, container.Children()...)
+		}
+		slot := s.byNode[current]
+		delete(s.byNode, current)
+		s.slots[slot].node = nil
+		s.slots[slot].live = false
 	}
-	s.free = append(s.free, slot)
 	if h == s.root {
 		s.root = 0
 	}
@@ -519,10 +495,18 @@ func (s *Session) ReadFields(handles []Handle, field Field) ([]string, error) {
 	return out, nil
 }
 
-// SetFields writes one field on every handle. values must match handles.
+// SetFields validates the complete batch before changing any node.
 func (s *Session) SetFields(handles []Handle, field Field, values []string) error {
 	if len(handles) != len(values) {
 		return fmt.Errorf("asthandle: mutation batch length mismatch")
+	}
+	if s == nil || s.closed {
+		return ErrClosed
+	}
+	for _, h := range handles {
+		if _, err := s.GetField(h, field); err != nil {
+			return err
+		}
 	}
 	for i, h := range handles {
 		if err := s.SetField(h, field, values[i]); err != nil {

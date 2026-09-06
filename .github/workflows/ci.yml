@@ -76,6 +76,12 @@ jobs:
       - name: Check JS formatting
         run: pnpm format:check
 
+      - name: Check generated handle protocol
+        run: pnpm check:handles
+
+      - name: Check native session race safety
+        run: go test -race ./internal/asthandle ./internal/nativebridge
+
       - name: Check Go formatting
         shell: bash
         run: |

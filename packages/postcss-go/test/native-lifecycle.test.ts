@@ -11,6 +11,40 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const entryUrl = pathToFileURL(resolve(packageRoot, 'dist/index.js')).href;
 
 test.runIf(isNativeBridgeAvailable())(
+  'parallel workers isolate native handle sessions',
+  async () => {
+    await Promise.all(
+      Array.from(
+        { length: 4 },
+        (_, id) =>
+          new Promise<void>((done, reject) => {
+            const worker = new Worker(
+              `
+      const {workerData} = require('node:worker_threads');
+      (async () => {
+        process.env.POSTCSS_GO_NATIVE_AST = 'handle';
+        const {Processor} = await import(workerData.entryUrl);
+        const processor = new Processor([{postcssPlugin: 'worker', Declaration(decl) {decl.value = String(workerData.id);}}]);
+        for (let i = 0; i < 30; i++) {
+          const css = processor.processSync('a{x:old;y:old}', {map:false}).css;
+          if (css !== 'a{x:' + workerData.id + ';y:' + workerData.id + '}') throw new Error(css);
+          await new Promise(setImmediate);
+        }
+      })().catch(error => {throw error;});
+    `,
+              { eval: true, workerData: { entryUrl, id } },
+            );
+            worker.once('error', reject);
+            worker.once('exit', (code) =>
+              code === 0 ? done() : reject(new Error('worker exit ' + code)),
+            );
+          }),
+      ),
+    );
+  },
+);
+
+test.runIf(isNativeBridgeAvailable())(
   'native addon is owned independently by a Worker Thread',
   async () => {
     const result = await new Promise<string>((resolveMessage, reject) => {
