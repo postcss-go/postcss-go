@@ -5,7 +5,9 @@ import { readFileSync } from 'node:fs';
 const baseline = process.argv.includes('--baseline');
 const files = execFileSync(
   'git',
-  ['ls-files', ...(baseline ? [] : ['--cached', '--others', '--exclude-standard'])],
+  baseline
+    ? ['ls-tree', '-r', '--name-only', 'HEAD']
+    : ['ls-files', '--cached', '--others', '--exclude-standard'],
   { encoding: 'utf8' },
 )
   .trim()
@@ -25,7 +27,11 @@ for (const file of new Set(files)) {
 }
 console.log(
   JSON.stringify(
-    { revision: baseline ? 'HEAD' : 'working-tree', physicalRuntimeLines: totals },
+    {
+      revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      source: baseline ? 'commit' : 'working-tree',
+      physicalRuntimeLines: totals,
+    },
     null,
     2,
   ),

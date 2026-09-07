@@ -2,6 +2,7 @@
 export const HANDLE_PROTOCOL_MAJOR = 2;
 export const HANDLE_PROTOCOL_MINOR = 0;
 export const HANDLE_MAX_BATCH_SIZE = 4096;
+export const HANDLE_REQUIRED_CAPABILITIES = [1] as const;
 export const HANDLE_FIELD_PROP = 0;
 export const HANDLE_FIELD_VALUE = 1;
 export const HANDLE_FIELD_SELECTOR = 2;

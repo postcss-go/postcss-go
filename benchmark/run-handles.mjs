@@ -1,17 +1,30 @@
 // Production native bridge gate for the explicitly restricted scalar workload.
 // Build first. Each sample has an isolated Go/V8 heap; no prototype addon is used.
-import { spawnSync } from 'node:child_process';
+import { summarize } from './qualification-metrics.mjs';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cpus, platform, release, arch } from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 
 const samples = 5;
-const sizes = [1000, 10000];
+const qualification = process.argv.includes('--qualification');
+const sizes =
+  qualification && !process.argv.includes('--stress')
+    ? [1000, 'modern-normalize']
+    : [1000, 10000, 'modern-normalize'];
+const fixture = (size) =>
+  size === 'modern-normalize'
+    ? readFileSync(new URL('./fixtures/css/modern-normalize.css', import.meta.url), 'utf8')
+    : 'a{' + 'color:red;'.repeat(Number(size)) + '}';
 if (process.argv[2] === '--sample') {
   const { Processor } = await import('../packages/postcss-go/dist/index.js');
-  const count = Number(process.argv[3]);
-  const css = 'a{' + 'color:red;'.repeat(count) + '}';
-  const expected = css.replaceAll('red', 'navy');
+  const size = process.argv[3];
+  const css = fixture(size);
+  // Representative fixture is read-only scalar visits; do not string-replace substrings.
+  const expected = size === 'modern-normalize' ? css : css.replaceAll('red', 'navy');
   const processor = new Processor([
     {
       postcssPlugin: 'handle-benchmark',
@@ -28,7 +41,20 @@ if (process.argv[2] === '--sample') {
     JSON.stringify({ ms: (performance.now() - start) / 30, rss: process.resourceUsage().maxRSS }),
   );
 } else {
-  const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  console.log(
+    JSON.stringify({
+      kind: 'environment',
+      revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      node: process.version,
+      go: execFileSync('go', ['version'], { encoding: 'utf8' }).trim(),
+      cpu: cpus()[0].model,
+      os: `${platform()} ${release()} ${arch()}`,
+      warmups: 10,
+      iterations: 30,
+      rssUnit: 'KiB',
+      scope: 'restricted scalar; no rollout claim',
+    }),
+  );
   let passed = true;
   for (const size of sizes) {
     const results = { binary: [], handle: [] };
@@ -47,15 +73,22 @@ if (process.argv[2] === '--sample') {
         results[mode].push(JSON.parse(child.stdout));
       }
     }
-    const timeRatio =
-      median(results.handle.map((x) => x.ms)) / median(results.binary.map((x) => x.ms));
-    const rssRatio =
-      median(results.handle.map((x) => x.rss)) / median(results.binary.map((x) => x.rss));
-    const pass = timeRatio <= 1.05 && rssRatio <= 1.1;
+    const { timeRatio, rssRatio, spread, stable, pass } = summarize(results);
     passed &&= pass;
     console.log(
-      JSON.stringify({ declarations: size, samples, timeRatio, rssRatio, pass, results }),
+      JSON.stringify({
+        declarations: size,
+        fixtureBytes: Buffer.byteLength(fixture(size)),
+        fixtureSha256: createHash('sha256').update(fixture(size)).digest('hex'),
+        samples,
+        timeRatio,
+        rssRatio,
+        stable,
+        spread,
+        pass,
+        results,
+      }),
     );
   }
-  if (!passed) process.exitCode = 1;
+  if (!passed && !qualification) process.exitCode = 1;
 }

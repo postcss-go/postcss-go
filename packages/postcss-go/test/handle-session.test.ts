@@ -219,3 +219,81 @@ test.skipIf(!isNativeBridgeAvailable())(
     }
   },
 );
+
+test('protocol negotiation rejects malformed and throwing handshakes safely', () => {
+  const valid = mockAddon().handleProtocolInfo();
+  for (const info of [
+    null,
+    undefined,
+    { ...valid, major: 3 },
+    { ...valid, minor: -1 },
+    { ...valid, minor: 0.5 },
+    { ...valid, capabilities: new Uint32Array() },
+    { ...valid, capabilities: [1] },
+    { ...valid, maxBatchSize: 0 },
+    { ...valid, maxBatchSize: 2 ** 32 },
+  ]) {
+    const addon = mockAddon({
+      handleProtocolInfo: () => info as ReturnType<NativeHandleAddon['handleProtocolInfo']>,
+    });
+    expect(hasNativeHandleBridge(addon)).toBe(false);
+    expect(() => new NativeHandleSession(addon)).toThrow(/incompatible/);
+  }
+  expect(
+    hasNativeHandleBridge(
+      mockAddon({
+        handleProtocolInfo: () => {
+          throw new Error('old addon');
+        },
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    hasNativeHandleBridge(
+      mockAddon({
+        handleProtocolInfo: () => ({ ...valid, minor: 10 }),
+      }),
+    ),
+  ).toBe(true);
+});
+
+test('negotiated batch limit bounds cursor pages and rejects oversized atomic writes', () => {
+  let offset = 0;
+  const ids = new Uint32Array([2, 3, 4, 5, 6]);
+  const write = vi.fn();
+  const read = vi.fn();
+  const addon = mockAddon({
+    handleProtocolInfo: () => ({
+      major: 2,
+      minor: 1,
+      maxBatchSize: 2,
+      capabilities: new Uint32Array([1]),
+    }),
+    handleCursorNextV2(_session, _cursor, buffer) {
+      expect(buffer.length).toBeLessThanOrEqual(2);
+      const page = ids.subarray(offset, offset + buffer.length);
+      buffer.set(page);
+      offset += page.length;
+      return page.length;
+    },
+    handleReadFieldsV2: read,
+    handleSetFieldsV2: write,
+  });
+  const session = new NativeHandleSession(addon, 3);
+  session.parse('');
+  expect(session.cursorWalkDecls()).toBe(5);
+  expect(session.walkBuffer.subarray(0, 5)).toEqual(ids);
+  offset = 0;
+  expect(Array.from(session.declarationBatches(), (batch) => [...batch])).toEqual([
+    [2, 3],
+    [4, 5],
+    [6],
+  ]);
+  expect(() => session.setFields(ids, HANDLE_FIELD_VALUE, ['a', 'b', 'c', 'd', 'e'])).toThrow(
+    /maximum/,
+  );
+  expect(() => session.readFields(ids, HANDLE_FIELD_VALUE)).toThrow(/maximum/);
+  expect(write).not.toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled();
+  session.close();
+});

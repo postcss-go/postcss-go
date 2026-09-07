@@ -1,5 +1,6 @@
 import {
   HANDLE_PROTOCOL_MAJOR,
+  HANDLE_REQUIRED_CAPABILITIES,
   HANDLE_MAX_BATCH_SIZE,
   HANDLE_FIELD_PROP,
   HANDLE_FIELD_VALUE,
@@ -54,8 +55,8 @@ export type NativeHandleAddon = {
   handleDisposeV2(sessionId: number, handle: number): void;
 };
 
-export function hasNativeHandleBridge(addon: unknown): addon is NativeHandleAddon {
-  if (!addon || typeof addon !== 'object') return false;
+function negotiateNativeHandleBridge(addon: unknown): number | undefined {
+  if (!addon || typeof addon !== 'object') return undefined;
   const candidate = addon as NativeHandleAddon;
   const methods = [
     'handleProtocolInfo',
@@ -75,21 +76,38 @@ export function hasNativeHandleBridge(addon: unknown): addon is NativeHandleAddo
     'handleAppendV2',
     'handleDisposeV2',
   ] as const;
-  if (!methods.every((name) => typeof candidate[name] === 'function')) return false;
-  const info = candidate.handleProtocolInfo();
-  return (
-    info.major === HANDLE_PROTOCOL_MAJOR &&
-    info.capabilities instanceof Uint32Array &&
-    (info.capabilities[0] & 1) !== 0 &&
-    Number.isInteger(info.maxBatchSize) &&
-    info.maxBatchSize > 0
-  );
+  if (!methods.every((name) => typeof candidate[name] === 'function')) return undefined;
+  try {
+    const info = candidate.handleProtocolInfo();
+    if (
+      info?.major !== HANDLE_PROTOCOL_MAJOR ||
+      !Number.isInteger(info.minor) ||
+      info.minor < 0 ||
+      !(info.capabilities instanceof Uint32Array) ||
+      !HANDLE_REQUIRED_CAPABILITIES.every(
+        (required, index) => (info.capabilities[index] & required) >>> 0 === required,
+      ) ||
+      !Number.isSafeInteger(info.maxBatchSize) ||
+      info.maxBatchSize < 1 ||
+      info.maxBatchSize > 0xffffffff
+    )
+      return undefined;
+    return Math.min(info.maxBatchSize, HANDLE_MAX_BATCH_SIZE);
+  } catch {
+    // Version-skewed addons must leave the existing binary bridge usable.
+    return undefined;
+  }
+}
+
+export function hasNativeHandleBridge(addon: unknown): addon is NativeHandleAddon {
+  return negotiateNativeHandleBridge(addon) !== undefined;
 }
 
 /** Opaque Go AST session backed by stable numeric handles. */
 export class NativeHandleSession {
   walkBuffer: Uint32Array;
   private root = 0;
+  private readonly maxBatchSize: number;
   private owner?: { sessionId: number; rootId: number };
 
   constructor(
@@ -98,7 +116,9 @@ export class NativeHandleSession {
   ) {
     if (!Number.isSafeInteger(walkCapacity) || walkCapacity < 1)
       throw new RangeError('walk capacity must be positive');
-    if (!hasNativeHandleBridge(addon)) throw new Error('incompatible native handle protocol');
+    const maxBatchSize = negotiateNativeHandleBridge(addon);
+    if (maxBatchSize === undefined) throw new Error('incompatible native handle protocol');
+    this.maxBatchSize = maxBatchSize;
     this.walkBuffer = new Uint32Array(walkCapacity);
   }
 
@@ -132,15 +152,17 @@ export class NativeHandleSession {
     try {
       let count = 0;
       for (;;) {
-        const target = this.walkBuffer.subarray(count);
+        const target = this.walkBuffer.subarray(count, count + this.maxBatchSize);
         const read = this.addon.handleCursorNextV2(this.requireSession(), cursor, target);
         if (!Number.isInteger(read) || read < 0 || read > target.length)
           throw new Error('invalid handle cursor page');
         count += read;
         if (read < target.length) return count;
-        const grown = new Uint32Array(this.walkBuffer.length * 2);
-        grown.set(this.walkBuffer);
-        this.walkBuffer = grown;
+        if (count === this.walkBuffer.length) {
+          const grown = new Uint32Array(this.walkBuffer.length * 2);
+          grown.set(this.walkBuffer);
+          this.walkBuffer = grown;
+        }
       }
     } finally {
       this.addon.handleCloseCursorV2(this.requireSession(), cursor);
@@ -148,6 +170,7 @@ export class NativeHandleSession {
   }
 
   readFields(handles: Uint32Array, field: HandleField): string[] {
+    this.validateBatchSize(handles);
     return this.addon.handleReadFieldsV2(this.requireSession(), handles, field);
   }
 
@@ -155,7 +178,7 @@ export class NativeHandleSession {
   *declarationBatches(): Generator<Uint32Array> {
     const id = this.requireSession();
     const cursor = this.addon.handleOpenCursorV2(id, this.root, true);
-    const buffer = new Uint32Array(HANDLE_MAX_BATCH_SIZE);
+    const buffer = new Uint32Array(this.maxBatchSize);
     try {
       for (;;) {
         const count = this.addon.handleCursorNextV2(id, cursor, buffer);
@@ -170,11 +193,18 @@ export class NativeHandleSession {
   }
 
   setFields(handles: Uint32Array, field: HandleField, values: string[]): void {
+    this.validateBatchSize(handles);
     this.addon.handleSetFieldsV2(this.requireSession(), handles, field, values);
   }
 
   stringify(handle = this.root): string {
     return this.addon.handleStringifyV2(this.requireSession(), handle);
+  }
+
+  private validateBatchSize(handles: Uint32Array): void {
+    // Do not split writes: a rejected batch must remain atomic.
+    if (handles.length > this.maxBatchSize)
+      throw new RangeError('handle batch exceeds negotiated maximum');
   }
 
   private requireSession(): number {

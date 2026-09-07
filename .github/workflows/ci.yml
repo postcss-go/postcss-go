@@ -107,6 +107,28 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      - name: Qualify maintained native corpus
+        run: |
+          pnpm test:qualification
+          node scripts/qualify-native-corpus.mjs > native-corpus-results.json
+
+      - name: Capture native qualification benchmarks
+        run: node benchmark/run-handles.mjs --qualification > native-benchmarks.jsonl
+
+      - name: Capture runtime line counts
+        run: node scripts/count-runtime-lines.mjs > runtime-lines.json
+
+      - name: Upload qualification inputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-qualification-${{ github.sha }}
+          path: |
+            native-corpus-results.json
+            native-benchmarks.jsonl
+            runtime-lines.json
+            docs/qualification/phase-0/corpus.json
+
       # Bypass Turborepo for shared so typecheck never sees a stale/partial
       # cache restore that omits dist/*.d.ts (vite dual-format + unplugin-dts).
       - name: Typecheck packages

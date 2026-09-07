@@ -55,7 +55,9 @@
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
     "bench": "node benchmark/run.mjs",
-    "bench:boundary": "node benchmark/run-boundary.mjs"
+    "bench:boundary": "node benchmark/run-boundary.mjs",
+    "qualify:native": "pnpm test:qualification && node scripts/qualify-native-corpus.mjs",
+    "test:qualification": "node --test --experimental-test-coverage --test-coverage-include=benchmark/qualification-metrics.mjs --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 benchmark/qualification-metrics.test.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",
