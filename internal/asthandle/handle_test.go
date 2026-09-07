@@ -292,7 +292,7 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 func TestTypeRejectsUnknownNodes(t *testing.T) {
 	session := New()
 	defer session.Close()
-	h := session.mustHandle(&unknownHandleNode{})
+	h, _ := session.intern(&unknownHandleNode{})
 	kind, err := session.Type(h)
 	if kind != TypeNone || !errors.Is(err, ErrInvalidHandle) {
 		t.Fatalf("unknown type: %d %v", kind, err)
@@ -509,7 +509,7 @@ func TestDocumentAndCommentTypes(t *testing.T) {
 	root := ast.NewRoot()
 	doc.Append(root)
 	session.internTree(doc)
-	h := session.mustHandle(doc)
+	h := session.Identity(doc)
 	kind, err := session.Type(h)
 	if err != nil {
 		t.Fatal(err)
@@ -518,7 +518,7 @@ func TestDocumentAndCommentTypes(t *testing.T) {
 		t.Fatalf("document type: %d", kind)
 	}
 	comment := ast.NewComment("x")
-	ch := session.mustHandle(comment)
+	ch, _ := session.intern(comment)
 	kind, err = session.Type(ch)
 	if err != nil {
 		t.Fatal(err)
@@ -546,7 +546,7 @@ func TestErrorPathsAndIdentity(t *testing.T) {
 	if err != nil || kind != TypeRoot {
 		t.Fatalf("root type: %d %v", kind, err)
 	}
-	if session.intern(nil) != 0 {
+	if h, err := session.intern(nil); h != 0 || err != nil {
 		t.Fatal("intern nil")
 	}
 	if session.Identity(ast.NewDeclaration("missing", "1")) != 0 {

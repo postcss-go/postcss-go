@@ -26,6 +26,11 @@ export type HandleField =
   | typeof HANDLE_FIELD_PARAMS
   | typeof HANDLE_FIELD_TEXT;
 
+export type NativeHandleParseOptions = { from?: string; document?: string; trackSource?: boolean };
+
+/** Native failures carry a generated HANDLE_STATUS_* value and a Go-owned message. */
+export type NativeHandleError = Error & { status: number };
+
 export type NativeHandleAddon = {
   handleProtocolInfo(): {
     major: number;
@@ -33,7 +38,7 @@ export type NativeHandleAddon = {
     maxBatchSize: number;
     capabilities: Uint32Array;
   };
-  handleParseV2(css: string): { sessionId: number; rootId: number };
+  handleParseV2(css: string, optionsJSON?: string): { sessionId: number; rootId: number };
   handleCloseV2(sessionId: number): void;
   handleTypeV2(sessionId: number, handle: number): number;
   handleGetFieldV2(sessionId: number, handle: number, field: HandleField): string;
@@ -76,13 +81,14 @@ function negotiateNativeHandleBridge(addon: unknown): number | undefined {
     'handleAppendV2',
     'handleDisposeV2',
   ] as const;
-  if (!methods.every((name) => typeof candidate[name] === 'function')) return undefined;
   try {
+    if (!methods.every((name) => typeof candidate[name] === 'function')) return undefined;
     const info = candidate.handleProtocolInfo();
     if (
       info?.major !== HANDLE_PROTOCOL_MAJOR ||
       !Number.isInteger(info.minor) ||
       info.minor < 0 ||
+      info.minor > 0xffffffff ||
       !(info.capabilities instanceof Uint32Array) ||
       !HANDLE_REQUIRED_CAPABILITIES.every(
         (required, index) => (info.capabilities[index] & required) >>> 0 === required,
@@ -122,10 +128,17 @@ export class NativeHandleSession {
     this.walkBuffer = new Uint32Array(walkCapacity);
   }
 
-  parse(css: string): number {
+  parse(css: string, options?: NativeHandleParseOptions): number {
     this.close();
-    const created = this.addon.handleParseV2(css);
-    if (!created?.sessionId || !created.rootId) throw new Error('postcss-go handle parse failed');
+    const created =
+      options === undefined
+        ? this.addon.handleParseV2(css)
+        : this.addon.handleParseV2(css, JSON.stringify(options));
+    const validId = (id: number) => Number.isInteger(id) && id > 0 && id <= 0xffffffff;
+    if (!created || !validId(created.sessionId) || !validId(created.rootId)) {
+      if (created && validId(created.sessionId)) this.addon.handleCloseV2(created.sessionId);
+      throw new Error('postcss-go handle parse failed');
+    }
     this.owner = created;
     this.root = created.rootId;
     return this.root;

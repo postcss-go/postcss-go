@@ -9,6 +9,7 @@ import {
   NativeHandleSession,
   type HandleDeclarationStub,
   type NativeHandleAddon,
+  type NativeHandleParseOptions,
 } from './handle-session.js';
 
 const DECLARATION_ONLY_KEYS = new Set(['postcssPlugin', 'Declaration', 'postcss', 'plugins']);
@@ -58,10 +59,11 @@ export function runHandleDeclarationSession(
   addon: NativeHandleAddon,
   css: string,
   plugins: AcceptedPlugin[],
+  options?: NativeHandleParseOptions,
 ): { css: string; session: NativeHandleSession } {
   const session = new NativeHandleSession(addon);
   try {
-    const root = session.parse(css);
+    const root = session.parse(css, options);
     for (const handles of session.declarationBatches()) {
       const count = handles.length;
       const props = session.readFields(handles, HANDLE_FIELD_PROP);

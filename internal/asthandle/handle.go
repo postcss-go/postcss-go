@@ -21,25 +21,17 @@ type Handle uint32
 // Field identifies a scalar node property readable or writable across the ABI.
 type Field int32
 
-const (
-	TypeNone int32 = iota
-	TypeRoot
-	TypeDocument
-	TypeRule
-	TypeAtRule
-	TypeDecl
-	TypeComment
-)
-
 var (
-	ErrInvalidHandle = errors.New("asthandle: invalid handle")
-	ErrStaleHandle   = errors.New("asthandle: stale handle")
-	ErrClosed        = errors.New("asthandle: session closed")
-	ErrNotContainer  = errors.New("asthandle: node is not a container")
-	ErrBadField      = errors.New("asthandle: unsupported field for node")
-	ErrCursor        = errors.New("asthandle: invalid cursor")
-	ErrParse         = errors.New("asthandle: parse failed")
-	ErrCycle         = errors.New("asthandle: mutation would create a cycle")
+	ErrInvalidHandle   = errors.New("asthandle: invalid handle")
+	ErrStaleHandle     = errors.New("asthandle: stale handle")
+	ErrClosed          = errors.New("asthandle: session closed")
+	ErrNotContainer    = errors.New("asthandle: node is not a container")
+	ErrBadField        = errors.New("asthandle: unsupported field for node")
+	ErrCursor          = errors.New("asthandle: invalid cursor")
+	ErrParse           = errors.New("asthandle: parse failed")
+	ErrExhausted       = errors.New("asthandle: ID space exhausted")
+	ErrInvalidArgument = errors.New("asthandle: invalid argument")
+	ErrCycle           = errors.New("asthandle: mutation would create a cycle")
 )
 
 type slotRecord struct {
@@ -50,36 +42,45 @@ type slotRecord struct {
 // Session is one parse/process arena. Handles are valid only for the session
 // that minted them. Close invalidates every handle at once.
 type Session struct {
-	slots   []slotRecord
-	byNode  map[ast.Node]uint32
-	root    Handle
-	closed  bool
-	cursors []*cursor
+	slots      map[uint32]slotRecord
+	nextNode   uint32
+	nextCursor uint32
+	byNode     map[ast.Node]uint32
+	root       Handle
+	closed     bool
+	cursors    map[uint32]*cursor
 }
 
 type cursor struct {
 	handles []Handle
 	offset  int
-	open    bool
 }
 
 // Parse builds a session from CSS and interns every node in the tree.
 func Parse(css string) (*Session, Handle, error) {
-	root, err := parser.Parse(css, sourcemap.Options{From: "handle.css"})
+	return ParseWithOptions(css, sourcemap.Options{})
+}
+
+func ParseWithOptions(css string, options sourcemap.Options) (*Session, Handle, error) {
+	root, err := parser.Parse(css, options)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %v", ErrParse, err)
 	}
 	session := New()
-	session.internTree(root)
-	session.root = session.mustHandle(root)
+	if err := session.internTree(root); err != nil {
+		session.Close()
+		return nil, 0, err
+	}
+	session.root = session.Identity(root)
 	return session, session.root, nil
 }
 
 // New returns an empty session. Detached nodes can be created without a parse.
 func New() *Session {
 	return &Session{
-		slots:  []slotRecord{{}}, // slot 0 is reserved
-		byNode: map[ast.Node]uint32{},
+		slots:   make(map[uint32]slotRecord),
+		cursors: make(map[uint32]*cursor),
+		byNode:  map[ast.Node]uint32{},
 	}
 }
 
@@ -90,50 +91,45 @@ func (s *Session) Close() {
 		return
 	}
 	s.closed = true
-	for i := range s.slots {
-		s.slots[i].live = false
-		s.slots[i].node = nil
-	}
+	s.slots = nil
 	s.byNode = nil
 	s.root = 0
-	for _, cur := range s.cursors {
-		if cur != nil {
-			cur.open = false
-			cur.handles = nil
-		}
-	}
+	s.cursors = nil
 }
 
-func (s *Session) intern(n ast.Node) uint32 {
+// internTree preflights the whole allocation so failed clones leave no partial IDs.
+func (s *Session) internTree(n ast.Node) error {
+	if s == nil || s.closed {
+		return ErrClosed
+	}
+	nodes := []ast.Node{}
 	if n == nil {
-		return 0
+		return nil
 	}
-	if slot, ok := s.byNode[n]; ok {
-		return slot
+	if err := ast.Walk(n, func(node ast.Node) error {
+		if _, ok := s.byNode[node]; !ok {
+			nodes = append(nodes, node)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	if uint64(len(s.slots)) > uint64(^uint32(0)) {
-		panic("asthandle: node ID space exhausted")
+	if uint64(s.nextNode)+uint64(len(nodes)) > uint64(^uint32(0)) {
+		return ErrExhausted
 	}
-	slot := uint32(len(s.slots))
-	s.slots = append(s.slots, slotRecord{live: true, node: n})
-	s.byNode[n] = slot
-	return slot
+	for _, node := range nodes {
+		s.nextNode++
+		s.slots[s.nextNode] = slotRecord{live: true, node: node}
+		s.byNode[node] = s.nextNode
+	}
+	return nil
 }
 
-func (s *Session) internTree(n ast.Node) {
-	s.intern(n)
-	container, ok := n.(ast.Container)
-	if !ok {
-		return
+func (s *Session) intern(n ast.Node) (Handle, error) {
+	if err := s.internTree(n); err != nil {
+		return 0, err
 	}
-	for _, child := range container.Children() {
-		s.internTree(child)
-	}
-}
-
-func (s *Session) mustHandle(n ast.Node) Handle {
-	slot := s.intern(n)
-	return Handle(slot)
+	return s.Identity(n), nil
 }
 
 func (s *Session) lookup(h Handle) (ast.Node, error) {
@@ -141,10 +137,10 @@ func (s *Session) lookup(h Handle) (ast.Node, error) {
 		return nil, ErrClosed
 	}
 	slot := uint32(h)
-	if slot == 0 || int(slot) >= len(s.slots) {
+	rec, exists := s.slots[slot]
+	if slot == 0 || !exists {
 		return nil, ErrInvalidHandle
 	}
-	rec := s.slots[slot]
 	if !rec.live {
 		return nil, ErrStaleHandle
 	}
@@ -295,7 +291,7 @@ func (s *Session) Parent(h Handle) (Handle, error) {
 	if parent == nil {
 		return 0, nil
 	}
-	return s.mustHandle(parent), nil
+	return s.Identity(parent), nil
 }
 
 func (s *Session) ChildCount(h Handle) (int, error) {
@@ -323,7 +319,7 @@ func (s *Session) ChildAt(h Handle, index int) (Handle, error) {
 	if index < 0 || index >= len(children) {
 		return 0, ErrInvalidHandle
 	}
-	return s.mustHandle(children[index]), nil
+	return s.Identity(children[index]), nil
 }
 
 // NewDecl creates a detached declaration. It has no parent until Append or
@@ -333,7 +329,7 @@ func (s *Session) NewDecl(prop, value string) (Handle, error) {
 		return 0, ErrClosed
 	}
 	decl := ast.NewDeclaration(prop, value)
-	return s.mustHandle(decl), nil
+	return s.intern(decl)
 }
 
 func (s *Session) Append(parent, child Handle) error {
@@ -393,8 +389,7 @@ func (s *Session) Clone(h Handle) (Handle, error) {
 		return 0, err
 	}
 	cloned := node.Clone()
-	s.internTree(cloned)
-	return s.mustHandle(cloned), nil
+	return s.intern(cloned)
 }
 
 // Dispose invalidates a handle. Attached nodes are removed from the tree first.
@@ -418,8 +413,7 @@ func (s *Session) Dispose(h Handle) error {
 		}
 		slot := s.byNode[current]
 		delete(s.byNode, current)
-		s.slots[slot].node = nil
-		s.slots[slot].live = false
+		s.slots[slot] = slotRecord{}
 	}
 	if h == s.root {
 		s.root = 0
@@ -440,28 +434,32 @@ func (s *Session) Collect(root Handle, declsOnly bool) ([]Handle, error) {
 				return nil
 			}
 		}
-		out = append(out, s.mustHandle(current))
+		out = append(out, s.Identity(current))
 		return nil
 	})
 	return out, err
 }
 
 // OpenCursor snapshots a walk so JS can pull handles in batches.
-func (s *Session) OpenCursor(root Handle, declsOnly bool) (int, error) {
+func (s *Session) OpenCursor(root Handle, declsOnly bool) (uint32, error) {
 	handles, err := s.Collect(root, declsOnly)
 	if err != nil {
-		return -1, err
+		return 0, err
 	}
-	id := len(s.cursors)
-	s.cursors = append(s.cursors, &cursor{handles: handles, open: true})
+	if s.nextCursor == ^uint32(0) {
+		return 0, ErrExhausted
+	}
+	s.nextCursor++
+	id := s.nextCursor
+	s.cursors[id] = &cursor{handles: handles}
 	return id, nil
 }
 
-func (s *Session) CursorNext(id int, dst []Handle) (int, error) {
+func (s *Session) CursorNext(id uint32, dst []Handle) (int, error) {
 	if s == nil || s.closed {
 		return 0, ErrClosed
 	}
-	if id < 0 || id >= len(s.cursors) || s.cursors[id] == nil || !s.cursors[id].open {
+	if s.cursors[id] == nil {
 		return 0, ErrCursor
 	}
 	cur := s.cursors[id]
@@ -470,15 +468,14 @@ func (s *Session) CursorNext(id int, dst []Handle) (int, error) {
 	return n, nil
 }
 
-func (s *Session) CloseCursor(id int) error {
+func (s *Session) CloseCursor(id uint32) error {
 	if s == nil || s.closed {
 		return ErrClosed
 	}
-	if id < 0 || id >= len(s.cursors) || s.cursors[id] == nil {
+	if id == 0 || id > s.nextCursor {
 		return ErrCursor
 	}
-	s.cursors[id].open = false
-	s.cursors[id].handles = nil
+	delete(s.cursors, id)
 	return nil
 }
 
@@ -498,7 +495,7 @@ func (s *Session) ReadFields(handles []Handle, field Field) ([]string, error) {
 // SetFields validates the complete batch before changing any node.
 func (s *Session) SetFields(handles []Handle, field Field, values []string) error {
 	if len(handles) != len(values) {
-		return fmt.Errorf("asthandle: mutation batch length mismatch")
+		return fmt.Errorf("%w: mutation batch length mismatch", ErrInvalidArgument)
 	}
 	if s == nil || s.closed {
 		return ErrClosed

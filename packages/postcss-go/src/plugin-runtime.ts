@@ -326,7 +326,9 @@ function tryHandleDeclarationResult(
   ) {
     throw new HandleDeclarationUnsupportedError('plugin run or source maps');
   }
-  const run = runHandleDeclarationSession(service.handleAddon, css, plugins as AcceptedPlugin[]);
+  const run = runHandleDeclarationSession(service.handleAddon, css, plugins as AcceptedPlugin[], {
+    from: options.from,
+  });
   const result = createResult(
     () => hydrateHandleOutputRoot(service, run.session, css, options),
     options,

@@ -84,3 +84,62 @@ test.runIf(isNativeBridgeAvailable())(
     expect(child.status, child.stderr).toBe(0);
   },
 );
+
+test.runIf(isNativeBridgeAvailable())(
+  'native errors retain call-local status and parse origin',
+  () => {
+    const addon = createNativeService().handleAddon!;
+    const owner = addon.handleParseV2('a{x:y}');
+    const other = addon.handleParseV2('b{x:z}', undefined);
+    expect(() => addon.handleParseV2('a{}', {} as unknown as string)).toThrow(/options/);
+    const failure = (fn: () => unknown) => {
+      try {
+        fn();
+      } catch (error) {
+        return error as Error & { status: number };
+      }
+      throw new Error('expected native failure');
+    };
+    try {
+      const cursor = addon.handleOpenCursorV2(owner.sessionId, owner.rootId, true);
+      const ids = new Uint32Array(1);
+      addon.handleCursorNextV2(owner.sessionId, cursor, ids);
+      addon.handleCloseCursorV2(owner.sessionId, cursor);
+      const invalid = failure(() => addon.handleGetFieldV2(owner.sessionId, 0, 1));
+      expect(invalid.status).toBe(1);
+      expect(failure(() => addon.handleGetFieldV2(other.sessionId, other.rootId, 1)).status).toBe(
+        5,
+      );
+      expect(failure(() => addon.handleCursorNextV2(owner.sessionId, cursor, ids)).status).toBe(6);
+      expect(
+        failure(() => addon.handleAppendV2(owner.sessionId, ids[0], owner.rootId)).status,
+      ).toBe(4);
+      expect(
+        failure(() => addon.handleAppendV2(owner.sessionId, owner.rootId, owner.rootId)).status,
+      ).toBe(8);
+      addon.handleDisposeV2(owner.sessionId, ids[0]);
+      expect(failure(() => addon.handleGetFieldV2(owner.sessionId, ids[0], 1)).status).toBe(2);
+      const parse = failure(() =>
+        addon.handleParseV2('a{', JSON.stringify({ from: '/fixtures/original.css' })),
+      );
+      expect(parse.status).toBe(7);
+      expect(parse.message).toContain('/fixtures/original.css');
+      for (const invalidOptions of ['', '{', 'null', '{} {}']) {
+        expect(failure(() => addon.handleParseV2('a{}', invalidOptions)).status).toBe(10);
+      }
+      expect(failure(() => addon.handleParseV2('a{}', '{"unknown":true}')).status).toBe(10);
+      expect(invalid.status).toBe(1);
+      expect(invalid.message).toContain('invalid handle');
+      for (const id of [-1, 0.5, NaN, Infinity, 0x100000000 + other.sessionId]) {
+        expect(() => addon.handleCloseV2(id)).toThrow();
+        expect(() => addon.handleTypeV2(other.sessionId, id)).toThrow();
+      }
+      expect(addon.handleStringifyV2(other.sessionId, other.rootId)).toBe('b{x:z}');
+      addon.handleCloseV2(owner.sessionId);
+      expect(failure(() => addon.handleTypeV2(owner.sessionId, owner.rootId)).status).toBe(3);
+    } finally {
+      addon.handleCloseV2(owner.sessionId);
+      addon.handleCloseV2(other.sessionId);
+    }
+  },
+);

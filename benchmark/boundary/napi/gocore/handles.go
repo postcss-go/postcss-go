@@ -135,7 +135,7 @@ func pcgoHandleCursorNext(id C.int, out *C.uint, capacity C.int) C.int {
 		return handleFail()
 	}
 	buf := make([]asthandle.Handle, int(capacity))
-	n, err := session.CursorNext(int(id), buf)
+	n, err := session.CursorNext(uint32(id), buf)
 	if err != nil {
 		handleErr = err
 		return handleFail()
@@ -153,7 +153,7 @@ func pcgoHandleCloseCursor(id C.int) C.int {
 	if session == nil {
 		return handleFail()
 	}
-	if err := session.CloseCursor(int(id)); err != nil {
+	if err := session.CloseCursor(uint32(id)); err != nil {
 		handleErr = err
 		return handleFail()
 	}

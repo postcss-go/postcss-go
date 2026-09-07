@@ -1,6 +1,7 @@
 package asthandle
 
 import (
+	"github.com/postcss-go/postcss-go/internal/sourcemap"
 	"sync"
 )
 
@@ -25,7 +26,11 @@ func (r *Registry) Len() int {
 }
 
 func (r *Registry) Parse(css string) (uint32, Handle, error) {
-	s, root, err := Parse(css)
+	return r.ParseWithOptions(css, sourcemap.Options{})
+}
+
+func (r *Registry) ParseWithOptions(css string, options sourcemap.Options) (uint32, Handle, error) {
+	s, root, err := ParseWithOptions(css, options)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -34,7 +39,7 @@ func (r *Registry) Parse(css string) (uint32, Handle, error) {
 	// Never reuse IDs: late closes/finalizers must not close a newer arena.
 	if r.next == ^uint32(0) {
 		s.Close()
-		return 0, 0, ErrInvalidHandle
+		return 0, 0, ErrExhausted
 	}
 	r.next++
 	if r.entries == nil {

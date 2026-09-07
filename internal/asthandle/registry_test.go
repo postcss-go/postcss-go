@@ -68,7 +68,7 @@ func TestRegistryParseFailureAndExhaustion(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.next = ^uint32(0)
-	if _, _, err := r.Parse(""); !errors.Is(err, ErrInvalidHandle) {
+	if _, _, err := r.Parse(""); !errors.Is(err, ErrExhausted) {
 		t.Fatal(err)
 	}
 }

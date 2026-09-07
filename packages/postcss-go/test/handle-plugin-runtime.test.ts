@@ -1,3 +1,4 @@
+import { HANDLE_REQUIRED_CAPABILITIES } from '../src/generated/handle-protocol.ts';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { Processor } from '../src/processor.ts';
@@ -345,7 +346,7 @@ test.skipIf(!isNativeBridgeAvailable())(
           major: 2,
           minor: 0,
           maxBatchSize: 4096,
-          capabilities: new Uint32Array([1]),
+          capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
         }),
         handleParseV2() {
           throw new Error('boom');

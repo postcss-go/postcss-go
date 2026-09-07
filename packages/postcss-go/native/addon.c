@@ -40,28 +40,30 @@
 #if defined(POSTCSS_GO_DYNAMIC_LIBRARY)
 typedef int (*pcgo_call_function)(
     unsigned char, char*, int, char*, int, char*, int, char*, int);
-typedef unsigned int (*pcgo_handle_parse_fn)(char*, int, unsigned int*);
+typedef unsigned int (*pcgo_handle_parse_fn)(char*, int, unsigned int*, char*, int, pcgoHandleError*);
 typedef void (*pcgo_handle_close_fn)(unsigned int);
 typedef unsigned int (*pcgo_handle_count_fn)(void);
-typedef int (*pcgo_handle_type_fn)(unsigned int, unsigned int);
-typedef int (*pcgo_handle_get_field_fn)(unsigned int, unsigned int, int, char*, int);
-typedef int (*pcgo_handle_set_field_fn)(unsigned int, unsigned int, int, char*, int);
-typedef int (*pcgo_handle_walk_decls_fn)(unsigned int, unsigned int, unsigned int*, int);
-typedef int (*pcgo_handle_open_cursor_fn)(unsigned int, unsigned int, int);
-typedef int (*pcgo_handle_cursor_next_fn)(unsigned int, int, unsigned int*, int);
-typedef int (*pcgo_handle_close_cursor_fn)(unsigned int, int);
-typedef int (*pcgo_handle_read_fields_fn)(unsigned int, unsigned int*, int, int, char*, int);
-typedef int (*pcgo_handle_set_fields_fn)(unsigned int, unsigned int*, int, int, char*, int);
-typedef unsigned int (*pcgo_handle_new_decl_fn)(unsigned int, char*, int, char*, int);
-typedef int (*pcgo_handle_append_fn)(unsigned int, unsigned int, unsigned int);
-typedef int (*pcgo_handle_dispose_fn)(unsigned int, unsigned int);
-typedef int (*pcgo_handle_stringify_fn)(unsigned int, unsigned int, char*, int);
+typedef void (*pcgo_handle_free_error_fn)(pcgoHandleError*);
+typedef int (*pcgo_handle_type_fn)(unsigned int, unsigned int, pcgoHandleError*);
+typedef int (*pcgo_handle_get_field_fn)(unsigned int, unsigned int, int, char*, int, pcgoHandleError*);
+typedef int (*pcgo_handle_set_field_fn)(unsigned int, unsigned int, int, char*, int, pcgoHandleError*);
+typedef int (*pcgo_handle_walk_decls_fn)(unsigned int, unsigned int, unsigned int*, int, pcgoHandleError*);
+typedef unsigned int (*pcgo_handle_open_cursor_fn)(unsigned int, unsigned int, int, pcgoHandleError*);
+typedef int (*pcgo_handle_cursor_next_fn)(unsigned int, unsigned int, unsigned int*, int, pcgoHandleError*);
+typedef int (*pcgo_handle_close_cursor_fn)(unsigned int, unsigned int, pcgoHandleError*);
+typedef int (*pcgo_handle_read_fields_fn)(unsigned int, unsigned int*, int, int, char*, int, pcgoHandleError*);
+typedef int (*pcgo_handle_set_fields_fn)(unsigned int, unsigned int*, int, int, char*, int, pcgoHandleError*);
+typedef unsigned int (*pcgo_handle_new_decl_fn)(unsigned int, char*, int, char*, int, pcgoHandleError*);
+typedef int (*pcgo_handle_append_fn)(unsigned int, unsigned int, unsigned int, pcgoHandleError*);
+typedef int (*pcgo_handle_dispose_fn)(unsigned int, unsigned int, pcgoHandleError*);
+typedef int (*pcgo_handle_stringify_fn)(unsigned int, unsigned int, char*, int, pcgoHandleError*);
 static INIT_ONCE go_bridge_once = INIT_ONCE_STATIC_INIT;
 static HMODULE go_bridge_library = NULL;
 static pcgo_call_function go_bridge_call = NULL;
 static pcgo_handle_parse_fn go_handle_parse = NULL;
 static pcgo_handle_close_fn go_handle_close = NULL;
 static pcgo_handle_count_fn go_handle_count = NULL;
+static pcgo_handle_free_error_fn go_handle_free_error = NULL;
 static pcgo_handle_type_fn go_handle_type = NULL;
 static pcgo_handle_get_field_fn go_handle_get_field = NULL;
 static pcgo_handle_set_field_fn go_handle_set_field = NULL;
@@ -121,22 +123,23 @@ static BOOL CALLBACK load_go_bridge(
     return TRUE;
   }
   go_bridge_call = (pcgo_call_function)require_go_symbol("pcgoCall");
-  go_handle_parse = (pcgo_handle_parse_fn)require_go_symbol("pcgoHandleParseV2");
+  go_handle_parse = (pcgo_handle_parse_fn)require_go_symbol("pcgoHandleParseV2_1");
   go_handle_close = (pcgo_handle_close_fn)require_go_symbol("pcgoHandleCloseV2");
+  go_handle_free_error = (pcgo_handle_free_error_fn)require_go_symbol("pcgoHandleFreeErrorV2_1");
   go_handle_count = (pcgo_handle_count_fn)require_go_symbol("pcgoHandleSessionCountV2");
-  go_handle_type = (pcgo_handle_type_fn)require_go_symbol("pcgoHandleTypeV2");
-  go_handle_get_field = (pcgo_handle_get_field_fn)require_go_symbol("pcgoHandleGetFieldV2");
-  go_handle_set_field = (pcgo_handle_set_field_fn)require_go_symbol("pcgoHandleSetFieldV2");
-  go_handle_walk_decls = (pcgo_handle_walk_decls_fn)require_go_symbol("pcgoHandleWalkDeclsV2");
-  go_handle_open_cursor = (pcgo_handle_open_cursor_fn)require_go_symbol("pcgoHandleOpenCursorV2");
-  go_handle_cursor_next = (pcgo_handle_cursor_next_fn)require_go_symbol("pcgoHandleCursorNextV2");
-  go_handle_close_cursor = (pcgo_handle_close_cursor_fn)require_go_symbol("pcgoHandleCloseCursorV2");
-  go_handle_read_fields = (pcgo_handle_read_fields_fn)require_go_symbol("pcgoHandleReadFieldsV2");
-  go_handle_set_fields = (pcgo_handle_set_fields_fn)require_go_symbol("pcgoHandleSetFieldsV2");
-  go_handle_new_decl = (pcgo_handle_new_decl_fn)require_go_symbol("pcgoHandleNewDeclV2");
-  go_handle_append = (pcgo_handle_append_fn)require_go_symbol("pcgoHandleAppendV2");
-  go_handle_dispose = (pcgo_handle_dispose_fn)require_go_symbol("pcgoHandleDisposeV2");
-  go_handle_stringify = (pcgo_handle_stringify_fn)require_go_symbol("pcgoHandleStringifyV2");
+  go_handle_type = (pcgo_handle_type_fn)require_go_symbol("pcgoHandleTypeV2_1");
+  go_handle_get_field = (pcgo_handle_get_field_fn)require_go_symbol("pcgoHandleGetFieldV2_1");
+  go_handle_set_field = (pcgo_handle_set_field_fn)require_go_symbol("pcgoHandleSetFieldV2_1");
+  go_handle_walk_decls = (pcgo_handle_walk_decls_fn)require_go_symbol("pcgoHandleWalkDeclsV2_1");
+  go_handle_open_cursor = (pcgo_handle_open_cursor_fn)require_go_symbol("pcgoHandleOpenCursorV2_1");
+  go_handle_cursor_next = (pcgo_handle_cursor_next_fn)require_go_symbol("pcgoHandleCursorNextV2_1");
+  go_handle_close_cursor = (pcgo_handle_close_cursor_fn)require_go_symbol("pcgoHandleCloseCursorV2_1");
+  go_handle_read_fields = (pcgo_handle_read_fields_fn)require_go_symbol("pcgoHandleReadFieldsV2_1");
+  go_handle_set_fields = (pcgo_handle_set_fields_fn)require_go_symbol("pcgoHandleSetFieldsV2_1");
+  go_handle_new_decl = (pcgo_handle_new_decl_fn)require_go_symbol("pcgoHandleNewDeclV2_1");
+  go_handle_append = (pcgo_handle_append_fn)require_go_symbol("pcgoHandleAppendV2_1");
+  go_handle_dispose = (pcgo_handle_dispose_fn)require_go_symbol("pcgoHandleDisposeV2_1");
+  go_handle_stringify = (pcgo_handle_stringify_fn)require_go_symbol("pcgoHandleStringifyV2_1");
   return TRUE;
 }
 
@@ -159,22 +162,23 @@ static int call_go_bridge(
       output, output_capacity, error, error_capacity);
 }
 
-#define pcgoHandleParseV2 go_handle_parse
+#define pcgoHandleParseV2_1 go_handle_parse
 #define pcgoHandleCloseV2 go_handle_close
 #define pcgoHandleSessionCountV2 go_handle_count
-#define pcgoHandleTypeV2 go_handle_type
-#define pcgoHandleGetFieldV2 go_handle_get_field
-#define pcgoHandleSetFieldV2 go_handle_set_field
-#define pcgoHandleWalkDeclsV2 go_handle_walk_decls
-#define pcgoHandleOpenCursorV2 go_handle_open_cursor
-#define pcgoHandleCursorNextV2 go_handle_cursor_next
-#define pcgoHandleCloseCursorV2 go_handle_close_cursor
-#define pcgoHandleReadFieldsV2 go_handle_read_fields
-#define pcgoHandleSetFieldsV2 go_handle_set_fields
-#define pcgoHandleNewDeclV2 go_handle_new_decl
-#define pcgoHandleAppendV2 go_handle_append
-#define pcgoHandleDisposeV2 go_handle_dispose
-#define pcgoHandleStringifyV2 go_handle_stringify
+#define pcgoHandleFreeErrorV2_1 go_handle_free_error
+#define pcgoHandleTypeV2_1 go_handle_type
+#define pcgoHandleGetFieldV2_1 go_handle_get_field
+#define pcgoHandleSetFieldV2_1 go_handle_set_field
+#define pcgoHandleWalkDeclsV2_1 go_handle_walk_decls
+#define pcgoHandleOpenCursorV2_1 go_handle_open_cursor
+#define pcgoHandleCursorNextV2_1 go_handle_cursor_next
+#define pcgoHandleCloseCursorV2_1 go_handle_close_cursor
+#define pcgoHandleReadFieldsV2_1 go_handle_read_fields
+#define pcgoHandleSetFieldsV2_1 go_handle_set_fields
+#define pcgoHandleNewDeclV2_1 go_handle_new_decl
+#define pcgoHandleAppendV2_1 go_handle_append
+#define pcgoHandleDisposeV2_1 go_handle_dispose
+#define pcgoHandleStringifyV2_1 go_handle_stringify
 #else
 static int initialize_go_bridge(char* error) {
   (void)error;
@@ -457,6 +461,35 @@ static napi_value dispatch(napi_env env, napi_callback_info info) {
   return promise;
 }
 
+// The Go error belongs only to this native invocation; nested sessions cannot overwrite it.
+static napi_value throw_handle_error(napi_env env, pcgoHandleError* detail) {
+  napi_value message, error, code;
+  const char* text = detail->message ? detail->message : "native handle transport failure";
+  napi_status status = napi_create_string_utf8(env, text, detail->message ? detail->length : NAPI_AUTO_LENGTH, &message);
+  pcgoHandleFreeErrorV2_1(detail);
+  if (status != napi_ok || napi_create_error(env, NULL, message, &error) != napi_ok) return NULL;
+  if (napi_create_uint32(env, detail->code ? detail->code : HANDLE_STATUS_INTERNAL, &code) != napi_ok ||
+      napi_set_named_property(env, error, "status", code) != napi_ok) return NULL;
+  napi_throw(env, error);
+  return NULL;
+}
+
+// N-API's uint32 conversion wraps negatives and large values. IDs must never wrap.
+static napi_status read_handle_id(napi_env env, napi_value value, uint32_t* out) {
+  double number;
+  if (napi_get_value_double(env, value, &number) != napi_ok ||
+      !(number >= 0 && number <= UINT32_MAX) || number != (double)(uint32_t)number) return napi_invalid_arg;
+  *out = (uint32_t)number;
+  return napi_ok;
+}
+
+static napi_status read_handle_field_id(napi_env env, napi_value value, int32_t* out) {
+  uint32_t field;
+  if (read_handle_id(env, value, &field) != napi_ok || field > INT32_MAX) return napi_invalid_arg;
+  *out = (int32_t)field;
+  return napi_ok;
+}
+
 static napi_value handle_protocol_info(napi_env env, napi_callback_info info) {
   (void)info;
   napi_value result, value, buffer, capabilities;
@@ -481,8 +514,9 @@ static void finalize_handle_session(napi_env env, void* data, void* hint) {
 }
 
 static napi_value handle_parse(napi_env env, napi_callback_info info) {
-  size_t argc = 1;
-  napi_value argv[1] = {0};
+  pcgoHandleError error = {0};
+  size_t argc = 2;
+  napi_value argv[2] = {0};
   size_t length = 0;
   napi_value result;
 
@@ -495,10 +529,20 @@ static napi_value handle_parse(napi_env env, napi_callback_info info) {
     free(css);
     return NULL;
   }
+  input options = {0};
+  if (argc > 1) {
+    napi_valuetype type;
+    if (napi_typeof(env, argv[1], &type) != napi_ok ||
+        (type != napi_undefined && (type != napi_string || read_input(env, argv[1], false, false, &options) != 0))) {
+      free(css);
+      return throw_error(env, "invalid handle parse options: expected JSON string");
+    }
+  }
   uint32_t root = 0;
-  uint32_t handle = pcgoHandleParseV2(css, (int)length, &root);
+  uint32_t handle = pcgoHandleParseV2_1(css, (int)length, &root, options.data, (int)options.length, &error);
   free(css);
-  if (handle == 0) return throw_error(env, "handle parse failed");
+  free_input(&options);
+  if (handle == 0) return throw_handle_error(env, &error);
   napi_value session_value, root_value;
   if (napi_create_object(env, &result) != napi_ok ||
       napi_create_uint32(env, handle, &session_value) != napi_ok ||
@@ -520,12 +564,13 @@ static napi_value handle_close(napi_env env, napi_callback_info info) {
   napi_value argv[1] = {0};
   uint32_t session = 0;
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
   pcgoHandleCloseV2(session);
   return NULL;
 }
 
 static napi_value handle_type(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 2;
   napi_value argv[2] = {0};
@@ -533,16 +578,16 @@ static napi_value handle_type(napi_env env, napi_callback_info info) {
   napi_value result;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
-  int kind = pcgoHandleTypeV2(session, handle);
-  if (kind < 0) return throw_error(env, "handle type failed");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
+  int kind = pcgoHandleTypeV2_1(session, handle, &error);
+  if (kind < 0) return throw_handle_error(env, &error);
   if (napi_create_int32(env, kind, &result) != napi_ok) return NULL;
   return result;
 }
 
 static int read_handle_field(
-    uint32_t session, uint32_t handle, int32_t field, char** out, size_t* out_length) {
+    uint32_t session, uint32_t handle, int32_t field, char** out, size_t* out_length, pcgoHandleError* error) {
   int capacity = HANDLE_SCRATCH_CAPACITY;
   char* buffer = NULL;
   for (;;) {
@@ -552,7 +597,7 @@ static int read_handle_field(
       return -1;
     }
     buffer = next;
-    int written = pcgoHandleGetFieldV2(session, handle, field, buffer, capacity);
+    int written = pcgoHandleGetFieldV2_1(session, handle, field, buffer, capacity, error);
     if (written < 0) {
       free(buffer);
       return -1;
@@ -567,6 +612,7 @@ static int read_handle_field(
 }
 
 static napi_value handle_get_field(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 3;
   napi_value argv[3] = {0};
@@ -577,11 +623,11 @@ static napi_value handle_get_field(napi_env env, napi_callback_info info) {
   size_t length = 0;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_int32(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (read_handle_field(session, handle, field, &value, &length) != 0) {
-    return throw_error(env, "handle getField failed");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_field_id(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_field(session, handle, field, &value, &length, &error) != 0) {
+    return throw_handle_error(env, &error);
   }
   if (napi_create_string_utf8(env, value, length, &result) != napi_ok) {
     free(value);
@@ -592,6 +638,7 @@ static napi_value handle_get_field(napi_env env, napi_callback_info info) {
 }
 
 static napi_value handle_set_field(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 4;
   napi_value argv[4] = {0};
@@ -600,19 +647,20 @@ static napi_value handle_set_field(napi_env env, napi_callback_info info) {
   input value = {0};
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_int32(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_field_id(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (read_input(env, argv[3], false, false, &value) != 0) return NULL;
-  int status = pcgoHandleSetFieldV2(session, handle, field, value.data, (int)value.length);
+  int status = pcgoHandleSetFieldV2_1(session, handle, field, value.data, (int)value.length, &error);
   free(value.data);
   if (status < 0) {
-    return throw_error(env, "handle setField failed");
+    return throw_handle_error(env, &error);
   }
   return NULL;
 }
 
 static napi_value handle_walk_decls(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 3;
   napi_value argv[3] = {0};
@@ -625,8 +673,8 @@ static napi_value handle_walk_decls(napi_env env, napi_callback_info info) {
   napi_value result;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &root) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &root) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (napi_get_typedarray_info(env, argv[2], &type, &length, &data, &arraybuffer, &offset) != napi_ok) {
     return NULL;
   }
@@ -634,13 +682,14 @@ static napi_value handle_walk_decls(napi_env env, napi_callback_info info) {
     napi_throw_type_error(env, NULL, "expected Uint32Array");
     return NULL;
   }
-  int count = pcgoHandleWalkDeclsV2(session, root, (unsigned int*)data, (int)length);
-  if (count < 0) return throw_error(env, "handle walkDecls failed");
+  int count = pcgoHandleWalkDeclsV2_1(session, root, (unsigned int*)data, (int)length, &error);
+  if (count < 0) return throw_handle_error(env, &error);
   if (napi_create_int32(env, count, &result) != napi_ok) return NULL;
   return result;
 }
 
 static napi_value handle_open_cursor(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 3;
   napi_value argv[3] = {0};
@@ -649,20 +698,21 @@ static napi_value handle_open_cursor(napi_env env, napi_callback_info info) {
   napi_value result;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &root) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &root) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (argc > 2 && napi_get_value_bool(env, argv[2], &decls_only) != napi_ok) return NULL;
-  int id = pcgoHandleOpenCursorV2(session, root, decls_only ? 1 : 0);
-  if (id < 0) return throw_error(env, "handle openCursor failed");
-  if (napi_create_int32(env, id, &result) != napi_ok) return NULL;
+  uint32_t id = pcgoHandleOpenCursorV2_1(session, root, decls_only ? 1 : 0, &error);
+  if (id == 0) return throw_handle_error(env, &error);
+  if (napi_create_uint32(env, id, &result) != napi_ok) return NULL;
   return result;
 }
 
 static napi_value handle_cursor_next(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 3;
   napi_value argv[3] = {0};
-  int32_t id = 0;
+  uint32_t id = 0;
   napi_typedarray_type type;
   size_t length = 0;
   void* data = NULL;
@@ -671,28 +721,29 @@ static napi_value handle_cursor_next(napi_env env, napi_callback_info info) {
   napi_value result;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_int32(env, argv[1], &id) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &id) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (napi_get_typedarray_info(env, argv[2], &type, &length, &data, &arraybuffer, &offset) != napi_ok) {
     return NULL;
   }
   if (type != napi_uint32_array || length > INT_MAX) return throw_error(env, "expected Uint32Array within ABI limits");
-  int count = pcgoHandleCursorNextV2(session, id, (unsigned int*)data, (int)length);
-  if (count < 0) return throw_error(env, "handle cursorNext failed");
+  int count = pcgoHandleCursorNextV2_1(session, id, (unsigned int*)data, (int)length, &error);
+  if (count < 0) return throw_handle_error(env, &error);
   if (napi_create_int32(env, count, &result) != napi_ok) return NULL;
   return result;
 }
 
 static napi_value handle_close_cursor(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 2;
   napi_value argv[2] = {0};
-  int32_t id = 0;
+  uint32_t id = 0;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_int32(env, argv[1], &id) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (pcgoHandleCloseCursorV2(session, id) < 0) return throw_error(env, "handle closeCursor failed");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &id) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (pcgoHandleCloseCursorV2_1(session, id, &error) < 0) return throw_handle_error(env, &error);
   return NULL;
 }
 
@@ -718,6 +769,7 @@ static napi_value decode_packed_strings(napi_env env, const char* handle_scratch
 }
 
 static napi_value handle_read_fields(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 4;
   napi_value argv[4] = {0};
@@ -730,20 +782,20 @@ static napi_value handle_read_fields(napi_env env, napi_callback_info info) {
   napi_value array;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (napi_get_typedarray_info(env, argv[1], &type, &length, &data, &arraybuffer, &offset) != napi_ok) {
     return NULL;
   }
   if (type != napi_uint32_array || length > INT_MAX) return throw_error(env, "expected Uint32Array within ABI limits");
-  if (napi_get_value_int32(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_field_id(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
   int capacity = HANDLE_SCRATCH_CAPACITY;
   char* scratch = NULL;
   for (;;) {
     char* next = (char*)realloc(scratch, (size_t)capacity);
     if (!next) { free(scratch); return throw_error(env, "out of memory"); }
     scratch = next;
-    int written = pcgoHandleReadFieldsV2(session, (unsigned int*)data, (int)length, field, scratch, capacity);
-    if (written < 0) { free(scratch); return throw_error(env, "handle readFields failed"); }
+    int written = pcgoHandleReadFieldsV2_1(session, (unsigned int*)data, (int)length, field, scratch, capacity, &error);
+    if (written < 0) { free(scratch); return throw_handle_error(env, &error); }
     if (written > capacity) { capacity = written; continue; }
     napi_value decoded = decode_packed_strings(env, scratch, written, &array);
     free(scratch);
@@ -754,6 +806,7 @@ static napi_value handle_read_fields(napi_env env, napi_callback_info info) {
 }
 
 static napi_value handle_set_fields(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 4;
   napi_value argv[4] = {0};
@@ -766,11 +819,11 @@ static napi_value handle_set_fields(napi_env env, napi_callback_info info) {
   uint32_t count = 0;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (napi_get_typedarray_info(env, argv[1], &type, &length, &data, &arraybuffer, &offset) != napi_ok) {
     return NULL;
   }
-  if (napi_get_value_int32(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_field_id(env, argv[2], &field) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (type != napi_uint32_array || length > INT_MAX) return throw_error(env, "expected Uint32Array within ABI limits");
   if (napi_get_array_length(env, argv[3], &count) != napi_ok) return throw_error(env, "invalid handle arguments");
 
@@ -810,15 +863,15 @@ static napi_value handle_set_fields(napi_env env, napi_callback_info info) {
     free(handle_scratch);
     return throw_error(env, "handle IDs changed during batch construction");
   }
-  int status = pcgoHandleSetFieldsV2(session, (unsigned int*)data, (int)length, field, handle_scratch, (int)packed);
+  int status = pcgoHandleSetFieldsV2_1(session, (unsigned int*)data, (int)length, field, handle_scratch, (int)packed, &error);
   free(handle_scratch);
   if (status < 0) {
-    return throw_error(env, "handle setFields failed");
+    return throw_handle_error(env, &error);
   }
   return NULL;
 }
 
-static int read_handle_stringify(uint32_t session, uint32_t handle, char** out, size_t* out_length) {
+static int read_handle_stringify(uint32_t session, uint32_t handle, char** out, size_t* out_length, pcgoHandleError* error) {
   int capacity = MINIMUM_OUTPUT_CAPACITY;
   char* buffer = NULL;
   for (;;) {
@@ -828,7 +881,7 @@ static int read_handle_stringify(uint32_t session, uint32_t handle, char** out, 
       return -1;
     }
     buffer = next;
-    int written = pcgoHandleStringifyV2(session, handle, buffer, capacity);
+    int written = pcgoHandleStringifyV2_1(session, handle, buffer, capacity, error);
     if (written < 0) {
       free(buffer);
       return -1;
@@ -843,6 +896,7 @@ static int read_handle_stringify(uint32_t session, uint32_t handle, char** out, 
 }
 
 static napi_value handle_stringify(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 2;
   napi_value argv[2] = {0};
@@ -852,10 +906,10 @@ static napi_value handle_stringify(napi_env env, napi_callback_info info) {
   size_t length = 0;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (read_handle_stringify(session, handle, &css, &length) != 0) {
-    return throw_error(env, "handle stringify failed");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_stringify(session, handle, &css, &length, &error) != 0) {
+    return throw_handle_error(env, &error);
   }
   if (napi_create_string_utf8(env, css, length, &result) != napi_ok) {
     free(css);
@@ -866,6 +920,7 @@ static napi_value handle_stringify(napi_env env, napi_callback_info info) {
 }
 
 static napi_value handle_new_decl(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 3;
   napi_value argv[3] = {0};
@@ -873,17 +928,18 @@ static napi_value handle_new_decl(napi_env env, napi_callback_info info) {
   napi_value result;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
   if (read_input(env, argv[1], false, false, &prop) != 0) return NULL;
   if (read_input(env, argv[2], false, false, &value) != 0) { free(prop.data); return NULL; }
-  uint32_t handle = pcgoHandleNewDeclV2(session, prop.data, (int)prop.length, value.data, (int)value.length);
+  uint32_t handle = pcgoHandleNewDeclV2_1(session, prop.data, (int)prop.length, value.data, (int)value.length, &error);
   free(prop.data); free(value.data);
-  if (handle == 0) return throw_error(env, "handle newDecl failed");
+  if (handle == 0) return throw_handle_error(env, &error);
   if (napi_create_uint32(env, handle, &result) != napi_ok) return NULL;
   return result;
 }
 
 static napi_value handle_append(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 3;
   napi_value argv[3] = {0};
@@ -891,23 +947,24 @@ static napi_value handle_append(napi_env env, napi_callback_info info) {
   uint32_t child = 0;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &parent) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[2], &child) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (pcgoHandleAppendV2(session, parent, child) < 0) return throw_error(env, "handle append failed");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &parent) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[2], &child) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (pcgoHandleAppendV2_1(session, parent, child, &error) < 0) return throw_handle_error(env, &error);
   return NULL;
 }
 
 static napi_value handle_dispose(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
   uint32_t session = 0;
   size_t argc = 2;
   napi_value argv[2] = {0};
   uint32_t handle = 0;
 
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (napi_get_value_uint32(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
-  if (pcgoHandleDisposeV2(session, handle) < 0) return throw_error(env, "handle dispose failed");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[1], &handle) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (pcgoHandleDisposeV2_1(session, handle, &error) < 0) return throw_handle_error(env, &error);
   return NULL;
 }
 

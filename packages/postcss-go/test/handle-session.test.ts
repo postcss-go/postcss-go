@@ -1,3 +1,4 @@
+import { HANDLE_REQUIRED_CAPABILITIES } from '../src/generated/handle-protocol.ts';
 import { expect, test, vi } from 'vitest';
 
 import {
@@ -17,7 +18,7 @@ function mockAddon(overrides: Partial<NativeHandleAddon> = {}): NativeHandleAddo
       major: 2,
       minor: 0,
       maxBatchSize: 4096,
-      capabilities: new Uint32Array([1]),
+      capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
     }),
     handleParseV2: () => ({ sessionId: 1, rootId: 1 }),
     handleCloseV2: () => {},
@@ -139,7 +140,7 @@ test('sessions close exactly once per successful parse and reject use after clos
             major: 1,
             minor: 0,
             maxBatchSize: 1,
-            capabilities: new Uint32Array([1]),
+            capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
           }),
         }),
       ),
@@ -267,7 +268,7 @@ test('negotiated batch limit bounds cursor pages and rejects oversized atomic wr
       major: 2,
       minor: 1,
       maxBatchSize: 2,
-      capabilities: new Uint32Array([1]),
+      capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
     }),
     handleCursorNextV2(_session, _cursor, buffer) {
       expect(buffer.length).toBeLessThanOrEqual(2);
@@ -296,4 +297,65 @@ test('negotiated batch limit bounds cursor pages and rejects oversized atomic wr
   expect(write).not.toHaveBeenCalled();
   expect(read).not.toHaveBeenCalled();
   session.close();
+});
+
+test('each required capability is negotiated independently, including newer minor addons', () => {
+  const valid = mockAddon().handleProtocolInfo();
+  for (const bit of [1, 2, 4, 8]) {
+    const addon = mockAddon({
+      handleProtocolInfo: () => ({
+        ...valid,
+        minor: 99,
+        capabilities: new Uint32Array([HANDLE_REQUIRED_CAPABILITIES[0] & ~bit]),
+      }),
+    });
+    expect(hasNativeHandleBridge(addon)).toBe(false);
+  }
+  expect(
+    hasNativeHandleBridge(
+      mockAddon({
+        handleProtocolInfo: () => ({
+          ...valid,
+          capabilities: new Uint32Array([HANDLE_REQUIRED_CAPABILITIES[0] | 0x80000000]),
+        }),
+      }),
+    ),
+  ).toBe(true);
+  expect(
+    hasNativeHandleBridge(
+      Object.defineProperty({}, 'handleProtocolInfo', {
+        get() {
+          throw new Error('getter');
+        },
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    hasNativeHandleBridge(
+      mockAddon({ handleProtocolInfo: () => ({ ...valid, minor: 0x100000000 }) }),
+    ),
+  ).toBe(false);
+});
+
+test('parse forwards source options and rejects malformed owner IDs without leaks', () => {
+  const parse = vi.fn(() => ({ sessionId: 1, rootId: 1 }));
+  const close = vi.fn();
+  const session = new NativeHandleSession(
+    mockAddon({ handleParseV2: parse, handleCloseV2: close }),
+  );
+  session.parse('a{}', { from: '/source.css', document: 'input', trackSource: true });
+  expect(parse).toHaveBeenCalledWith(
+    'a{}',
+    JSON.stringify({ from: '/source.css', document: 'input', trackSource: true }),
+  );
+  session.close();
+  for (const rootId of [0, -1, 0.5, NaN, Infinity, 0x100000000]) {
+    parse.mockReturnValue({ sessionId: 1, rootId });
+    expect(() => session.parse('a{}')).toThrow(/parse failed/);
+    expect(session.rootHandle).toBe(0);
+  }
+  expect(close).toHaveBeenCalledTimes(7);
+  parse.mockReturnValue({ sessionId: 0x100000000, rootId: 1 });
+  expect(() => session.parse('a{}')).toThrow(/parse failed/);
+  expect(close).toHaveBeenCalledTimes(7);
 });

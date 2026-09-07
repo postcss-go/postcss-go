@@ -107,6 +107,11 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      - name: Check legacy and current handle C ABI
+        run: |
+          cc -Ipackages/postcss-go/native/go-out -Ipackages/postcss-go/native internal/nativeaddon/testdata/handle_abi.c packages/postcss-go/native/go-out/libpostcssgo.a -lpthread -lresolv -ldl -o /tmp/handle-abi
+          /tmp/handle-abi
+
       - name: Qualify maintained native corpus
         run: |
           pnpm test:qualification

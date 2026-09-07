@@ -101,17 +101,17 @@ Do not use this pathological binary baseline as evidence for default rollout.
 The current implementation does **not** satisfy the migration definition of done.
 The following distinguishes implemented foundations from phase exit criteria:
 
-| Phase | Assessment                                                                              | Outstanding acceptance work                                                                                                                                                                                 |
-| ----- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Qualification inputs recorded in Phase 0 evidence                                       | Versioned corpus, base CI, benchmark and line-count artifacts recorded; selection and rollout gates remain blocked.                                                                                         |
-| 1     | Multi-session registry, finalizer, generated scalar protocol and race tests implemented | Schema still lacks the specified operations, event/status enums and individual capability bits. Session ID exhaustion deliberately differs from the original wraparound design.                             |
-| 2     | Not complete                                                                            | Runtime supplies restricted declaration stubs, not identity-cached standard node facades, Once, all visitors or source reads.                                                                               |
-| 3     | Partial                                                                                 | Go scalar field batches exist; JS supports only prop/value. Important, general scalar visitors, callback-level ordered multi-field patches, throw-time mutation retention and dirty revisits remain absent. |
-| 4     | Not complete                                                                            | Relationships, tracked raws, source facades and handle source maps remain unavailable.                                                                                                                      |
-| 5     | Not complete                                                                            | Snapshot cursors are not mutation-aware traversal; general structural plugin methods remain unavailable.                                                                                                    |
-| 6     | Partial foundation                                                                      | Native owner GC exists, but async visitors are rejected and Result.root materializes a hydrated AST.                                                                                                        |
-| 7     | Not complete                                                                            | Auto still selects binary; 95% corpus selection and native hydrated-store removal have not been achieved.                                                                                                   |
-| 8     | Deferred, optional                                                                      | Browser serialization remains intentional.                                                                                                                                                                  |
+| Phase | Assessment                                                                           | Outstanding acceptance work                                                                                                                                                                                 |
+| ----- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Qualification inputs recorded in Phase 0 evidence                                    | Versioned corpus, base CI, benchmark and line-count artifacts recorded; selection and rollout gates remain blocked.                                                                                         |
+| 1     | Protocol 2.1 contract, structured errors, source options and bounded IDs implemented | Protocol enums and capability bits are generated; patch/event execution and general facade capabilities remain gated for later phases.                                                                      |
+| 2     | Not complete                                                                         | Runtime supplies restricted declaration stubs, not identity-cached standard node facades, Once, all visitors or source reads.                                                                               |
+| 3     | Partial                                                                              | Go scalar field batches exist; JS supports only prop/value. Important, general scalar visitors, callback-level ordered multi-field patches, throw-time mutation retention and dirty revisits remain absent. |
+| 4     | Not complete                                                                         | Relationships, tracked raws, source facades and handle source maps remain unavailable.                                                                                                                      |
+| 5     | Not complete                                                                         | Snapshot cursors are not mutation-aware traversal; general structural plugin methods remain unavailable.                                                                                                    |
+| 6     | Partial foundation                                                                   | Native owner GC exists, but async visitors are rejected and Result.root materializes a hydrated AST.                                                                                                        |
+| 7     | Not complete                                                                         | Auto still selects binary; 95% corpus selection and native hydrated-store removal have not been achieved.                                                                                                   |
+| 8     | Deferred, optional                                                                   | Browser serialization remains intentional.                                                                                                                                                                  |
 
 Audit fixes: malformed or throwing protocol handshakes now reject handle
 selection safely; minor versions and batch limits are validated. Required
@@ -156,3 +156,13 @@ and no-hydration qualification remain blocked. The report preserves the discover
 bulk source-map difference and investigates repeated source metadata allocations.
 New measurements supersede the earlier median-of-peaks benchmark interpretation;
 they do not authorize default rollout.
+
+## Phase 1 protocol completion
+
+The [protocol 2.1 contract](native-handle-protocol-v2.md) supersedes the earlier
+protocol limitations in this historical checkpoint. Operations, node/patch/event
+kinds, statuses and named capabilities are generated. Production C calls use
+V2_1 symbols with call-owned errors; V2.0 signatures remain compatible adapters.
+Parse options preserve original source identity, and session/node/cursor IDs
+fail recoverably at uint32 exhaustion without reuse. These changes do not
+implement the general PostCSS facade or change automatic runtime selection.

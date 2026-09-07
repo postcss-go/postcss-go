@@ -31,17 +31,17 @@ general Go-backed PostCSS node facade. Successful handle processing retains a Go
 session, but accessing `Result.root` parses the original input into the hydrated
 representation and projects final scalar fields onto it.
 
-| Phase                         | Current assessment                                      | Main completion blocker                                                                    |
-| ----------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked  | See Phase 0 corpus, benchmark, base-CI and line-count artifacts                            |
-| 1 — Protocol/sessions         | Substantial foundation implemented; protocol incomplete | Full generated enums/capabilities, structured errors and ID edge-case contract             |
-| 2 — Read-only facade          | Not complete                                            | All standard node wrappers, identity/prototypes, Once, visitor filters and source reads    |
-| 3 — Scalar mutation           | Partial                                                 | Important, general scalar visitors, callback-atomic multi-field patches and dirty revisits |
-| 4 — Relationships/source/raws | Not complete                                            | Live facade relationships, nested raws, source identity and handle map equivalence         |
-| 5 — Structural traversal      | Go primitives only; not complete                        | Complete facade methods and mutation-aware enter/exit cursor                               |
-| 6 — Async/lifetime            | Owner/finalizer foundation only                         | Async callback retention and usable Go-backed result/node references                       |
-| 7 — Default rollout/cleanup   | Not started as a rollout                                | 95% corpus selection, full performance/leak gates and two-release cleanup window           |
-| 8 — Browser experiment        | Deferred and optional                                   | Not required for native completion                                                         |
+| Phase                         | Current assessment                                     | Main completion blocker                                                                    |
+| ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | See Phase 0 corpus, benchmark, base-CI and line-count artifacts                            |
+| 1 — Protocol/sessions         | Protocol 2.1 contract implemented                      | General facades and later-phase capabilities remain gated                                  |
+| 2 — Read-only facade          | Not complete                                           | All standard node wrappers, identity/prototypes, Once, visitor filters and source reads    |
+| 3 — Scalar mutation           | Partial                                                | Important, general scalar visitors, callback-atomic multi-field patches and dirty revisits |
+| 4 — Relationships/source/raws | Not complete                                           | Live facade relationships, nested raws, source identity and handle map equivalence         |
+| 5 — Structural traversal      | Go primitives only; not complete                       | Complete facade methods and mutation-aware enter/exit cursor                               |
+| 6 — Async/lifetime            | Owner/finalizer foundation only                        | Async callback retention and usable Go-backed result/node references                       |
+| 7 — Default rollout/cleanup   | Not started as a rollout                               | 95% corpus selection, full performance/leak gates and two-release cleanup window           |
+| 8 — Browser experiment        | Deferred and optional                                  | Not required for native completion                                                         |
 
 ### Completed and verified foundations
 
@@ -113,20 +113,20 @@ this completes baseline inputs, not the 95% selection or rollout gates.
 
 **Phase 1 — Complete the protocol contract**
 
-- [ ] Extend the schema beyond six scalar fields and the current aggregate
-      capability word: generate operations, node kinds, patch/event kinds, status
-      codes and separately named capability bits in Go, TS and C.
-- [ ] Expose stable structured errors across the ABI. Go has distinct errors,
-      but C operations currently collapse failures to generic sentinels; implement
-      call/session-scoped error detail without a global last-error buffer.
-- [ ] Pass parse options and input/file identity into session creation. Current
-      handle parse accepts CSS only and uses `handle.css` internally.
-- [ ] Resolve the identity-contract discrepancies below and test uint32
-      exhaustion for sessions/nodes/cursors. Node exhaustion currently panics and
-      cursors use slice indexes; these need bounded, recoverable protocol behavior.
-- [ ] Expand negotiation tests as individual capabilities and operations land,
-      including newer-minor/missing-capability combinations. Only advertise
-      capabilities implemented end-to-end.
+- [x] Generate explicit operations, node/patch/event kinds, status codes and named
+      capabilities from the schema in Go, TS and C. Unimplemented facade, patch,
+      traversal, map and async capabilities remain unadvertised.
+- [x] Expose call-scoped structured status/message errors through V2_1 C exports;
+      retain V2.0 C signature adapters and free errors in their allocating runtime.
+- [x] Pass from/document/trackSource options into session creation and preserve
+      original Go Input identity. Map/custom parser workloads remain on binary.
+- [x] Specify non-reused uint32 IDs, detach versus dispose and prototype retirement;
+      test exact session/node/cursor exhaustion and atomic failed clone allocation.
+- [x] Test every required capability, newer-minor/missing-bit combinations,
+      throwing getters and malformed IDs. Only implemented capabilities are advertised.
+
+See the [protocol 2.1 contract](../native-handle-protocol-v2.md) for ABI compatibility,
+source options, ownership rules and verification scope. General facades remain Phase 2.
 
 **Phase 2 — Implement the general read-only facade and planner**
 
@@ -208,22 +208,16 @@ this completes baseline inputs, not the 95% selection or rollout gates.
       after the release window, and update architecture/contributor/benchmark docs.
       Preserve intentional browser Worker serialization.
 
-### Contract discrepancies to resolve before structural rollout
+### Identity and compatibility decisions — resolved in Phase 1
 
-- **Session ID reuse:** the original design below allows wraparound while skipping
-  live IDs; the implemented registry deliberately never reuses IDs and fails at
-  uint32 exhaustion. This prevents a delayed finalizer from closing a newer
-  session. Adopt/document that policy, or design equivalent lifetime protection
-  before allowing reuse; do not silently restore wraparound.
-- **Remove versus dispose:** the original wording groups removal with tombstoning.
-  Go Remove currently detaches a live node; Dispose tombstones it and its attached
-  subtree. PostCSS remove/move/reinsert and retained references require usable
-  detached nodes. Specify detach versus permanent disposal and test both through
-  the facade before treating the structural contract as settled.
-- **V1 compatibility:** the original Phase 1 asks to retain an internal V1 bridge;
-  production now publishes only versioned handle methods plus bulk APIs.
-  Document which remaining benchmark/prototype code, if any, is retained and
-  its removal schedule; do not claim a production V1 bridge exists.
+- Session, node and cursor IDs never wrap or reuse values. Zero is reserved;
+  exhaustion is recoverable and cannot leave partially allocated clone handles.
+- Remove detaches live nodes; Dispose tombstones the attached subtree. Detached
+  nodes retain identity and can be reinserted. The Phase 2 facade must enforce
+  ownership when converting wrapper arguments into session-local numeric IDs.
+- Production JS exposes V2 methods; current C calls use V2_1 symbols. Original
+  V2.0 C signatures remain as rollback adapters. Unversioned V1 is limited to
+  boundary benchmark prototypes, scheduled for Phase 7 cleanup.
 
 ### Verification evidence and limits
 
@@ -372,14 +366,14 @@ type NodeID = number; // unsigned 32-bit, scoped to SessionID
 type CursorID = number; // unsigned 32-bit, scoped to SessionID
 ```
 
-V2 node IDs must not be reused during a session. Removing or disposing a node tombstones the ID; the slot is reclaimed only when the session closes. This avoids stale-handle ABA bugs without packing a small generation counter into the JavaScript number.
+V2 node IDs must not be reused during a session. Removing a node detaches it without invalidating its ID. Disposing a node tombstones its ID and attached subtree until the session closes. This avoids stale-handle ABA bugs without packing a small generation counter into the JavaScript number.
 
 Go maintains:
 
 - A process-level registry protected by a registry lock.
 - One lock and one error state per session.
-- Monotonic session IDs that skip IDs still present after wraparound.
-- Monotonic node and cursor IDs within a session.
+- Non-reused monotonic session IDs that return Exhausted at uint32 exhaustion.
+- Non-reused monotonic node and cursor IDs within a session, with recoverable exhaustion.
 - Explicit closed/tombstoned errors with stable numeric status codes.
 
 The process-global `handleSession` and `handleErr` in `internal/nativeaddon/cabi/handles.go` must be removed before V2 is enabled outside tests.
@@ -551,7 +545,7 @@ Deliverables:
 - Replace the global native session with the session registry.
 - Implement non-reused session-scoped node IDs and cursor IDs.
 - Add lifecycle, stale-ID, cross-session, concurrent-session, and close-idempotency tests.
-- Keep the V1 bridge available only as an internal compatibility path.
+- Retain V2.0 C signature adapters through the rollback window; isolate existing V1 benchmark prototypes until Phase 7 cleanup.
 
 Exit criteria:
 
@@ -694,7 +688,7 @@ If the experiment fails a gate, keep the hydrated browser AST and treat it as an
 
 ### Go unit and fuzz tests
 
-- Session registry creation, lookup, close, and ID wrap behavior.
+- Session registry creation, lookup, close, and non-reused ID exhaustion behavior.
 - Node tombstones and cross-session access.
 - Atomic patch validation and rollback.
 - Mutation-aware cursor invariants.
