@@ -38,9 +38,15 @@ import type { Processor } from './processor.js';
 import { prepareStringifyOptions } from './source-map-output.js';
 import {
   isHandleDeclarationPluginRun,
-  runHandleDeclarationPlugins,
+  runHandleDeclarationSession,
 } from './handle-plugin-runtime.js';
-import { HandleDeclarationUnsupportedError, type NativeHandleAddon } from './handle-session.js';
+import {
+  HandleDeclarationUnsupportedError,
+  HANDLE_FIELD_PROP,
+  HANDLE_FIELD_VALUE,
+  type NativeHandleSession,
+  type NativeHandleAddon,
+} from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -320,19 +326,15 @@ function tryHandleDeclarationResult(
   ) {
     throw new HandleDeclarationUnsupportedError('plugin run or source maps');
   }
-  const outputCss = runHandleDeclarationPlugins(
-    service.handleAddon,
-    css,
-    plugins as AcceptedPlugin[],
-  );
+  const run = runHandleDeclarationSession(service.handleAddon, css, plugins as AcceptedPlugin[]);
   const result = createResult(
-    () => hydrateHandleOutputRoot(service, outputCss, css, options),
+    () => hydrateHandleOutputRoot(service, run.session, css, options),
     options,
     plugins,
     processor,
   );
   result.backend = service.capabilities?.backend;
-  result.css = outputCss;
+  result.css = run.css;
   fillDependencyParents(result);
   return result;
 }
@@ -410,17 +412,41 @@ function createResult(
 
 function hydrateHandleOutputRoot(
   service: Pick<PluginBridgeService, 'parseSync'>,
-  outputCss: string,
+  session: NativeHandleSession,
   css: string,
   options: ProcessFileOptions,
 ): ProcessRoot {
   if (typeof service.parseSync !== 'function') {
     throw new Error('postcss-go: handle plugin path requires parseSync to hydrate Result.root');
   }
-  const parsed = service.parseSync(outputCss, { from: options.from });
-  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
-  attachInputMetadata(hydrated, css, options as ProcessOptions);
-  return hydrated;
+  // Hydrate original input, then project Go-owned scalar state. Parsing output
+  // would change source offsets and can reinterpret ';' inside a plugin value.
+  try {
+    const parsed = service.parseSync(css, { from: options.from });
+    const hydrated = asProcessRoot(
+      parsed.root instanceof Node ? parsed.root : fromAst(parsed.root),
+    );
+    attachInputMetadata(hydrated, css, options as ProcessOptions);
+    const declarations: { prop: string; value: string }[] = [];
+    hydrated.walkDecls((decl) => {
+      declarations.push(decl);
+    });
+    let offset = 0;
+    for (const handles of session.declarationBatches()) {
+      const props = session.readFields(handles, HANDLE_FIELD_PROP);
+      const values = session.readFields(handles, HANDLE_FIELD_VALUE);
+      for (let i = 0; i < handles.length; i++) {
+        const decl = declarations[offset++];
+        if (!decl) throw new Error('handle declaration projection mismatch');
+        decl.prop = props[i];
+        decl.value = values[i];
+      }
+    }
+    if (offset !== declarations.length) throw new Error('handle declaration projection mismatch');
+    return hydrated;
+  } finally {
+    session.close();
+  }
 }
 
 async function preparePlugin(

@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 
 const samples = 5;
 const sizes = [1000, 10000];
@@ -27,7 +28,7 @@ if (process.argv[2] === '--sample') {
     JSON.stringify({ ms: (performance.now() - start) / 30, rss: process.resourceUsage().maxRSS }),
   );
 } else {
-  const median = (values) => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)];
+  const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
   let passed = true;
   for (const size of sizes) {
     const results = { binary: [], handle: [] };
@@ -35,7 +36,7 @@ if (process.argv[2] === '--sample') {
       for (const mode of i % 2 ? ['handle', 'binary'] : ['binary', 'handle']) {
         const child = spawnSync(
           process.execPath,
-          [new URL(import.meta.url).pathname, '--sample', String(size)],
+          [fileURLToPath(import.meta.url), '--sample', String(size)],
           {
             encoding: 'utf8',
             timeout: 120000,

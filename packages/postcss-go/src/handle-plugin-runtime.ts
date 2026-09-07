@@ -45,6 +45,20 @@ export function runHandleDeclarationPlugins(
   css: string,
   plugins: AcceptedPlugin[],
 ): string {
+  const run = runHandleDeclarationSession(addon, css, plugins);
+  try {
+    return run.css;
+  } finally {
+    run.session.close();
+  }
+}
+
+/** The caller retains the owner until lazy Result.root materialization or GC. */
+export function runHandleDeclarationSession(
+  addon: NativeHandleAddon,
+  css: string,
+  plugins: AcceptedPlugin[],
+): { css: string; session: NativeHandleSession } {
   const session = new NativeHandleSession(addon);
   try {
     const root = session.parse(css);
@@ -82,8 +96,9 @@ export function runHandleDeclarationPlugins(
       if (valuesChanged) session.setFields(handles, HANDLE_FIELD_VALUE, values);
       if (propsChanged) session.setFields(handles, HANDLE_FIELD_PROP, props);
     }
-    return session.stringify(root);
-  } finally {
+    return { css: session.stringify(root), session };
+  } catch (error) {
     session.close();
+    throw error;
   }
 }

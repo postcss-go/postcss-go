@@ -117,7 +117,7 @@ func directStringify(node ast.Node, stripSourceMapAnnotations bool) string {
 	if rng := node.Range(); rng.End > rng.Start {
 		builder.Grow(rng.End - rng.Start + 64)
 	}
-	directWriteNode(builderWriter{Builder: &builder, cache: nil}, node, 0, stripSourceMapAnnotations)
+	directWriteNode(builderWriter{Builder: &builder, cache: &renderCache{}}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
 }
 

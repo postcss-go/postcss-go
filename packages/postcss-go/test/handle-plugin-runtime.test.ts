@@ -12,6 +12,48 @@ import type { AcceptedPlugin } from '../src/plugin-types.ts';
 
 afterEach(() => vi.unstubAllEnvs());
 
+test.skipIf(!isNativeBridgeAvailable())(
+  'lazy handle results preserve original sources and do not reinterpret mutated values',
+  async () => {
+    vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+    const service = createNativeService();
+    const parse = vi.spyOn(service, 'parseSync');
+    const css = 'a{color:red;\nheight:1px}';
+    const plugin: AcceptedPlugin = {
+      postcssPlugin: 'expanded-value',
+      Declaration(decl) {
+        if (decl.prop === 'color') {
+          decl.prop = 'background';
+          decl.value = 'blue;\ninjected:yes';
+        }
+      },
+    };
+    try {
+      const result = await runPluginsWithBridge(service, [plugin], css, {
+        from: 'source.css',
+        map: false,
+      });
+      expect(parse).not.toHaveBeenCalled();
+      const firstRoot = result.root;
+      expect(firstRoot).toBe(result.root);
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(parse).toHaveBeenCalledWith(css, { from: 'source.css' });
+      const rule = firstRoot.first!;
+      expect(rule.nodes).toHaveLength(2);
+      expect(rule.first).toMatchObject({ prop: 'background', value: 'blue;\ninjected:yes' });
+      expect(rule.last).toMatchObject({
+        prop: 'height',
+        source: { start: { line: 2, column: 1, offset: css.indexOf('height') } },
+      });
+      expect(rule.first!.source!.input).toBe(rule.last!.source!.input);
+      expect(rule.last!.source!.input.css).toBe(css);
+      expect(firstRoot.toString()).toBe(result.css);
+    } finally {
+      service.close();
+    }
+  },
+);
+
 const colorPlugin: AcceptedPlugin = {
   postcssPlugin: 'color-to-navy',
   Declaration(decl) {

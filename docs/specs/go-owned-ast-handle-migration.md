@@ -2,7 +2,7 @@
 
 - Status: In progress — session/protocol foundation; full facade pending
 - Target: `@postcss-go/core` native backend
-- Last updated: 2026-09-06
+- Last updated: 2026-09-07
 - Owners: TBD
 
 ## Summary

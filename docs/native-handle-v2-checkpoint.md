@@ -1,6 +1,6 @@
 # Native handle migration checkpoint
 
-Date: 2026-09-06. This is the **session/protocol foundation**, not completion of
+Updated: 2026-09-07. This is the **session/protocol foundation**, not completion of
 the [full Go-owned AST migration](specs/go-owned-ast-handle-migration.md).
 
 ## Implemented
@@ -31,6 +31,15 @@ the [full Go-owned AST migration](specs/go-owned-ast-handle-migration.md).
 - Restricted declaration callbacks run in node-major order, consume 4096-node
   batches, and skip unchanged field writes. The cursor remains a **snapshot**;
   it is not a mutation-aware PostCSS traversal cursor.
+- The direct stringifier now initializes its render cache, fixing the nil-cache
+  panic left in the WIP commit. Sibling positions are cached per render, with
+  regression coverage across direct, general, builder and source-map rendering,
+  plus mutation between renders. An unterminated final at-rule no longer inherits
+  the preceding sibling's semicolon style.
+- Successful scalar runs retain their Go session until lazy `Result.root`
+  materialization or owner GC. Materialization parses the original input and
+  projects final Go scalar fields onto it, preserving original source positions
+  and shared Input identity without reinterpreting plugin-written CSS tokens.
 
 ## Rollout protection
 
@@ -42,26 +51,26 @@ that a JavaScript plugin uses only `prop` and `value`.
 declaration-only scalar path. Unsupported shapes/maps fail before callbacks;
 unsupported property/helper access or thenables fail without replaying already
 invoked callbacks. This restricted mode is for experiments, not a claim of full
-PostCSS compatibility. It still lacks dirty revisits, general facade identity,
-structural visitors and faithful original-node source metadata on lazy
-`Result.root` hydration. Use `auto`/`binary` for those requirements.
+PostCSS compatibility. It still lacks dirty revisits, general Go-backed facade
+identity and structural visitors. Lazy `Result.root` still materializes a TS AST;
+it is not yet the final Go-backed facade. Use `auto`/`binary` for full semantics.
 
 ## Verification
 
-- Repository JS coverage: Core 96.47% lines, 89.86% branches, 99.16% functions;
+- Repository JS coverage: Core 96.74% lines, 89.90% branches, 99.37% functions;
   Webpack/Rspack 99.62% lines; Vite 100% lines. Existing thresholds unchanged.
-- Go coverage: 95.6% statements; required threshold remains 90%.
-- Core: 575 tests; upstream and Go-backed upstream suites: 701 tests each.
+- Go coverage: 95.7% statements; required threshold remains 90%.
+- Core: 576 tests; upstream and Go-backed upstream suites: 701 tests each.
 - Focused native/protocol/package/lifecycle suite: 35 tests, including parallel
   Workers, finalizer reclamation, nested sessions, >1 MiB UTF-8 values, >200000
   declarations, exact cursor-page boundaries, stale IDs, cyclic links, partial
   batch failures and detached ID buffers during JavaScript getters.
 - Format, lint, TypeScript checks, all package builds and
-  `go test -race ./internal/asthandle ./internal/nativebridge` passed locally.
-- `pnpm check:all` is **not green as an aggregate**: its remote
-  `check:upstream` download failed with `fetch failed`. Local vendored compatibility
-  suites passed; remote snapshot freshness still needs verification with working
-  network access. Subsequent checks were run independently.
+  `go test -race ./internal/asthandle ./internal/nativebridge ./internal/stringifier`
+  passed locally.
+- `pnpm check:all` passed end-to-end on September 7, including remote upstream
+  snapshot verification. The earlier transient download failure was resolved;
+  no synchronization checks or coverage thresholds were disabled.
 
 `pnpm bench:handles` builds on the already-built **production** package, not the
 old boundary prototype. It compares five isolated-process samples per mode,
@@ -69,6 +78,23 @@ alternates order, verifies identical output, and enforces median time <=1.05x
 and peak-process-RSS <=1.10x binary. The fixture is deliberately limited to
 scalar declaration edits at 1000/10000 declarations, without root access or
 maps. Passing it does not establish the full maintained-plugin-corpus gate.
+
+September 7 production samples: Apple M1 Max, macOS 26.6.2, Node 24.20.0,
+Go 1.26.3 darwin/arm64; 10 warmups and 30 timed iterations in each of five
+isolated processes per mode. Median results:
+
+| Declarations | Binary ms | Handle ms | Time ratio | Peak RSS ratio |
+| ------------ | --------- | --------- | ---------- | -------------- |
+| 1000         | 10.78     | 1.32      | 0.123      | 0.402          |
+| 10000        | 1246.96   | 12.53     | 0.010      | 0.056          |
+
+Both pass the script's median <=1.05x time and <=1.10x RSS checks. The large
+binary samples ranged from 720 to 1736 ms and used roughly 6–7 GiB peak RSS;
+they are **not stable enough for a throughput promise**. The live TS serializer
+still repeats original CSS/map metadata on each node, while the Go decoder
+constructs inputs for repeated CSS. Investigating that bulk-path allocation
+cost, with mixed-input/map compatibility tests, remains a separate optimization.
+Do not use this pathological binary baseline as evidence for default rollout.
 
 ## Remaining migration work
 
