@@ -33,7 +33,7 @@ representation and projects final scalar fields onto it.
 
 | Phase                         | Current assessment                                     | Main completion blocker                                                                    |
 | ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | See Phase 0 corpus, benchmark, base-CI and line-count artifacts                            |
+| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | Maintained corpus and CI-generated benchmark/line-count artifacts                          |
 | 1 — Protocol/sessions         | Protocol 2.1 contract implemented                      | General facades and later-phase capabilities remain gated                                  |
 | 2 — Read-only facade          | Not complete                                           | All standard node wrappers, identity/prototypes, Once, visitor filters and source reads    |
 | 3 — Scalar mutation           | Partial                                                | Important, general scalar visitors, callback-atomic multi-field patches and dirty revisits |
@@ -107,7 +107,9 @@ usable throughout.
       `scripts/count-runtime-lines.mjs`; keep the historical motivation numbers
       distinct from newly measured counts.
 
-Qualification inputs and evidence: [Phase 0 report](../qualification/phase-0/README.md).
+Maintained corpus: [versioned test fixture](../../packages/postcss-go/test/fixtures/native-corpus.json).
+CI uploads benchmark, corpus and line-count results as build artifacts; historical
+qualification reports are no longer stored in the documentation tree.
 The corpus retains unsupported cases and an exact bulk source-map difference;
 this completes baseline inputs, not the 95% selection or rollout gates.
 

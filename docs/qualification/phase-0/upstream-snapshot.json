@@ -1,8 +1,0 @@
-{
-  "commit": "e544bffc4f4b3966d8ec69c41744b3ed65afc64a",
-  "transport": "curl -fL (Node fetch timed out)",
-  "archiveSha256": "c694d7d977cbb97c40c57675b816754a14281faee45f1b6d7b906b6295202572",
-  "comparedFiles": 86,
-  "scope": "lib/**, test/**, package.json; exact path sets and bytes",
-  "status": "passed"
-}

@@ -5,7 +5,7 @@ import { Processor } from '../packages/postcss-go/dist/index.js';
 
 const require = createRequire(new URL('../packages/postcss-go/package.json', import.meta.url));
 const manifest = JSON.parse(
-  readFileSync(new URL('../docs/qualification/phase-0/corpus.json', import.meta.url)),
+  readFileSync(new URL('../packages/postcss-go/test/fixtures/native-corpus.json', import.meta.url)),
 );
 assert.equal(manifest.schemaVersion, 1);
 assert.ok(manifest.owner);

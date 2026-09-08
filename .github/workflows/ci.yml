@@ -132,7 +132,7 @@ jobs:
             native-corpus-results.json
             native-benchmarks.jsonl
             runtime-lines.json
-            docs/qualification/phase-0/corpus.json
+            packages/postcss-go/test/fixtures/native-corpus.json
 
       # Bypass Turborepo for shared so typecheck never sees a stale/partial
       # cache restore that omits dist/*.d.ts (vite dual-format + unplugin-dts).

@@ -147,15 +147,15 @@ generated outputs and the protocol generator. This foundation adds code; it does
 **not** yet deliver the planned large TypeScript reduction. Do not use added Go
 tests or generated constants to claim a language-ratio migration win.
 
-## Phase 0 qualification follow-up
+## Maintained baseline
 
-The [Phase 0 evidence](qualification/phase-0/README.md) now pins a versioned
-7-case corpus, exact baseline CI revision, benchmark inputs and runtime line
-counts. Only 1/7 cases currently succeeds in forced handle mode; auto selection
-and no-hydration qualification remain blocked. The report preserves the discovered
-bulk source-map difference and investigates repeated source metadata allocations.
-New measurements supersede the earlier median-of-peaks benchmark interpretation;
-they do not authorize default rollout.
+The versioned [native corpus](../packages/postcss-go/test/fixtures/native-corpus.json)
+contains seven cases. Only one currently succeeds in forced handle mode; automatic
+selection and no-hydration rollout gates remain blocked. The manifest preserves
+an exact bulk source-map difference. CI generates and uploads benchmark, corpus
+and runtime line-count artifacts; historical qualification reports are not kept
+in the documentation tree. The bulk source-metadata allocation limitation recorded
+above remains unresolved.
 
 ## Phase 1 protocol completion
 

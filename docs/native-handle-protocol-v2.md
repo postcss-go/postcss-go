@@ -91,8 +91,9 @@ newer-minor negotiation, throwing getters, malformed owner IDs, source propagati
 call-local native errors, invalid numeric IDs, detach/reinsert/dispose and exact
 uint32 exhaustion of sessions, nodes and cursors. Failed clone allocation is atomic.
 The existing large fields/cursors, interleaved sessions, Workers and finalizer
-tests remain applicable. Phase-boundary line counts are in
-`docs/qualification/phase-1/`; the base is the pushed Phase 0 commit `7eec8c1`.
+tests remain applicable. CI generates benchmark and phase-boundary line-count
+artifacts using `benchmark/run-handles.mjs` and `scripts/count-runtime-lines.mjs`.
+The maintained corpus lives in `packages/postcss-go/test/fixtures/native-corpus.json`.
 
 Native execution is validated locally on macOS arm64. Windows dynamic function
 pointer declarations are checked against the actual cgo header with the C compiler;

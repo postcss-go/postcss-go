@@ -1,8 +1,0 @@
-{
-  "revision": "7eec8c16e9c0009b42b80cc7ccc2975dc4294528",
-  "source": "commit",
-  "physicalRuntimeLines": {
-    "typescript": 10382,
-    "go": 10010
-  }
-}

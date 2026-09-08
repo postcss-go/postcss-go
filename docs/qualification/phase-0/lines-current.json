@@ -1,8 +1,0 @@
-{
-  "revision": "6698aa06369fe2e978eb38667bae43f691397257",
-  "source": "working-tree",
-  "physicalRuntimeLines": {
-    "typescript": 10382,
-    "go": 10010
-  }
-}
