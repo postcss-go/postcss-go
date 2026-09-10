@@ -1,4 +1,4 @@
-// Production native bridge gate for the explicitly restricted scalar workload.
+// Production native bridge measurements for the Phase 2 read-only facade.
 // Build first. Each sample has an isolated Go/V8 heap; no prototype addon is used.
 import { summarize } from './qualification-metrics.mjs';
 import { readFileSync } from 'node:fs';
@@ -23,22 +23,33 @@ if (process.argv[2] === '--sample') {
   const { Processor } = await import('../packages/postcss-go/dist/index.js');
   const size = process.argv[3];
   const css = fixture(size);
-  // Representative fixture is read-only scalar visits; do not string-replace substrings.
-  const expected = size === 'modern-normalize' ? css : css.replaceAll('red', 'navy');
+  const expected = css;
+  let readCount = 0;
+  let checksum = 0;
   const processor = new Processor([
     {
       postcssPlugin: 'handle-benchmark',
       Declaration(decl) {
-        if (decl.value === 'red') decl.value = 'navy';
+        readCount++;
+        checksum += decl.prop.length + decl.value.length + (decl.parent?.type.length ?? 0);
       },
     },
   ]);
-  const run = () => processor.processSync(css, { map: false, from: 'bench.css' }).css;
+  const run = () => {
+    readCount = 0;
+    checksum = 0;
+    return processor.processSync(css, { map: false, from: 'bench.css' }).css;
+  };
   for (let i = 0; i < 10; i++) assert.equal(run(), expected);
   const start = performance.now();
   for (let i = 0; i < 30; i++) assert.equal(run(), expected);
   console.log(
-    JSON.stringify({ ms: (performance.now() - start) / 30, rss: process.resourceUsage().maxRSS }),
+    JSON.stringify({
+      ms: (performance.now() - start) / 30,
+      rss: process.resourceUsage().maxRSS,
+      readCount,
+      checksum,
+    }),
   );
 } else {
   console.log(
@@ -52,7 +63,8 @@ if (process.argv[2] === '--sample') {
       warmups: 10,
       iterations: 30,
       rssUnit: 'KiB',
-      scope: 'restricted scalar; no rollout claim',
+      scope:
+        'Phase 2 read-only facade; not comparable to historical scalar writes; no rollout claim',
     }),
   );
   let passed = true;
@@ -70,7 +82,13 @@ if (process.argv[2] === '--sample') {
           },
         );
         assert.equal(child.status, 0, child.stderr);
-        results[mode].push(JSON.parse(child.stdout));
+        const measured = JSON.parse(child.stdout);
+        const reference = results.binary[0] ?? results.handle[0];
+        if (reference) {
+          assert.equal(measured.readCount, reference.readCount, 'visitor count differs');
+          assert.equal(measured.checksum, reference.checksum, 'scalar reads differ');
+        }
+        results[mode].push(measured);
       }
     }
     const { timeRatio, rssRatio, spread, stable, pass } = summarize(results);

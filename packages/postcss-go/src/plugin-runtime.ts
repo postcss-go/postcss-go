@@ -26,7 +26,7 @@ import {
   isThenable,
   observeThenable,
 } from './errors.js';
-import { attachInputMetadata, Input } from './input.js';
+import { attachInputMetadata, hasPreviousMap, Input } from './input.js';
 import { list } from './list.js';
 import { throwInvalidPlugin } from './plugin-normalize.js';
 import type { PostcssGoService } from './service.js';
@@ -36,17 +36,10 @@ import { fillDependencyParents, hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
 import { prepareStringifyOptions } from './source-map-output.js';
-import {
-  isHandleDeclarationPluginRun,
-  runHandleDeclarationSession,
-} from './handle-plugin-runtime.js';
-import {
-  HandleDeclarationUnsupportedError,
-  HANDLE_FIELD_PROP,
-  HANDLE_FIELD_VALUE,
-  type NativeHandleSession,
-  type NativeHandleAddon,
-} from './handle-session.js';
+import { HANDLE_STATUS_PARSE } from './generated/handle-protocol.js';
+import { SessionOwner } from './handle-facade.js';
+import { planHandleExecution } from './handle-plan.js';
+import { HandleDeclarationUnsupportedError, type NativeHandleAddon } from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -228,8 +221,8 @@ async function runPluginsWithBridgeBody(
   options = materializePreviousMap(options);
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
-  if (liveService) {
-    const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+  if (service.capabilities?.backend !== 'wasm-worker') {
+    const handled = tryHandleResult(service, normalized, css, options, processor);
     if (handled) return handled;
   }
   const parsed = liveService
@@ -297,15 +290,9 @@ function hasLiveAsyncPluginBridge(
   );
 }
 
-/**
- * Explicit experimental path for declaration-only prop/value rewrites.
- * Auto mode stays on the complete facade; unsupported explicit runs throw
- * without replaying callbacks on a different backend.
- */
-function tryHandleDeclarationResult(
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon'> & {
-    parseSync?: PluginBridgeService['parseSync'];
-  },
+/** The explicit handle contract is synchronous and read-only; callbacks are never replayed. */
+function tryHandleResult(
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
   plugins: ActivePlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -313,32 +300,73 @@ function tryHandleDeclarationResult(
 ): PluginResult | undefined {
   const mode =
     typeof process === 'undefined' ? 'auto' : (process.env.POSTCSS_GO_NATIVE_AST ?? 'auto');
-  if (!['auto', 'handle', 'binary'].includes(mode))
-    throw new Error('invalid POSTCSS_GO_NATIVE_AST mode');
-  // Shape alone cannot prove what a JS callback will access. Until the full
-  // facade exists, automatic runs choose the compatible path BEFORE callbacks.
-  if (mode !== 'handle') return undefined;
-  if (
-    !service.handleAddon ||
-    typeof service.parseSync !== 'function' ||
-    !isHandleDeclarationPluginRun(plugins as AcceptedPlugin[]) ||
-    options.map
-  ) {
-    throw new HandleDeclarationUnsupportedError('plugin run or source maps');
-  }
-  const run = runHandleDeclarationSession(service.handleAddon, css, plugins as AcceptedPlugin[], {
-    from: options.from,
-  });
-  const result = createResult(
-    () => hydrateHandleOutputRoot(service, run.session, css, options),
-    options,
+  const plan = planHandleExecution(
+    mode,
+    service.handleAddon,
+    Boolean(options.map) || hasPreviousMap(css, options as ProcessOptions),
     plugins,
-    processor,
   );
-  result.backend = service.capabilities?.backend;
-  result.css = run.css;
-  fillDependencyParents(result);
-  return result;
+  if (plan.runtime === 'binary') return undefined;
+  if (plan.runtime === 'unsupported') throw new HandleDeclarationUnsupportedError(plan.reason);
+  let owner: SessionOwner;
+  try {
+    owner = new SessionOwner(service.handleAddon!, css, {
+      from: options.from,
+      document: options.document == null ? undefined : String(options.document),
+    });
+  } catch (error) {
+    // The V2 ABI carries status/message only. Reuse structured parser diagnostics
+    // for invalid input before any callback; successful runs never hydrate an AST.
+    if ((error as { status?: number })?.status === HANDLE_STATUS_PARSE && service.parseSync) {
+      service.parseSync(css, { from: options.from });
+    }
+    throw error;
+  }
+  try {
+    const root = owner.root;
+    const result = createResult(root, options, plugins, processor);
+    // A read-only execution must not silently ignore replacement through Result.
+    Object.defineProperty(result, 'root', {
+      enumerable: true,
+      configurable: false,
+      get: () => root,
+      set: () => {
+        throw new HandleDeclarationUnsupportedError('result.root');
+      },
+    });
+    result.backend = service.capabilities?.backend;
+    const active = plugins.map((plugin) => {
+      if (typeof plugin === 'function') return plugin;
+      const prepared = preparePluginSync(plugin, result);
+      return prepared ? { ...plugin, ...prepared } : plugin;
+    });
+    const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
+    const listeners = prepareVisitors(active);
+    for (const plugin of active) runOnRootSync(plugin, helpers, result);
+    // Snapshot traversal is sufficient for this explicitly immutable contract.
+    const visit = (node: Node): void => {
+      owner.markClean(node);
+      for (const event of getEvents(node)) {
+        if (event === CHILDREN) {
+          for (const child of (node as Container).nodes ?? []) visit(child);
+        } else {
+          for (const [plugin, listener] of listeners[event] ?? [])
+            runListenerSync(plugin, listener, node, helpers, event);
+        }
+      }
+    };
+    visit(root);
+    for (const plugin of active) {
+      if (typeof plugin !== 'function')
+        runRootListenersSync(plugin, plugin.OnceExit, root, helpers, 'OnceExit');
+    }
+    fillDependencyParents(result);
+    result.css = owner.session.stringify();
+    return result;
+  } catch (error) {
+    owner.session.close();
+    throw error;
+  }
 }
 
 /**
@@ -356,7 +384,7 @@ export function runPluginsWithBridgeSync(
 ): PluginResult {
   options = materializePreviousMap(options);
   const normalized = normalizePluginsSync(plugins);
-  const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+  const handled = tryHandleResult(service, normalized, css, options, processor);
   if (handled) return handled;
   const parsed = service.parseSync(css, { from: options.from });
   const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
@@ -410,45 +438,6 @@ function createResult(
   processor?: ResultProcessorFacade,
 ): PluginResult {
   return new Result<RuntimePlugin | Transformer>(processor ?? { plugins }, root, opts);
-}
-
-function hydrateHandleOutputRoot(
-  service: Pick<PluginBridgeService, 'parseSync'>,
-  session: NativeHandleSession,
-  css: string,
-  options: ProcessFileOptions,
-): ProcessRoot {
-  if (typeof service.parseSync !== 'function') {
-    throw new Error('postcss-go: handle plugin path requires parseSync to hydrate Result.root');
-  }
-  // Hydrate original input, then project Go-owned scalar state. Parsing output
-  // would change source offsets and can reinterpret ';' inside a plugin value.
-  try {
-    const parsed = service.parseSync(css, { from: options.from });
-    const hydrated = asProcessRoot(
-      parsed.root instanceof Node ? parsed.root : fromAst(parsed.root),
-    );
-    attachInputMetadata(hydrated, css, options as ProcessOptions);
-    const declarations: { prop: string; value: string }[] = [];
-    hydrated.walkDecls((decl) => {
-      declarations.push(decl);
-    });
-    let offset = 0;
-    for (const handles of session.declarationBatches()) {
-      const props = session.readFields(handles, HANDLE_FIELD_PROP);
-      const values = session.readFields(handles, HANDLE_FIELD_VALUE);
-      for (let i = 0; i < handles.length; i++) {
-        const decl = declarations[offset++];
-        if (!decl) throw new Error('handle declaration projection mismatch');
-        decl.prop = props[i];
-        decl.value = values[i];
-      }
-    }
-    if (offset !== declarations.length) throw new Error('handle declaration projection mismatch');
-    return hydrated;
-  } finally {
-    session.close();
-  }
 }
 
 async function preparePlugin(

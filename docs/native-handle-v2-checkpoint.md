@@ -1,5 +1,24 @@
 # Native handle migration checkpoint
 
+Current Phase 2 implementation and validation are described in the
+[protocol 2.2 contract](native-handle-protocol-v2.md) and
+[migration status](specs/go-owned-ast-handle-migration.md). Forced `handle` now
+uses the read-only facade; retained Result.root no longer hydrates a second AST.
+The earlier scalar-only behavior and measurements below are historical.
+
+## Phase 2 verification (2026-09-10)
+
+The general read-only facade, capability-based planner and batch snapshots are
+implemented. Source/raws wrapping is lazy and uses a shared session cache.
+Tests cover exact enumeration order, Document dispatch, original source identity,
+parse/plugin errors, nested reflection writes, retained-wrapper GC and Workers.
+Current verification totals are recorded in the migration specification after
+final checks. `auto` remains binary. Mutation, async and source maps still require
+later phases; the frozen mutation corpus is intentionally 0/7 in forced read-only
+mode. See the protocol contract for the updated read-only benchmark scope.
+
+## Historical September 7 checkpoint
+
 Updated: 2026-09-07. This is the **session/protocol foundation**, not completion of
 the [full Go-owned AST migration](specs/go-owned-ast-handle-migration.md).
 

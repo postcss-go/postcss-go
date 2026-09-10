@@ -14,7 +14,7 @@ import type { AcceptedPlugin } from '../src/plugin-types.ts';
 afterEach(() => vi.unstubAllEnvs());
 
 test.skipIf(!isNativeBridgeAvailable())(
-  'lazy handle results preserve original sources and do not reinterpret mutated values',
+  'handle results preserve original sources without hydrating a TypeScript AST',
   async () => {
     vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
     const service = createNativeService();
@@ -24,8 +24,7 @@ test.skipIf(!isNativeBridgeAvailable())(
       postcssPlugin: 'expanded-value',
       Declaration(decl) {
         if (decl.prop === 'color') {
-          decl.prop = 'background';
-          decl.value = 'blue;\ninjected:yes';
+          expect(decl.value).toBe('red');
         }
       },
     };
@@ -37,11 +36,10 @@ test.skipIf(!isNativeBridgeAvailable())(
       expect(parse).not.toHaveBeenCalled();
       const firstRoot = result.root;
       expect(firstRoot).toBe(result.root);
-      expect(parse).toHaveBeenCalledTimes(1);
-      expect(parse).toHaveBeenCalledWith(css, { from: 'source.css' });
+      expect(parse).not.toHaveBeenCalled();
       const rule = firstRoot.first!;
       expect(rule.nodes).toHaveLength(2);
-      expect(rule.first).toMatchObject({ prop: 'background', value: 'blue;\ninjected:yes' });
+      expect(rule.first).toMatchObject({ prop: 'color', value: 'red' });
       expect(rule.last).toMatchObject({
         prop: 'height',
         source: { start: { line: 2, column: 1, offset: css.indexOf('height') } },
@@ -147,16 +145,28 @@ test.skipIf(!isNativeBridgeAvailable())(
 );
 
 test.skipIf(!isNativeBridgeAvailable())(
-  'sync plugin bridge uses the handle path for declaration-only plugins',
+  'sync plugin bridge uses the handle facade for read-only declaration plugins',
   () => {
     vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
     const service = createNativeService();
     const css = '.card { color: black; }';
-    const result = runPluginsWithBridgeSync(service, [colorPlugin], css, {
-      from: 'input.css',
-      map: false,
-    });
-    expect(result.css).toContain('color: navy');
+    const result = runPluginsWithBridgeSync(
+      service,
+      [
+        {
+          postcssPlugin: 'read',
+          Declaration(decl) {
+            expect(decl.value).toBe('black');
+          },
+        },
+      ],
+      css,
+      {
+        from: 'input.css',
+        map: false,
+      },
+    );
+    expect(result.css).toBe(css);
   },
 );
 
@@ -177,7 +187,7 @@ test.skipIf(!isNativeBridgeAvailable())(
       postcssPlugin: 'side-effect',
       Declaration(decl) {
         calls++;
-        void decl.parent;
+        decl.remove();
       },
     };
     try {
@@ -185,7 +195,7 @@ test.skipIf(!isNativeBridgeAvailable())(
       expect(calls).toBe(1);
       calls = 0;
       vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
-      expect(() => runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {})).toThrow(/parent/);
+      expect(() => runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {})).toThrow(/support/);
       expect(calls).toBe(1);
       calls = 0;
       expect(() => runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', { map: true })).toThrow(
@@ -346,7 +356,7 @@ test.skipIf(!isNativeBridgeAvailable())(
           major: 2,
           minor: 0,
           maxBatchSize: 4096,
-          capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
+          capabilities: new Uint32Array([HANDLE_REQUIRED_CAPABILITIES[0] | 16]),
         }),
         handleParseV2() {
           throw new Error('boom');
@@ -360,6 +370,7 @@ test.skipIf(!isNativeBridgeAvailable())(
         handleCursorNextV2: () => 0,
         handleCloseCursorV2() {},
         handleReadFieldsV2: () => [],
+        handleReadSnapshotsV2: () => '[]',
         handleSetFieldsV2() {},
         handleStringifyV2: () => '',
         handleNewDeclV2: () => 1,

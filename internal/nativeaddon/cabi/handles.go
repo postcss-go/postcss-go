@@ -332,3 +332,35 @@ func pcgoHandleStringifyV2_1(sessionID C.uint, handle C.uint, buf *C.char, capac
 	}
 	return C.int(copyOut(css, buf, capacity))
 }
+
+//export pcgoHandleReadSnapshotsV2_1
+func pcgoHandleReadSnapshotsV2_1(sessionID C.uint, handles *C.uint, count C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+	if count < 0 || uint32(count) > asthandle.MaxBatchSize || capacity < 0 || (count > 0 && handles == nil) || (capacity > 0 && buf == nil) {
+		return handleFail(errorOut, asthandle.ErrInvalidArgument)
+	}
+	session, release := handleSessions.Acquire(uint32(sessionID))
+	defer release()
+	if session == nil {
+		return handleFail(errorOut, asthandle.ErrClosed)
+	}
+	ids := unsafe.Slice((*uint32)(unsafe.Pointer(handles)), int(count))
+	list := make([]asthandle.Handle, len(ids))
+	for i, id := range ids {
+		list[i] = asthandle.Handle(id)
+	}
+	rows, err := session.ReadSnapshots(list)
+	if err != nil {
+		return handleFail(errorOut, err)
+	}
+	encoded, err := json.Marshal(rows)
+	if err != nil {
+		return handleFail(errorOut, err)
+	}
+	if len(encoded) > math.MaxInt32 {
+		return handleFail(errorOut, asthandle.ErrInvalidArgument)
+	}
+	if len(encoded) <= int(capacity) {
+		copy(unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(capacity)), encoded)
+	}
+	return C.int(len(encoded))
+}

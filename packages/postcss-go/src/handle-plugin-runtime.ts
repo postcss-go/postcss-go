@@ -32,7 +32,7 @@ function isPlainDeclarationPlugin(plugin: RuntimePlugin): boolean {
   return true;
 }
 
-/** True when every plugin only registers synchronous Declaration visitors. */
+/** Experimental scalar shape check; the production execution planner does not use it. */
 export function isHandleDeclarationPluginRun(plugins: AcceptedPlugin[]): boolean {
   for (const plugin of plugins) {
     if (typeof plugin === 'function') return false;
@@ -54,7 +54,7 @@ export function runHandleDeclarationPlugins(
   }
 }
 
-/** The caller retains the owner until lazy Result.root materialization or GC. */
+/** The direct caller retains the owner until explicit close or GC. */
 export function runHandleDeclarationSession(
   addon: NativeHandleAddon,
   css: string,

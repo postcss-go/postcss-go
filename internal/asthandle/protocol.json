@@ -1,6 +1,6 @@
 {
   "major": 2,
-  "minor": 1,
+  "minor": 2,
   "maxBatchSize": 4096,
   "capabilities": [
     {
@@ -30,7 +30,7 @@
     {
       "name": "ReadOnlyFacade",
       "bit": 4,
-      "implemented": false,
+      "implemented": true,
       "required": false
     },
     {
@@ -152,6 +152,10 @@
     {
       "name": "Dispose",
       "id": 16
+    },
+    {
+      "name": "ReadSnapshots",
+      "id": 17
     }
   ],
   "nodeKinds": [

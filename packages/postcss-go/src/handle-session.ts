@@ -39,6 +39,7 @@ export type NativeHandleAddon = {
     capabilities: Uint32Array;
   };
   handleParseV2(css: string, optionsJSON?: string): { sessionId: number; rootId: number };
+  handleReadSnapshotsV2?(sessionId: number, handles: Uint32Array): string;
   handleCloseV2(sessionId: number): void;
   handleTypeV2(sessionId: number, handle: number): number;
   handleGetFieldV2(sessionId: number, handle: number, field: HandleField): string;
@@ -187,10 +188,15 @@ export class NativeHandleSession {
     return this.addon.handleReadFieldsV2(this.requireSession(), handles, field);
   }
 
-  /** Snapshot cursor for the restricted scalar-only runtime, not structural walks. */
+  /** Compatibility entry point for the isolated scalar prototype. */
   *declarationBatches(): Generator<Uint32Array> {
+    yield* this.nodeBatches(true);
+  }
+
+  /** Bounded snapshot pages; mutation-aware traversal is a later capability. */
+  *nodeBatches(declsOnly = false): Generator<Uint32Array> {
     const id = this.requireSession();
-    const cursor = this.addon.handleOpenCursorV2(id, this.root, true);
+    const cursor = this.addon.handleOpenCursorV2(id, this.root, declsOnly);
     const buffer = new Uint32Array(this.maxBatchSize);
     try {
       for (;;) {
@@ -203,6 +209,13 @@ export class NativeHandleSession {
     } finally {
       this.addon.handleCloseCursorV2(id, cursor);
     }
+  }
+
+  readSnapshots(handles: Uint32Array): string {
+    this.validateBatchSize(handles);
+    if (!this.addon.handleReadSnapshotsV2)
+      throw new HandleDeclarationUnsupportedError('snapshot capability');
+    return this.addon.handleReadSnapshotsV2(this.requireSession(), handles);
   }
 
   setFields(handles: Uint32Array, field: HandleField, values: string[]): void {
@@ -245,7 +258,7 @@ export class HandleDeclarationUnsupportedError extends Error {
   readonly property: string;
 
   constructor(property: string) {
-    super(`handle declaration stub does not support '${property}'`);
+    super(`native handle runtime does not support '${property}'`);
     this.name = 'HandleDeclarationUnsupportedError';
     this.property = property;
   }

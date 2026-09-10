@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 #include "libpostcssgo.h"
 #include "handle_protocol.h"
 int main(void) {
@@ -11,6 +12,20 @@ int main(void) {
  unsigned int node = 0;
  assert(cursor >= 0 && pcgoHandleCursorNextV2(session, cursor, &node, 1) == 1);
  assert(pcgoHandleCloseCursorV2(session, cursor) == 0);
+ pcgoHandleError snapshot_error = {0};
+ int required = pcgoHandleReadSnapshotsV2_1(session, &node, 1, NULL, 0, &snapshot_error);
+ assert(required > 0 && snapshot_error.code == HANDLE_STATUS_OK);
+ char snapshot[4096] = {0};
+ assert(required < (int)sizeof(snapshot));
+ assert(pcgoHandleReadSnapshotsV2_1(session, &node, 1, snapshot, sizeof(snapshot)-1, &snapshot_error) == required);
+ assert(strstr(snapshot, "\"prop\":\"x\"") && strstr(snapshot, "\"parent\":"));
+ assert(pcgoHandleReadSnapshotsV2_1(session, &node, -1, NULL, 0, &snapshot_error) == -1);
+ assert(snapshot_error.code == HANDLE_STATUS_INVALIDARGUMENT);
+ pcgoHandleFreeErrorV2_1(&snapshot_error);
+ assert(pcgoHandleReadSnapshotsV2_1(session, &node, HANDLE_MAX_BATCH_SIZE+1, NULL, 0, &snapshot_error) == -1);
+ pcgoHandleFreeErrorV2_1(&snapshot_error);
+ assert(pcgoHandleReadSnapshotsV2_1(session, NULL, 1, NULL, 0, &snapshot_error) == -1);
+ pcgoHandleFreeErrorV2_1(&snapshot_error);
  pcgoHandleCloseV2(session);
  assert(pcgoHandleSessionCountV2() == 0);
  pcgoHandleError detail = {0};

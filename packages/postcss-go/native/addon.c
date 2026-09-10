@@ -51,6 +51,7 @@ typedef int (*pcgo_handle_walk_decls_fn)(unsigned int, unsigned int, unsigned in
 typedef unsigned int (*pcgo_handle_open_cursor_fn)(unsigned int, unsigned int, int, pcgoHandleError*);
 typedef int (*pcgo_handle_cursor_next_fn)(unsigned int, unsigned int, unsigned int*, int, pcgoHandleError*);
 typedef int (*pcgo_handle_close_cursor_fn)(unsigned int, unsigned int, pcgoHandleError*);
+typedef int (*pcgo_handle_read_snapshots_fn)(unsigned int, unsigned int*, int, char*, int, pcgoHandleError*);
 typedef int (*pcgo_handle_read_fields_fn)(unsigned int, unsigned int*, int, int, char*, int, pcgoHandleError*);
 typedef int (*pcgo_handle_set_fields_fn)(unsigned int, unsigned int*, int, int, char*, int, pcgoHandleError*);
 typedef unsigned int (*pcgo_handle_new_decl_fn)(unsigned int, char*, int, char*, int, pcgoHandleError*);
@@ -72,6 +73,7 @@ static pcgo_handle_open_cursor_fn go_handle_open_cursor = NULL;
 static pcgo_handle_cursor_next_fn go_handle_cursor_next = NULL;
 static pcgo_handle_close_cursor_fn go_handle_close_cursor = NULL;
 static pcgo_handle_read_fields_fn go_handle_read_fields = NULL;
+static pcgo_handle_read_snapshots_fn go_handle_read_snapshots = NULL;
 static pcgo_handle_set_fields_fn go_handle_set_fields = NULL;
 static pcgo_handle_new_decl_fn go_handle_new_decl = NULL;
 static pcgo_handle_append_fn go_handle_append = NULL;
@@ -134,6 +136,8 @@ static BOOL CALLBACK load_go_bridge(
   go_handle_open_cursor = (pcgo_handle_open_cursor_fn)require_go_symbol("pcgoHandleOpenCursorV2_1");
   go_handle_cursor_next = (pcgo_handle_cursor_next_fn)require_go_symbol("pcgoHandleCursorNextV2_1");
   go_handle_close_cursor = (pcgo_handle_close_cursor_fn)require_go_symbol("pcgoHandleCloseCursorV2_1");
+  // Optional 2.2 feature: an older companion must retain the binary/scalar bridge.
+  go_handle_read_snapshots = (pcgo_handle_read_snapshots_fn)GetProcAddress(go_bridge_library, "pcgoHandleReadSnapshotsV2_1");
   go_handle_read_fields = (pcgo_handle_read_fields_fn)require_go_symbol("pcgoHandleReadFieldsV2_1");
   go_handle_set_fields = (pcgo_handle_set_fields_fn)require_go_symbol("pcgoHandleSetFieldsV2_1");
   go_handle_new_decl = (pcgo_handle_new_decl_fn)require_go_symbol("pcgoHandleNewDeclV2_1");
@@ -173,6 +177,7 @@ static int call_go_bridge(
 #define pcgoHandleOpenCursorV2_1 go_handle_open_cursor
 #define pcgoHandleCursorNextV2_1 go_handle_cursor_next
 #define pcgoHandleCloseCursorV2_1 go_handle_close_cursor
+#define pcgoHandleReadSnapshotsV2_1 go_handle_read_snapshots
 #define pcgoHandleReadFieldsV2_1 go_handle_read_fields
 #define pcgoHandleSetFieldsV2_1 go_handle_set_fields
 #define pcgoHandleNewDeclV2_1 go_handle_new_decl
@@ -503,6 +508,9 @@ static napi_value handle_protocol_info(napi_env env, napi_callback_info info) {
   }
   if (napi_create_arraybuffer(env, sizeof(uint32_t), &data, &buffer) != napi_ok) return NULL;
   *((uint32_t*)data) = HANDLE_CAPABILITIES;
+#ifdef _WIN32
+  if (!go_handle_read_snapshots) *((uint32_t*)data) &= ~HANDLE_CAPABILITY_READONLYFACADE;
+#endif
   if (napi_create_typedarray(env, napi_uint32_array, 1, buffer, 0, &capabilities) != napi_ok ||
       napi_set_named_property(env, result, "capabilities", capabilities) != napi_ok) return NULL;
   return result;
@@ -805,6 +813,44 @@ static napi_value handle_read_fields(napi_env env, napi_callback_info info) {
   return array;
 }
 
+static napi_value handle_read_snapshots(napi_env env, napi_callback_info info) {
+#ifdef _WIN32
+  if (!go_handle_read_snapshots) return throw_error(env, "native companion lacks snapshot capability");
+#endif
+  pcgoHandleError error = {0};
+  uint32_t session = 0;
+  size_t argc = 2;
+  napi_value argv[2] = {0};
+  napi_typedarray_type type;
+  size_t length = 0;
+  void* data = NULL;
+  napi_value arraybuffer;
+  size_t offset = 0;
+  napi_value array;
+
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (napi_get_typedarray_info(env, argv[1], &type, &length, &data, &arraybuffer, &offset) != napi_ok) {
+    return NULL;
+  }
+  if (type != napi_uint32_array || length > INT_MAX) return throw_error(env, "expected Uint32Array within ABI limits");
+  int capacity = HANDLE_SCRATCH_CAPACITY;
+  char* scratch = NULL;
+  for (;;) {
+    char* next = (char*)realloc(scratch, (size_t)capacity);
+    if (!next) { free(scratch); return throw_error(env, "out of memory"); }
+    scratch = next;
+    int written = pcgoHandleReadSnapshotsV2_1(session, (unsigned int*)data, (int)length, scratch, capacity, &error);
+    if (written < 0) { free(scratch); return throw_handle_error(env, &error); }
+    if (written > capacity) { capacity = written; continue; }
+    napi_status status = napi_create_string_utf8(env, scratch, (size_t)written, &array);
+    free(scratch);
+    if (status != napi_ok) return NULL;
+    break;
+  }
+  return array;
+}
+
 static napi_value handle_set_fields(napi_env env, napi_callback_info info) {
   pcgoHandleError error = {0};
   uint32_t session = 0;
@@ -1006,6 +1052,7 @@ NAPI_MODULE_INIT() {
       {"handleCursorNextV2", handle_cursor_next},
       {"handleCloseCursorV2", handle_close_cursor},
       {"handleReadFieldsV2", handle_read_fields},
+      {"handleReadSnapshotsV2", handle_read_snapshots},
       {"handleSetFieldsV2", handle_set_fields},
       {"handleStringifyV2", handle_stringify},
       {"handleNewDeclV2", handle_new_decl},

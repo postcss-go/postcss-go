@@ -32,7 +32,8 @@ function isExpectedHandleUnsupported(error, entry) {
     error != null &&
     typeof error === 'object' &&
     error.name === 'HandleDeclarationUnsupportedError' &&
-    error.property === 'plugin run or source maps'
+    typeof error.property === 'string' &&
+    error.property.length > 0
   );
 }
 

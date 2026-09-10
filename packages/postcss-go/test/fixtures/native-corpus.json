@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "corpusVersion": "1.0.0",
+  "corpusVersion": "1.1.0",
   "owner": "postcss-go maintainers",
   "denominator": "Every case has equal weight, including unsupported and map cases; no exclusions. Require ceil(0.95 * cases.length). Forced success is not proof of auto selection or no hydration.",
   "plugins": {
@@ -73,7 +73,7 @@
       "options": {},
       "css": "a { color: red; margin: 0 }",
       "map": false,
-      "expectedHandle": "supported"
+      "expectedHandle": "unsupported"
     }
   ],
   "compatibilityDifferences": [
@@ -85,5 +85,6 @@
       "owner": "postcss-go maintainers",
       "reason": "Existing bulk stringifier emits additional segments for nested declarations; exact source-map equivalence remains a Phase 4 blocker. This is a baseline observation, not rollout approval."
     }
-  ]
+  ],
+  "handleContract": "Phase 2 forced handle mode is read-only. All seven frozen corpus cases mutate or use maps/async; the scalar prototype remains separately tested. CSS, options, versions and denominator are unchanged."
 }

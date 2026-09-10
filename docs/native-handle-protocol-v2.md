@@ -1,9 +1,11 @@
-# Native handle protocol 2.1
+# Native handle protocol 2.2
 
-Phase 1 completes the session/ABI contract. It does not implement the general
-PostCSS node facade, transactional patches, mutable traversal, maps or async
-plugins. `auto` and `binary` retain the hydrated runtime; forced `handle` retains
-the restricted scalar visitor path and the Phase 0 corpus denominator.
+Phase 1 established the session/ABI contract. Phase 2 adds the synchronous
+read-only facade: standard node prototypes, per-session wrapper identity, all
+read-only visitors, filters, prepare/helpers, source reads and retained results.
+`auto` and `binary` retain the hydrated runtime. Forced `handle` now selects the
+read-only facade; it does not infer a scalar-write contract from callback shape.
+The isolated scalar prototype remains covered by direct regression tests.
 
 ## Schema and negotiation
 
@@ -14,12 +16,12 @@ rejects duplicate IDs/names, invalid identifiers, unknown JSON properties,
 trailing JSON, duplicate/out-of-range capability bits and required unimplemented
 capabilities. `pnpm check:handles` verifies all generated outputs.
 
-The advertised and required mask is 15: ScalarSessions, StructuredErrors,
-ParseOptions and BoundedIds. These describe the implemented private ABI, not
-PostCSS facade compatibility. ReadOnlyFacade, AtomicPatches, MutationTraversal,
-SourceMaps and AsyncLifetime are reserved and **not advertised**. Patch/event
-constants reserve wire vocabulary only; there is no generic patch/event dispatch
-implementation yet. Only implemented production bridge operations are catalogued.
+The base required mask remains 15 (ScalarSessions, StructuredErrors,
+ParseOptions and BoundedIds). Protocol 2.2 advertises mask 31, adding the optional
+ReadOnlyFacade capability. The read-only execution plan requires all 31 bits and
+`handleReadSnapshotsV2`; old compatible scalar bridges can still negotiate the
+base contract. AtomicPatches, MutationTraversal, SourceMaps and AsyncLifetime
+remain unadvertised. Patch/event constants reserve wire vocabulary only.
 
 TS accepts the matching major and any uint32 minor with every required bit,
 including newer minor versions and unknown optional bits. Missing bits, throwing
@@ -76,15 +78,67 @@ closed cursor is idempotent and cannot affect a newer cursor.
 
 Node identity is the pair `(sessionId, nodeId)`, never a node number alone.
 Raw ABI callers must pass the owning session. Distinct sessions may contain equal
-node numbers; the future JS facade must reject wrapper arguments with another
-owner before passing numeric IDs across the ABI.
+node numbers; read-only wrappers never accept mutation arguments. Future mutable methods must
+reject wrapper arguments with another owner before passing IDs across the ABI.
 
 Remove detaches a live node and preserves its ID for reinsertion/retained
 references. Dispose permanently tombstones the attached subtree. A detached child
 is not part of a former parent's disposed subtree. Close invalidates the session;
 a delayed finalizer cannot close a newer session because session IDs never repeat.
 
-## Verification
+## Read-only snapshots and execution
+
+`pcgoHandleReadSnapshotsV2_1` / `handleReadSnapshotsV2` read a bounded list of IDs
+into flat JSON rows containing scalar fields, parent/child IDs, formatting and
+source positions. The C buffer grows to the reported size; negative lengths,
+null pointers with positive lengths, oversized batches and stale IDs fail closed.
+Rows do not repeat source CSS or construct a recursive AST DTO. Source positions
+reuse the same Go conversion as the binary bridge, including rule semicolons.
+The additive export uses the existing V2_1 error ABI; no old signature changes.
+Windows resolves this optional symbol without disabling an older companion's
+binary/scalar bridge, and clears ReadOnlyFacade when the symbol is absent.
+
+`SessionOwner` reads pages once and lazily creates wrappers with the standard
+Root, Document, Rule, AtRule, Declaration and Comment prototypes. Each handle
+has one wrapper, including parent/nodes/visitor/reflection access. Every wrapper
+retains the session owner. Source/raws wrappers are allocated only on first read,
+using one protection cache per session instead of per-node caches. Raws, source metadata and child arrays reject writes,
+including writes through property descriptors; source Input is shared. Existing
+read methods are reused. Stringification reads Go state directly. Successful
+Result.root access never parses or hydrates a second AST. BOM handling matches
+the binary plugin runtime.
+
+The execution plan contains the selected runtime, required capabilities and a
+diagnostic reason. Auto deliberately chooses binary because arbitrary JavaScript
+access cannot be proven from callback shape. Known async callbacks and maps are
+rejected before handle callbacks. Unexpected thenables, writes and Result.root
+replacement fail without replay; errors close the session. For invalid CSS only,
+the processor reuses binary parse diagnostics before any callback, since the base
+handle ABI exposes status/message rather than full syntax-error metadata.
+
+Forced handle runs now reject scalar writes as well as structural writes. The
+seven-case maintained corpus keeps its CSS/options/version pins and denominator;
+its Phase 2 expected handle selection is 0/7, since every case mutates, uses async
+or maps. This is an explicit change from the scalar prototype's 1/7 and is not a
+rollout improvement. General scalar transactions and revisits remain Phase 3.
+Read-only differential fixtures and page-call assertions are in
+`packages/postcss-go/test/handle-facade.test.ts`, separate from rollout scoring.
+
+## Phase 2 verification (2026-09-10)
+
+- Forced-mode tests compare CSS, visitor order, scalar/source reads, standard
+  prototypes, enumeration order, JSON, warnings, messages and errors.
+- 5000 declarations require two snapshot pages; repeated property reads add no
+  boundary calls. Retained wrappers survive GC and release their arenas when
+  unreachable. Parallel Workers preserve per-session identities.
+- The updated `benchmark/run-handles.mjs --qualification` measures the production
+  read-only facade and checks visitor counts/checksums across modes. Local M1 Max
+  samples (Node 24.21.0, Go 1.26.3; five processes, 10 warmups, 30 iterations)
+  passed time/RSS/stability checks for 1000 declarations and Modern Normalize.
+  Time ratios were 0.64/0.80 and peak RSS ratios 0.84/0.84. These working-tree
+  measurements do not establish the full mutation corpus or rollout gate.
+
+## Protocol verification
 
 Regression tests exercise schema rejection/generation, every required capability,
 newer-minor negotiation, throwing getters, malformed owner IDs, source propagation,

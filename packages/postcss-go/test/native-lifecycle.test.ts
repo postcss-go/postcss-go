@@ -24,11 +24,19 @@ test.runIf(isNativeBridgeAvailable())(
       (async () => {
         process.env.POSTCSS_GO_NATIVE_AST = 'handle';
         const {Processor} = await import(workerData.entryUrl);
-        const processor = new Processor([{postcssPlugin: 'worker', Declaration(decl) {decl.value = String(workerData.id);}}]);
+        const retained = [];
+        const processor = new Processor([{postcssPlugin: 'worker', Declaration(decl) {
+          if (decl.value !== String(workerData.id)) throw new Error('cross-worker value');
+          if (decl.parent.first !== decl.parent.nodes[0]) throw new Error('identity');
+        }}]);
         for (let i = 0; i < 30; i++) {
-          const css = processor.processSync('a{x:old;y:old}', {map:false}).css;
+          const result = processor.processSync('a{x:' + workerData.id + ';y:' + workerData.id + '}', {map:false});
+          retained.push(result.root.first.first);
+          const css = result.css;
           if (css !== 'a{x:' + workerData.id + ';y:' + workerData.id + '}') throw new Error(css);
           await new Promise(setImmediate);
+          if (retained[0].value !== String(workerData.id)) throw new Error('retained session changed');
+          if (i && retained[i] === retained[i-1]) throw new Error('cross-session identity');
         }
       })().catch(error => {throw error;});
     `,

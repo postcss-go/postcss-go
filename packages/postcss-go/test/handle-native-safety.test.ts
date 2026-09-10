@@ -39,6 +39,14 @@ test.runIf(isNativeBridgeAvailable())(
       const huge = '中'.repeat(400_000);
       const detached = addon.handleNewDeclV2(sessionId, 'custom', huge);
       expect(addon.handleGetFieldV2(sessionId, detached, 1)).toBe(huge);
+      expect(
+        JSON.parse(addon.handleReadSnapshotsV2!(sessionId, new Uint32Array([detached])))[0].value,
+      ).toBe(huge);
+      expect(() =>
+        addon.handleReadSnapshotsV2!(sessionId, new Uint8Array(4) as unknown as Uint32Array),
+      ).toThrow();
+      expect(() => addon.handleReadSnapshotsV2!(sessionId, new Uint32Array(4097))).toThrow();
+      expect(() => addon.handleReadSnapshotsV2!(sessionId, new Uint32Array([0]))).toThrow();
       addon.handleDisposeV2(sessionId, detached);
       expect(() => addon.handleGetFieldV2(sessionId, detached, 1)).toThrow();
     } finally {
@@ -75,6 +83,28 @@ test.runIf(isNativeBridgeAvailable())(
       assert.equal(addon.handleProtocolInfo().activeSessions, 1);
       assert.equal(addon.handleStringifyV2(live.sessionId, live.rootId), 'a{x:y}');
       addon.handleCloseV2(live.sessionId);
+      assert.equal(addon.handleProtocolInfo().activeSessions, 0);
+      const { SessionOwner } = await import(${JSON.stringify(new URL('../dist/handle-facade.js', import.meta.url).href)});
+      let retained;
+      function populate() {
+        retained = new SessionOwner(addon, 'retained{x:y}').root.first.first;
+        for (let i = 0; i < 100; i++) new SessionOwner(addon, 'temporary{x:y}').root.first;
+      }
+      populate();
+      for (let i = 0; i < 100; i++) {
+        global.gc();
+        await new Promise(resolve => setTimeout(resolve, 10));
+        if (addon.handleProtocolInfo().activeSessions === 1) break;
+      }
+      assert.equal(addon.handleProtocolInfo().activeSessions, 1);
+      assert.equal(retained.parent.first, retained);
+      assert.equal(retained.toString(), 'x:y');
+      retained = undefined;
+      for (let i = 0; i < 100; i++) {
+        global.gc();
+        await new Promise(resolve => setTimeout(resolve, 10));
+        if (addon.handleProtocolInfo().activeSessions === 0) break;
+      }
       assert.equal(addon.handleProtocolInfo().activeSessions, 0);
     })().catch(error => { console.error(error); process.exitCode = 1; });
   `,

@@ -1,8 +1,8 @@
 # Go-Owned AST and Native Handle Migration
 
-- Status: In progress — audited 2026-09-07; foundation implemented, native migration not complete
+- Status: In progress — audited 2026-09-10; Phases 0–2 implemented, native migration not complete
 - Target: `@postcss-go/core` native backend
-- Last updated: 2026-09-07
+- Last updated: 2026-09-10
 - Owners: TBD
 
 ## Summary
@@ -17,7 +17,7 @@ The native path will expose session-scoped node handles to a thin TypeScript fac
 
 The browser Worker path will continue using a serializable AST during the initial migration. A later, separately gated experiment may move the browser-side mutable AST into a main-thread Go/WASM handle runtime. Repository language percentages are not a reason to weaken browser isolation or compatibility.
 
-## Implementation status — audited 2026-09-07
+## Implementation status — audited 2026-09-10
 
 This section records the current working tree, including the protocol-negotiation
 fixes from this review. It is not a release claim. The detailed design and phase
@@ -25,21 +25,20 @@ exit criteria below remain the target; existing Go primitives or passing bulk
 tests alone do not mark a phase complete.
 
 **The migration definition of done is not met.** Native `auto` and `binary`
-still use the hydrated AST runtime. Opt-in `handle` runs synchronous
-`Declaration` callbacks with `prop`/`value` stubs. It does not provide the
-general Go-backed PostCSS node facade. Successful handle processing retains a Go
-session, but accessing `Result.root` parses the original input into the hydrated
-representation and projects final scalar fields onto it.
+still use the hydrated AST runtime. Opt-in `handle` now runs the synchronous
+read-only Go-backed facade, including Once, all standard visitors and retained
+Result.root wrappers. Scalar writes are restricted to the separate experimental
+scalar API until Phase 3 provides full callback transaction semantics.
 
 | Phase                         | Current assessment                                     | Main completion blocker                                                                    |
 | ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | Maintained corpus and CI-generated benchmark/line-count artifacts                          |
 | 1 — Protocol/sessions         | Protocol 2.1 contract implemented                      | General facades and later-phase capabilities remain gated                                  |
-| 2 — Read-only facade          | Not complete                                           | All standard node wrappers, identity/prototypes, Once, visitor filters and source reads    |
+| 2 — Read-only facade          | Complete and verified                                  | Standard wrappers, identity/prototypes, Once, filters, source reads and batched snapshots  |
 | 3 — Scalar mutation           | Partial                                                | Important, general scalar visitors, callback-atomic multi-field patches and dirty revisits |
-| 4 — Relationships/source/raws | Not complete                                           | Live facade relationships, nested raws, source identity and handle map equivalence         |
+| 4 — Relationships/source/raws | Not complete                                           | Live relationship/raw mutations and handle source-map equivalence                          |
 | 5 — Structural traversal      | Go primitives only; not complete                       | Complete facade methods and mutation-aware enter/exit cursor                               |
-| 6 — Async/lifetime            | Owner/finalizer foundation only                        | Async callback retention and usable Go-backed result/node references                       |
+| 6 — Async/lifetime            | Owner/finalizer foundation only                        | Async callback retention and mutable retained references                                   |
 | 7 — Default rollout/cleanup   | Not started as a rollout                               | 95% corpus selection, full performance/leak gates and two-release cleanup window           |
 | 8 — Browser experiment        | Deferred and optional                                  | Not required for native completion                                                         |
 
@@ -72,7 +71,7 @@ representation and projects final scalar fields onto it.
       facade or mutation-aware traversal.
 - [x] Core typechecking is part of the CI check command; upstream sync checks,
       owned AST contract fixtures and webpack coverage thresholds exist.
-- [x] A production-package restricted benchmark and runtime line-count script
+- [x] A production-package read-only benchmark and runtime line-count script
       exist. Neither demonstrates general handle compatibility or rollout readiness.
 
 Implementation evidence:
@@ -82,7 +81,7 @@ Implementation evidence:
 [Node addon](../../packages/postcss-go/native/addon.c),
 [TS session](../../packages/postcss-go/src/handle-session.ts),
 [restricted callbacks](../../packages/postcss-go/src/handle-plugin-runtime.ts),
-[selection/result materialization](../../packages/postcss-go/src/plugin-runtime.ts),
+[selection/read-only visitor execution](../../packages/postcss-go/src/plugin-runtime.ts),
 [CI](../../.github/workflows/ci.yml).
 
 ### Remaining updates by phase
@@ -116,8 +115,8 @@ this completes baseline inputs, not the 95% selection or rollout gates.
 **Phase 1 — Complete the protocol contract**
 
 - [x] Generate explicit operations, node/patch/event kinds, status codes and named
-      capabilities from the schema in Go, TS and C. Unimplemented facade, patch,
-      traversal, map and async capabilities remain unadvertised.
+      capabilities from the schema in Go, TS and C. Unimplemented patch, traversal,
+      map and async capabilities remain unadvertised.
 - [x] Expose call-scoped structured status/message errors through V2_1 C exports;
       retain V2.0 C signature adapters and free errors in their allocating runtime.
 - [x] Pass from/document/trackSource options into session creation and preserve
@@ -127,24 +126,32 @@ this completes baseline inputs, not the 95% selection or rollout gates.
 - [x] Test every required capability, newer-minor/missing-bit combinations,
       throwing getters and malformed IDs. Only implemented capabilities are advertised.
 
-See the [protocol 2.1 contract](../native-handle-protocol-v2.md) for ABI compatibility,
-source options, ownership rules and verification scope. General facades remain Phase 2.
+See the [protocol 2.2 contract](../native-handle-protocol-v2.md) for ABI compatibility,
+source options, ownership rules and Phase 2 read-only execution scope.
 
 **Phase 2 — Implement the general read-only facade and planner**
 
-- [ ] Create a shared SessionOwner plus per-session wrapper identity cache for
+- [x] Create a shared SessionOwner plus per-session wrapper identity cache for
       Root, Document, Rule, AtRule, Declaration and Comment.
-- [ ] Preserve class prototypes, instanceof, enumeration, documented methods
-      and reflection behavior. Current plain declaration proxies are experimental
-      stubs, not compatible node objects.
-- [ ] Support Once, all standard read-only visitors and filters, prepare/helper
+- [x] Preserve class prototypes, instanceof, enumeration, documented methods
+      and reflection behavior. The isolated scalar prototype
+      remains outside production selection.
+- [x] Support Once, all standard read-only visitors and filters, prepare/helper
       behavior where covered, parent/type identity and basic source reads.
-- [ ] Replace boolean declaration-shape selection with an explicit execution
+- [x] Replace boolean declaration-shape selection with an explicit execution
       plan, required capability set and diagnostic fallback reason. Arbitrary JS
       callback shape cannot prove scalar-only access.
-- [ ] Batch event metadata and scalar snapshots; measure boundary calls
+- [x] Batch event metadata and scalar snapshots; measure boundary calls
       independently of property-read count. Add forced handle/binary differential
       fixtures for CSS, identity, callback trace, messages, warnings and errors.
+
+Phase 2 implementation notes: [read-only facade](../../packages/postcss-go/src/handle-facade.ts),
+[execution planner](../../packages/postcss-go/src/handle-plan.ts),
+[flat Go snapshots](../../internal/asthandle/snapshot.go) and
+[forced-mode differential tests](../../packages/postcss-go/test/handle-facade.test.ts).
+The frozen seven-case mutation corpus remains on binary in auto mode; forced
+handle support is now 0/7 because the general facade explicitly rejects writes.
+The old scalar prototype retains direct regression tests; no rollout claim is made.
 
 **Phase 3 — Complete scalar mutation semantics**
 
@@ -252,7 +259,7 @@ As of this specification:
 
 These values are planning baselines, not success metrics by themselves. Test code is deliberately excluded and must not be rewritten merely to change a language ratio.
 
-The pre-migration handle prototype proved that declaration-only synchronous plugins could avoid full AST hydration, but used one process-global native session, exposed few fields and could fall back after unsupported JavaScript behavior. The current V2 foundation has replaced the production global session and prevents callback replay; the missing general facade and remaining migration work are recorded in the implementation status above.
+The pre-migration handle prototype proved that declaration-only synchronous plugins could avoid full AST hydration, but used one process-global native session, exposed few fields and could fall back after unsupported JavaScript behavior. The current V2 foundation has replaced the production global session and prevents callback replay; the read-only facade is implemented and remaining mutation/async migration work are recorded in the implementation status above.
 
 ## Goals
 
