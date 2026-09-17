@@ -1,10 +1,11 @@
 # Native handle migration checkpoint
 
-Current Phase 2 implementation and validation are described in the
-[protocol 2.2 contract](native-handle-protocol-v2.md) and
+Current Phase 3 implementation and validation are described in the
+[protocol 2.3 contract](native-handle-protocol-v2.md) and
 [migration status](specs/go-owned-ast-handle-migration.md). Forced `handle` now
-uses the read-only facade; retained Result.root no longer hydrates a second AST.
-The earlier scalar-only behavior and measurements below are historical.
+uses the Go-backed facade with scalar mutation; retained Result.root no longer
+hydrates a second AST. Structural writes, maps and async retention remain later
+phases. The earlier scalar-only prototype measurements below are historical.
 
 ## Phase 2 verification (2026-09-10)
 

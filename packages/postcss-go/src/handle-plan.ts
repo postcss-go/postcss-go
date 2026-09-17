@@ -1,11 +1,12 @@
 import {
+  HANDLE_CAPABILITY_ATOMICPATCHES,
   HANDLE_CAPABILITY_READONLYFACADE,
   HANDLE_REQUIRED_CAPABILITIES,
 } from './generated/handle-protocol.js';
 import { hasNativeHandleBridge, type NativeHandleAddon } from './handle-session.js';
 
 export type HandleExecutionPlan = {
-  runtime: 'binary' | 'handle-readonly' | 'unsupported';
+  runtime: 'binary' | 'handle-readonly' | 'handle-scalar' | 'unsupported';
   requiredCapabilities: number[];
   reason: string;
 };
@@ -48,6 +49,19 @@ export function planHandleExecution(
       runtime: 'unsupported',
       requiredCapabilities,
       reason: 'read-only facade negotiation failed',
+    };
+  }
+  const capabilities = addon!.handleProtocolInfo().capabilities[0];
+  if (
+    typeof addon!.handleApplyPatchesV2 === 'function' &&
+    (capabilities & HANDLE_CAPABILITY_ATOMICPATCHES) === HANDLE_CAPABILITY_ATOMICPATCHES
+  ) {
+    requiredCapabilities[0] |= HANDLE_CAPABILITY_ATOMICPATCHES;
+    return {
+      runtime: 'handle-scalar',
+      requiredCapabilities,
+      reason:
+        'explicit scalar handle execution; structural writes throw without replay and patches flush per callback',
     };
   }
   return {

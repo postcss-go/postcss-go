@@ -364,3 +364,52 @@ func pcgoHandleReadSnapshotsV2_1(sessionID C.uint, handles *C.uint, count C.int,
 	}
 	return C.int(len(encoded))
 }
+
+//export pcgoHandleApplyPatchesV2_1
+func pcgoHandleApplyPatchesV2_1(
+	sessionID C.uint,
+	handles *C.uint,
+	fields *C.int,
+	count C.int,
+	buf *C.char,
+	length C.int,
+	errorOut *C.pcgoHandleError,
+) C.int {
+	session, release := handleSessions.Acquire(uint32(sessionID))
+	defer release()
+	if session == nil {
+		return handleFail(errorOut, asthandle.ErrClosed)
+	}
+	ids := unsafe.Slice((*uint32)(unsafe.Pointer(handles)), int(count))
+	fieldIDs := unsafe.Slice((*int32)(unsafe.Pointer(fields)), int(count))
+	payload := unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(length))
+	values := make([]string, 0, len(ids))
+	offset := 0
+	for offset < len(payload) {
+		if offset+4 > len(payload) {
+			return handleFail(errorOut, asthandle.ErrInvalidArgument)
+		}
+		n := int(payload[offset]) | int(payload[offset+1])<<8 | int(payload[offset+2])<<16 | int(payload[offset+3])<<24
+		offset += 4
+		if n < 0 || offset+n > len(payload) {
+			return handleFail(errorOut, asthandle.ErrInvalidArgument)
+		}
+		values = append(values, string(payload[offset:offset+n]))
+		offset += n
+	}
+	if len(values) != len(ids) {
+		return handleFail(errorOut, asthandle.ErrInvalidArgument)
+	}
+	patches := make([]asthandle.FieldPatch, len(ids))
+	for i, id := range ids {
+		patches[i] = asthandle.FieldPatch{
+			Handle: asthandle.Handle(id),
+			Field:  asthandle.Field(fieldIDs[i]),
+			Value:  values[i],
+		}
+	}
+	if err := session.ApplyPatches(patches); err != nil {
+		return handleFail(errorOut, err)
+	}
+	return 0
+}

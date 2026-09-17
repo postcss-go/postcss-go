@@ -3,11 +3,13 @@ import type { RuntimePlugin } from './plugin-runtime.js';
 import { isThenable } from './errors.js';
 import {
   createHandleDeclarationStub,
+  HANDLE_FIELD_IMPORTANT,
   HANDLE_FIELD_PROP,
   HANDLE_FIELD_VALUE,
   HandleDeclarationUnsupportedError,
   NativeHandleSession,
   type HandleDeclarationStub,
+  type HandleField,
   type NativeHandleAddon,
   type NativeHandleParseOptions,
 } from './handle-session.js';
@@ -68,39 +70,78 @@ export function runHandleDeclarationSession(
       const count = handles.length;
       const props = session.readFields(handles, HANDLE_FIELD_PROP);
       const values = session.readFields(handles, HANDLE_FIELD_VALUE);
-      let propsChanged = false;
-      let valuesChanged = false;
-
+      const importants = session.readFields(handles, HANDLE_FIELD_IMPORTANT);
       for (let i = 0; i < count; i += 1) {
-        const stub = createHandleDeclarationStub(props[i], values[i]);
+        const stub = createHandleDeclarationStub(props[i], values[i], importants[i] === '1');
+        const patches: Array<{ field: HandleField; value: string }> = [];
+        const track = new Proxy(stub, {
+          get(target, key, receiver) {
+            return Reflect.get(target, key, receiver);
+          },
+          set(target, key, next) {
+            if (key === 'important') {
+              const value = Boolean(next);
+              if (target.important !== value) {
+                target.important = value;
+                patches.push({ field: HANDLE_FIELD_IMPORTANT, value: value ? '1' : '0' });
+              }
+              return true;
+            }
+            if (key === 'prop' || key === 'value') {
+              const value = String(next);
+              if (target[key] !== value) {
+                target[key] = value;
+                patches.push({
+                  field: key === 'prop' ? HANDLE_FIELD_PROP : HANDLE_FIELD_VALUE,
+                  value,
+                });
+              }
+              return true;
+            }
+            throw new HandleDeclarationUnsupportedError(String(key));
+          },
+        });
         for (const plugin of plugins) {
           if (typeof plugin === 'function') continue;
           const visitor = (plugin as RuntimePlugin).Declaration;
           if (!isSyncFunction(visitor)) continue;
-          const returned = (
-            visitor as (decl: HandleDeclarationStub, helpers: unknown) => unknown
-          ).call(plugin, stub, unsupportedHandleHelpers);
-          if (isThenable(returned)) {
-            void Promise.resolve(returned).catch(() => {});
-            throw new HandleDeclarationUnsupportedError('async');
+          try {
+            const returned = (
+              visitor as (decl: HandleDeclarationStub, helpers: unknown) => unknown
+            ).call(plugin, track, unsupportedHandleHelpers);
+            if (isThenable(returned)) {
+              void Promise.resolve(returned).catch(() => {});
+              throw new HandleDeclarationUnsupportedError('async');
+            }
+            flushDeclarationPatches(session, handles[i], patches);
+          } catch (error) {
+            flushDeclarationPatches(session, handles[i], patches);
+            throw error;
           }
         }
-        if (stub.value !== values[i]) {
-          values[i] = stub.value;
-          valuesChanged = true;
-        }
-        if (stub.prop !== props[i]) {
-          props[i] = stub.prop;
-          propsChanged = true;
-        }
       }
-
-      if (valuesChanged) session.setFields(handles, HANDLE_FIELD_VALUE, values);
-      if (propsChanged) session.setFields(handles, HANDLE_FIELD_PROP, props);
     }
     return { css: session.stringify(root), session };
   } catch (error) {
     session.close();
     throw error;
   }
+}
+
+function flushDeclarationPatches(
+  session: NativeHandleSession,
+  handle: number,
+  patches: Array<{ field: HandleField; value: string }>,
+): void {
+  if (patches.length === 0) return;
+  const queued = patches.splice(0, patches.length);
+  const handles = new Uint32Array(queued.length);
+  const fields = new Int32Array(queued.length);
+  const values = new Array<string>(queued.length);
+  for (let i = 0; i < queued.length; i++) {
+    handles[i] = handle;
+    fields[i] = queued[i].field;
+    values[i] = queued[i].value;
+  }
+  session.applyPatches(handles, fields, values);
 }

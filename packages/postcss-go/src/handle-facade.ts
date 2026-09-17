@@ -10,8 +10,16 @@ import {
 } from './ast.js';
 import { Input } from './input.js';
 import {
+  HANDLE_FIELD_IMPORTANT,
+  HANDLE_FIELD_NAME,
+  HANDLE_FIELD_PARAMS,
+  HANDLE_FIELD_PROP,
+  HANDLE_FIELD_SELECTOR,
+  HANDLE_FIELD_TEXT,
+  HANDLE_FIELD_VALUE,
   HandleDeclarationUnsupportedError,
   NativeHandleSession,
+  type HandleField,
   type NativeHandleAddon,
   type NativeHandleParseOptions,
 } from './handle-session.js';
@@ -32,6 +40,9 @@ type Snapshot = {
   raws: Node['raws'];
   source?: NonNullable<Node['source']>;
 };
+
+type PendingPatch = { id: number; field: HandleField; value: string };
+
 const prototypes = {
   root: Root.prototype,
   document: Document.prototype,
@@ -40,6 +51,18 @@ const prototypes = {
   decl: Declaration.prototype,
   comment: Comment.prototype,
 };
+
+const SCALAR_FIELDS: Record<string, Partial<Record<string, HandleField>>> = {
+  decl: {
+    prop: HANDLE_FIELD_PROP,
+    value: HANDLE_FIELD_VALUE,
+    important: HANDLE_FIELD_IMPORTANT,
+  },
+  rule: { selector: HANDLE_FIELD_SELECTOR },
+  atrule: { name: HANDLE_FIELD_NAME, params: HANDLE_FIELD_PARAMS },
+  comment: { text: HANDLE_FIELD_TEXT },
+};
+
 const unsupported = (key: PropertyKey): never => {
   throw new HandleDeclarationUnsupportedError(String(key));
 };
@@ -78,22 +101,43 @@ function immutable<T extends object>(value: T, cache: WeakMap<object, object>): 
   return proxy;
 }
 
+function encodeScalar(key: string, value: unknown): { local: unknown; wire: string } {
+  if (key === 'important') {
+    const local = Boolean(value);
+    return { local, wire: local ? '1' : '0' };
+  }
+  const local = String(value);
+  return { local, wire: local };
+}
+
+export type SessionOwnerOptions = NativeHandleParseOptions & {
+  /** When true, standard scalar fields accept ordered callback-local writes. */
+  mutableScalars?: boolean;
+};
+
 /** One owner and wrapper cache per Go arena. Every retained wrapper retains this owner. */
 export class SessionOwner {
   readonly session: NativeHandleSession;
+  readonly mutableScalars: boolean;
   private readonly snapshots = new Map<number, Snapshot>();
   private readonly wrappers = new Map<number, Node>();
   private readonly input: Input;
   private readonly readCache = new WeakMap<object, object>();
   private readonly targets = new WeakMap<Node, Node>();
+  private pending: PendingPatch[] = [];
 
-  constructor(addon: NativeHandleAddon, css: string, options: NativeHandleParseOptions = {}) {
+  constructor(addon: NativeHandleAddon, css: string, options: SessionOwnerOptions = {}) {
+    this.mutableScalars = options.mutableScalars === true;
     this.session = new NativeHandleSession(addon);
     this.input = new Input(css, { ...options, map: false });
     this.input.fromOffset(0); // Initialize the Input's read cache before protecting it.
     this.input = immutable(this.input, this.readCache);
     try {
-      this.session.parse(this.input.css, { ...options, trackSource: true });
+      this.session.parse(this.input.css, {
+        from: options.from,
+        document: options.document,
+        trackSource: true,
+      });
       for (const ids of this.session.nodeBatches()) {
         const rows = JSON.parse(this.session.readSnapshots(ids)) as Snapshot[];
         if (!Array.isArray(rows) || rows.length !== ids.length)
@@ -121,9 +165,24 @@ export class SessionOwner {
 
   /** Runtime bookkeeping is separate from immutable Go node data. */
   markClean(node: Node): void {
-    const target = this.targets.get(node);
-    if (!target) throw new Error('foreign handle wrapper');
-    Node.prototype.markClean.call(target);
+    if (!this.targets.has(node)) throw new Error('foreign handle wrapper');
+    Node.prototype.markClean.call(node);
+  }
+
+  /** Flush one ordered, mixed-field patch transaction for the current callback. */
+  flushPatches(): void {
+    if (this.pending.length === 0) return;
+    const patches = this.pending;
+    this.pending = [];
+    const handles = new Uint32Array(patches.length);
+    const fields = new Int32Array(patches.length);
+    const values = new Array<string>(patches.length);
+    for (let i = 0; i < patches.length; i++) {
+      handles[i] = patches[i].id;
+      fields[i] = patches[i].field;
+      values[i] = patches[i].value;
+    }
+    this.session.applyPatches(handles, fields, values);
   }
 
   node(id: number): Node {
@@ -158,6 +217,7 @@ export class SessionOwner {
     Object.assign(target, fields);
     let children: Node[] | undefined;
     const read = (key: PropertyKey): unknown => {
+      if (typeof key === 'symbol') return Reflect.get(target, key);
       if (key === 'source') {
         if (!row.source) return undefined;
         return (source ??= immutable(
@@ -186,6 +246,24 @@ export class SessionOwner {
       }
       return Reflect.get(target, key, wrapper);
     };
+    const writeScalar = (key: string, value: unknown): boolean => {
+      if (!this.mutableScalars) return unsupported(key);
+      const field = SCALAR_FIELDS[row.type]?.[key];
+      if (field === undefined) return unsupported(key);
+      const encoded = encodeScalar(key, value);
+      if (Reflect.get(target, key) === encoded.local) return true;
+      Reflect.set(target, key, encoded.local);
+      if (key === 'prop') row.prop = encoded.local as string;
+      if (key === 'value') row.value = encoded.local as string;
+      if (key === 'important') row.important = encoded.local as boolean;
+      if (key === 'selector') row.selector = encoded.local as string;
+      if (key === 'name') row.name = encoded.local as string;
+      if (key === 'params') row.params = encoded.local as string;
+      if (key === 'text') row.text = encoded.local as string;
+      this.pending.push({ id, field, value: encoded.wire });
+      Node.prototype.markDirty.call(wrapper);
+      return true;
+    };
     const wrapper = new Proxy(target, {
       get: (_target, key) => {
         if (key === 'toProxy') return () => wrapper;
@@ -204,12 +282,20 @@ export class SessionOwner {
         return read(key);
       },
       getOwnPropertyDescriptor: (_target, key) => {
+        if (typeof key === 'symbol') return Reflect.getOwnPropertyDescriptor(target, key);
         const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
         return descriptor ? { ...descriptor, value: read(key) } : undefined;
       },
-      set: (_target, key) => unsupported(key),
+      set: (_target, key, value) => {
+        if (typeof key === 'symbol') return Reflect.set(target, key, value);
+        if (typeof key !== 'string') return unsupported(key);
+        return writeScalar(key, value);
+      },
       deleteProperty: (_target, key) => unsupported(key),
-      defineProperty: (_target, key) => unsupported(key),
+      defineProperty: (_target, key, descriptor) => {
+        if (typeof key === 'symbol') return Reflect.defineProperty(target, key, descriptor);
+        return unsupported(key);
+      },
       setPrototypeOf: () => unsupported('prototype'),
       preventExtensions: () => unsupported('preventExtensions'),
     });

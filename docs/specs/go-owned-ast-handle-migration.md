@@ -1,8 +1,8 @@
 # Go-Owned AST and Native Handle Migration
 
-- Status: In progress — audited 2026-09-10; Phases 0–2 implemented, native migration not complete
+- Status: In progress — audited 2026-09-17; Phases 0–3 implemented, native migration not complete
 - Target: `@postcss-go/core` native backend
-- Last updated: 2026-09-10
+- Last updated: 2026-09-17
 - Owners: TBD
 
 ## Summary
@@ -17,30 +17,31 @@ The native path will expose session-scoped node handles to a thin TypeScript fac
 
 The browser Worker path will continue using a serializable AST during the initial migration. A later, separately gated experiment may move the browser-side mutable AST into a main-thread Go/WASM handle runtime. Repository language percentages are not a reason to weaken browser isolation or compatibility.
 
-## Implementation status — audited 2026-09-10
+## Implementation status — audited 2026-09-17
 
-This section records the current working tree, including the protocol-negotiation
-fixes from this review. It is not a release claim. The detailed design and phase
-exit criteria below remain the target; existing Go primitives or passing bulk
-tests alone do not mark a phase complete.
+This section records the current working tree after Phase 3 scalar mutation.
+It is not a release claim. The detailed design and phase exit criteria below
+remain the target; existing Go primitives or passing bulk tests alone do not
+mark a phase complete.
 
 **The migration definition of done is not met.** Native `auto` and `binary`
-still use the hydrated AST runtime. Opt-in `handle` now runs the synchronous
-read-only Go-backed facade, including Once, all standard visitors and retained
-Result.root wrappers. Scalar writes are restricted to the separate experimental
-scalar API until Phase 3 provides full callback transaction semantics.
+still use the hydrated AST runtime. Opt-in `handle` now runs the Go-backed
+facade with synchronous scalar mutation: ordered mixed-field patch transactions
+per callback, important and all standard scalar fields, throw-time flush, and
+dirty revisits. Structural writes, maps, async retention, and default rollout
+remain later phases.
 
-| Phase                         | Current assessment                                     | Main completion blocker                                                                    |
-| ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | Maintained corpus and CI-generated benchmark/line-count artifacts                          |
-| 1 — Protocol/sessions         | Protocol 2.1 contract implemented                      | General facades and later-phase capabilities remain gated                                  |
-| 2 — Read-only facade          | Complete and verified                                  | Standard wrappers, identity/prototypes, Once, filters, source reads and batched snapshots  |
-| 3 — Scalar mutation           | Partial                                                | Important, general scalar visitors, callback-atomic multi-field patches and dirty revisits |
-| 4 — Relationships/source/raws | Not complete                                           | Live relationship/raw mutations and handle source-map equivalence                          |
-| 5 — Structural traversal      | Go primitives only; not complete                       | Complete facade methods and mutation-aware enter/exit cursor                               |
-| 6 — Async/lifetime            | Owner/finalizer foundation only                        | Async callback retention and mutable retained references                                   |
-| 7 — Default rollout/cleanup   | Not started as a rollout                               | 95% corpus selection, full performance/leak gates and two-release cleanup window           |
-| 8 — Browser experiment        | Deferred and optional                                  | Not required for native completion                                                         |
+| Phase                         | Current assessment                                     | Main completion blocker                                                                   |
+| ----------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | Maintained corpus and CI-generated benchmark/line-count artifacts                         |
+| 1 — Protocol/sessions         | Protocol 2.3 contract implemented                      | General facades and later-phase capabilities remain gated                                 |
+| 2 — Read-only facade          | Complete and verified                                  | Standard wrappers, identity/prototypes, Once, filters, source reads and batched snapshots |
+| 3 — Scalar mutation           | Complete and verified                                  | Important, mixed-field callback patches, throw flush, Go dirty marks and dirty revisits   |
+| 4 — Relationships/source/raws | Not complete                                           | Live relationship/raw mutations and handle source-map equivalence                         |
+| 5 — Structural traversal      | Go primitives only; not complete                       | Complete facade methods and mutation-aware enter/exit cursor                              |
+| 6 — Async/lifetime            | Owner/finalizer foundation only                        | Async callback retention and mutable retained references                                  |
+| 7 — Default rollout/cleanup   | Not started as a rollout                               | 95% corpus selection, full performance/leak gates and two-release cleanup window          |
+| 8 — Browser experiment        | Deferred and optional                                  | Not required for native completion                                                        |
 
 ### Completed and verified foundations
 
@@ -60,12 +61,15 @@ scalar API until Phase 3 provides full callback transaction semantics.
       Required TS masks come from the schema. Cursor pages honor the negotiated
       maximum; oversized field batches are rejected before addon entry rather than
       split into partially committed writes.
-- [x] Go supports scalar reads/writes for prop, value, selector, name, params and
-      text. Same-field batches validate before commit and preserve duplicate-target
-      ordering. Dynamic CSS/field buffers avoid fixed-size truncation.
+- [x] Go supports scalar reads/writes for prop, value, important, selector, name,
+      params and text. Same-field batches validate before commit and preserve
+      duplicate-target ordering. Dynamic CSS/field buffers avoid fixed-size
+      truncation. Ordered mixed-field ApplyPatches transactions validate before
+      commit and mark dirty ancestors on change.
 - [x] Restricted declaration callbacks execute in node-major order with batched
-      reads/writes and skip unchanged writes. Unexpected unsupported callback
-      behavior errors without replay; auto selects bulk before callbacks.
+      reads and per-callback ordered patches, including important. Unexpected
+      unsupported callback behavior errors without replay; auto selects bulk
+      before callbacks.
 - [x] Go has parent/child queries and append, insert-before, remove, clone and
       dispose primitives. Cycle checks exist. These are not the complete native
       facade or mutation-aware traversal.
@@ -81,7 +85,7 @@ Implementation evidence:
 [Node addon](../../packages/postcss-go/native/addon.c),
 [TS session](../../packages/postcss-go/src/handle-session.ts),
 [restricted callbacks](../../packages/postcss-go/src/handle-plugin-runtime.ts),
-[selection/read-only visitor execution](../../packages/postcss-go/src/plugin-runtime.ts),
+[selection/scalar visitor execution](../../packages/postcss-go/src/plugin-runtime.ts),
 [CI](../../.github/workflows/ci.yml).
 
 ### Remaining updates by phase
@@ -109,13 +113,14 @@ usable throughout.
 Maintained corpus: [versioned test fixture](../../packages/postcss-go/test/fixtures/native-corpus.json).
 CI uploads benchmark, corpus and line-count results as build artifacts; historical
 qualification reports are no longer stored in the documentation tree.
-The corpus retains unsupported cases and an exact bulk source-map difference;
-this completes baseline inputs, not the 95% selection or rollout gates.
+The corpus retains unsupported structural/map/async cases and now expects the
+scalar case to succeed under forced handle; this still does not complete the 95%
+selection or rollout gates.
 
 **Phase 1 — Complete the protocol contract**
 
 - [x] Generate explicit operations, node/patch/event kinds, status codes and named
-      capabilities from the schema in Go, TS and C. Unimplemented patch, traversal,
+      capabilities from the schema in Go, TS and C. Unimplemented traversal,
       map and async capabilities remain unadvertised.
 - [x] Expose call-scoped structured status/message errors through V2_1 C exports;
       retain V2.0 C signature adapters and free errors in their allocating runtime.
@@ -126,8 +131,8 @@ this completes baseline inputs, not the 95% selection or rollout gates.
 - [x] Test every required capability, newer-minor/missing-bit combinations,
       throwing getters and malformed IDs. Only implemented capabilities are advertised.
 
-See the [protocol 2.2 contract](../native-handle-protocol-v2.md) for ABI compatibility,
-source options, ownership rules and Phase 2 read-only execution scope.
+See the [protocol 2.3 contract](../native-handle-protocol-v2.md) for ABI compatibility,
+source options, ownership rules and Phase 3 scalar execution scope.
 
 **Phase 2 — Implement the general read-only facade and planner**
 
@@ -149,21 +154,22 @@ Phase 2 implementation notes: [read-only facade](../../packages/postcss-go/src/h
 [execution planner](../../packages/postcss-go/src/handle-plan.ts),
 [flat Go snapshots](../../internal/asthandle/snapshot.go) and
 [forced-mode differential tests](../../packages/postcss-go/test/handle-facade.test.ts).
-The frozen seven-case mutation corpus remains on binary in auto mode; forced
-handle support is now 0/7 because the general facade explicitly rejects writes.
-The old scalar prototype retains direct regression tests; no rollout claim is made.
 
 **Phase 3 — Complete scalar mutation semantics**
 
-- [ ] Add important and all standard scalar fields to the protocol/facade.
-- [ ] Implement one ordered, mixed-field patch transaction per callback. Current
-      prop/value updates are separate same-field batches after a page of callbacks,
-      not callback-level transactions.
-- [ ] Preserve local read-after-write and multiple-write ordering; flush mutations
-      made before a thrown callback as required by existing behavior. Current error
-      cleanup closes the restricted session.
-- [ ] Implement Go dirty marking and repeat-until-clean behavior with traversal;
+- [x] Add important and all standard scalar fields to the protocol/facade.
+- [x] Implement one ordered, mixed-field patch transaction per callback. Current
+      prop/value updates are no longer separate same-field page batches.
+- [x] Preserve local read-after-write and multiple-write ordering; flush mutations
+      made before a thrown callback as required by existing behavior.
+- [x] Implement Go dirty marking and repeat-until-clean behavior with traversal;
       compare multi-plugin and throw-after-write traces against bulk mode.
+
+Phase 3 implementation notes: protocol 2.3 advertises AtomicPatches,
+`handleApplyPatchesV2` commits ordered FieldImportant-inclusive batches, the
+forced handle planner selects `handle-scalar`, and differential fixtures cover
+dirty revisits plus throw-after-write flush. Structural methods still throw.
+`auto` remains binary.
 
 **Phase 4 — Relationships, formatting and maps**
 

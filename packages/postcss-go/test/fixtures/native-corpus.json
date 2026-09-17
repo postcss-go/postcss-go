@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "corpusVersion": "1.1.0",
+  "corpusVersion": "1.2.0",
   "owner": "postcss-go maintainers",
   "denominator": "Every case has equal weight, including unsupported and map cases; no exclusions. Require ceil(0.95 * cases.length). Forced success is not proof of auto selection or no hydration.",
   "plugins": {
@@ -73,7 +73,7 @@
       "options": {},
       "css": "a { color: red; margin: 0 }",
       "map": false,
-      "expectedHandle": "unsupported"
+      "expectedHandle": "supported"
     }
   ],
   "compatibilityDifferences": [

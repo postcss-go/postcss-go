@@ -54,6 +54,7 @@ typedef int (*pcgo_handle_close_cursor_fn)(unsigned int, unsigned int, pcgoHandl
 typedef int (*pcgo_handle_read_snapshots_fn)(unsigned int, unsigned int*, int, char*, int, pcgoHandleError*);
 typedef int (*pcgo_handle_read_fields_fn)(unsigned int, unsigned int*, int, int, char*, int, pcgoHandleError*);
 typedef int (*pcgo_handle_set_fields_fn)(unsigned int, unsigned int*, int, int, char*, int, pcgoHandleError*);
+typedef int (*pcgo_handle_apply_patches_fn)(unsigned int, unsigned int*, int*, int, char*, int, pcgoHandleError*);
 typedef unsigned int (*pcgo_handle_new_decl_fn)(unsigned int, char*, int, char*, int, pcgoHandleError*);
 typedef int (*pcgo_handle_append_fn)(unsigned int, unsigned int, unsigned int, pcgoHandleError*);
 typedef int (*pcgo_handle_dispose_fn)(unsigned int, unsigned int, pcgoHandleError*);
@@ -75,6 +76,7 @@ static pcgo_handle_close_cursor_fn go_handle_close_cursor = NULL;
 static pcgo_handle_read_fields_fn go_handle_read_fields = NULL;
 static pcgo_handle_read_snapshots_fn go_handle_read_snapshots = NULL;
 static pcgo_handle_set_fields_fn go_handle_set_fields = NULL;
+static pcgo_handle_apply_patches_fn go_handle_apply_patches = NULL;
 static pcgo_handle_new_decl_fn go_handle_new_decl = NULL;
 static pcgo_handle_append_fn go_handle_append = NULL;
 static pcgo_handle_dispose_fn go_handle_dispose = NULL;
@@ -136,8 +138,9 @@ static BOOL CALLBACK load_go_bridge(
   go_handle_open_cursor = (pcgo_handle_open_cursor_fn)require_go_symbol("pcgoHandleOpenCursorV2_1");
   go_handle_cursor_next = (pcgo_handle_cursor_next_fn)require_go_symbol("pcgoHandleCursorNextV2_1");
   go_handle_close_cursor = (pcgo_handle_close_cursor_fn)require_go_symbol("pcgoHandleCloseCursorV2_1");
-  // Optional 2.2 feature: an older companion must retain the binary/scalar bridge.
+  // Optional 2.2/2.3 features: an older companion must retain the binary/scalar bridge.
   go_handle_read_snapshots = (pcgo_handle_read_snapshots_fn)GetProcAddress(go_bridge_library, "pcgoHandleReadSnapshotsV2_1");
+  go_handle_apply_patches = (pcgo_handle_apply_patches_fn)GetProcAddress(go_bridge_library, "pcgoHandleApplyPatchesV2_1");
   go_handle_read_fields = (pcgo_handle_read_fields_fn)require_go_symbol("pcgoHandleReadFieldsV2_1");
   go_handle_set_fields = (pcgo_handle_set_fields_fn)require_go_symbol("pcgoHandleSetFieldsV2_1");
   go_handle_new_decl = (pcgo_handle_new_decl_fn)require_go_symbol("pcgoHandleNewDeclV2_1");
@@ -180,6 +183,7 @@ static int call_go_bridge(
 #define pcgoHandleReadSnapshotsV2_1 go_handle_read_snapshots
 #define pcgoHandleReadFieldsV2_1 go_handle_read_fields
 #define pcgoHandleSetFieldsV2_1 go_handle_set_fields
+#define pcgoHandleApplyPatchesV2_1 go_handle_apply_patches
 #define pcgoHandleNewDeclV2_1 go_handle_new_decl
 #define pcgoHandleAppendV2_1 go_handle_append
 #define pcgoHandleDisposeV2_1 go_handle_dispose
@@ -197,6 +201,12 @@ static int call_go_bridge(
   return pcgoCall(operation, first, first_len, second, second_len,
       output, output_capacity, error, error_capacity);
 }
+#endif
+
+#if defined(POSTCSS_GO_DYNAMIC_LIBRARY)
+#define PCGO_HAS_APPLY_PATCHES (go_handle_apply_patches != NULL)
+#else
+#define PCGO_HAS_APPLY_PATCHES 1
 #endif
 
 typedef enum { OP_PARSE, OP_STRINGIFY, OP_PROCESS, OP_NO_WORK, OP_STRINGIFY_BUILDER } operation;
@@ -510,6 +520,7 @@ static napi_value handle_protocol_info(napi_env env, napi_callback_info info) {
   *((uint32_t*)data) = HANDLE_CAPABILITIES;
 #ifdef _WIN32
   if (!go_handle_read_snapshots) *((uint32_t*)data) &= ~HANDLE_CAPABILITY_READONLYFACADE;
+  if (!go_handle_apply_patches) *((uint32_t*)data) &= ~HANDLE_CAPABILITY_ATOMICPATCHES;
 #endif
   if (napi_create_typedarray(env, napi_uint32_array, 1, buffer, 0, &capabilities) != napi_ok ||
       napi_set_named_property(env, result, "capabilities", capabilities) != napi_ok) return NULL;
@@ -917,6 +928,88 @@ static napi_value handle_set_fields(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+static napi_value handle_apply_patches(napi_env env, napi_callback_info info) {
+  pcgoHandleError error = {0};
+  uint32_t session = 0;
+  size_t argc = 4;
+  napi_value argv[4] = {0};
+  napi_typedarray_type handle_type;
+  napi_typedarray_type field_type;
+  size_t handle_length = 0;
+  size_t field_length = 0;
+  void* handle_data = NULL;
+  void* field_data = NULL;
+  napi_value handle_buffer;
+  napi_value field_buffer;
+  size_t handle_offset = 0;
+  size_t field_offset = 0;
+  uint32_t count = 0;
+
+  if (!PCGO_HAS_APPLY_PATCHES) return throw_error(env, "atomic patches capability unavailable");
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (read_handle_id(env, argv[0], &session) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (napi_get_typedarray_info(env, argv[1], &handle_type, &handle_length, &handle_data, &handle_buffer, &handle_offset) != napi_ok) {
+    return NULL;
+  }
+  if (napi_get_typedarray_info(env, argv[2], &field_type, &field_length, &field_data, &field_buffer, &field_offset) != napi_ok) {
+    return NULL;
+  }
+  if (handle_type != napi_uint32_array || field_type != napi_int32_array ||
+      handle_length > INT_MAX || field_length > INT_MAX) {
+    return throw_error(env, "expected Uint32Array/Int32Array within ABI limits");
+  }
+  if (handle_length != field_length) return throw_error(env, "handle mutation batch length mismatch");
+  if (napi_get_array_length(env, argv[3], &count) != napi_ok) return throw_error(env, "invalid handle arguments");
+  if (count != handle_length) return throw_error(env, "handle mutation batch length mismatch");
+
+  char* handle_scratch = NULL;
+  size_t capacity = 0;
+  size_t packed = 0;
+  for (uint32_t i = 0; i < count; i++) {
+    napi_value item;
+    input value = {0};
+    if (napi_get_element(env, argv[3], i, &item) != napi_ok ||
+        read_input(env, item, false, false, &value) != 0) { free(handle_scratch); return NULL; }
+    size_t item_length = value.length;
+    size_t required = packed + 4 + item_length;
+    if (required > INT_MAX) {
+      free(value.data); free(handle_scratch);
+      return throw_error(env, "handle batch exceeds the 2 GiB ABI limit");
+    }
+    if (required > capacity) {
+      capacity = required > capacity * 2 ? required : capacity * 2;
+      char* next = (char*)realloc(handle_scratch, capacity);
+      if (!next) { free(value.data); free(handle_scratch); return throw_error(env, "out of memory"); }
+      handle_scratch = next;
+    }
+    handle_scratch[packed] = (char)item_length;
+    handle_scratch[packed + 1] = (char)(item_length >> 8);
+    handle_scratch[packed + 2] = (char)(item_length >> 16);
+    handle_scratch[packed + 3] = (char)(item_length >> 24);
+    packed += 4;
+    memcpy(handle_scratch + packed, value.data, item_length);
+    free(value.data);
+    packed += item_length;
+  }
+  if (napi_get_typedarray_info(env, argv[1], &handle_type, &handle_length, &handle_data, &handle_buffer, &handle_offset) != napi_ok ||
+      napi_get_typedarray_info(env, argv[2], &field_type, &field_length, &field_data, &field_buffer, &field_offset) != napi_ok ||
+      handle_length != count || field_length != count || (count && (!handle_data || !field_data))) {
+    free(handle_scratch);
+    return throw_error(env, "handle IDs changed during batch construction");
+  }
+  int status = pcgoHandleApplyPatchesV2_1(
+      session,
+      (unsigned int*)handle_data,
+      (int*)field_data,
+      (int)count,
+      handle_scratch,
+      (int)packed,
+      &error);
+  free(handle_scratch);
+  if (status < 0) return throw_handle_error(env, &error);
+  return NULL;
+}
+
 static int read_handle_stringify(uint32_t session, uint32_t handle, char** out, size_t* out_length, pcgoHandleError* error) {
   int capacity = MINIMUM_OUTPUT_CAPACITY;
   char* buffer = NULL;
@@ -1054,6 +1147,7 @@ NAPI_MODULE_INIT() {
       {"handleReadFieldsV2", handle_read_fields},
       {"handleReadSnapshotsV2", handle_read_snapshots},
       {"handleSetFieldsV2", handle_set_fields},
+      {"handleApplyPatchesV2", handle_apply_patches},
       {"handleStringifyV2", handle_stringify},
       {"handleNewDeclV2", handle_new_decl},
       {"handleAppendV2", handle_append},

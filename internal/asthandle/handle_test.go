@@ -245,6 +245,28 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 	if text != "ok" {
 		t.Fatalf("comment: %q", text)
 	}
+	if err := session.SetField(decl, FieldImportant, "1"); err != nil {
+		t.Fatal(err)
+	}
+	important, err := session.GetField(decl, FieldImportant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if important != "1" {
+		t.Fatalf("important: %q", important)
+	}
+	if !session.HasDirty() {
+		t.Fatal("expected dirty after important write")
+	}
+	if dirty, err := session.IsDirty(decl); err != nil || !dirty {
+		t.Fatalf("decl dirty: %v %v", dirty, err)
+	}
+	if err := session.ClearDirty(session.Root()); err != nil {
+		t.Fatal(err)
+	}
+	if session.HasDirty() {
+		t.Fatal("expected clean after clear")
+	}
 
 	if _, err := session.GetField(root, FieldText); !errors.Is(err, ErrBadField) {
 		t.Fatalf("root text: %v", err)
@@ -259,7 +281,7 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 		t.Fatalf("set bad field: %v", err)
 	}
 
-	for _, field := range []Field{FieldValue, FieldName, FieldParams, FieldText} {
+	for _, field := range []Field{FieldValue, FieldName, FieldParams, FieldText, FieldImportant} {
 		if _, err := session.GetField(rule, field); !errors.Is(err, ErrBadField) {
 			t.Fatalf("rule get %d: %v", field, err)
 		}
@@ -275,6 +297,9 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 			t.Fatalf("decl set %d: %v", field, err)
 		}
 	}
+	if err := session.SetField(decl, FieldImportant, "maybe"); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("bad important: %v", err)
+	}
 	if _, err := session.GetField(comment, FieldProp); !errors.Is(err, ErrBadField) {
 		t.Fatalf("comment prop: %v", err)
 	}
@@ -286,6 +311,50 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 	}
 	if err := session.SetField(at, FieldSelector, "x"); !errors.Is(err, ErrBadField) {
 		t.Fatalf("at set selector: %v", err)
+	}
+}
+
+func TestApplyPatchesIsOrderedAndAtomic(t *testing.T) {
+	session, root, err := Parse(".a{color:red}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	rule, err := session.ChildAt(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, err := session.ChildAt(rule, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ApplyPatches([]FieldPatch{
+		{Handle: decl, Field: FieldValue, Value: "blue"},
+		{Handle: decl, Field: FieldImportant, Value: "1"},
+		{Handle: decl, Field: FieldProp, Value: "background"},
+		{Handle: rule, Field: FieldSelector, Value: ".hero"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	css, err := session.Stringify(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if css != ".hero{background:blue !important}" {
+		t.Fatalf("patched css: %q", css)
+	}
+	if err := session.ApplyPatches([]FieldPatch{
+		{Handle: decl, Field: FieldValue, Value: "green"},
+		{Handle: root, Field: FieldValue, Value: "nope"},
+	}); !errors.Is(err, ErrBadField) {
+		t.Fatalf("atomic failure: %v", err)
+	}
+	value, err := session.GetField(decl, FieldValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "blue" {
+		t.Fatalf("partial commit: %q", value)
 	}
 }
 

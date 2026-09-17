@@ -1,6 +1,6 @@
 {
   "major": 2,
-  "minor": 2,
+  "minor": 3,
   "maxBatchSize": 4096,
   "capabilities": [
     {
@@ -36,7 +36,7 @@
     {
       "name": "AtomicPatches",
       "bit": 5,
-      "implemented": false,
+      "implemented": true,
       "required": false
     },
     {
@@ -82,6 +82,10 @@
     {
       "name": "Text",
       "id": 5
+    },
+    {
+      "name": "Important",
+      "id": 6
     }
   ],
   "operations": [
@@ -156,6 +160,10 @@
     {
       "name": "ReadSnapshots",
       "id": 17
+    },
+    {
+      "name": "ApplyPatches",
+      "id": 18
     }
   ],
   "nodeKinds": [

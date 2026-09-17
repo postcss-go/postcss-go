@@ -290,7 +290,7 @@ function hasLiveAsyncPluginBridge(
   );
 }
 
-/** The explicit handle contract is synchronous and read-only; callbacks are never replayed. */
+/** The explicit handle contract is synchronous; callbacks are never replayed. */
 function tryHandleResult(
   service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
   plugins: ActivePlugin[],
@@ -308,11 +308,13 @@ function tryHandleResult(
   );
   if (plan.runtime === 'binary') return undefined;
   if (plan.runtime === 'unsupported') throw new HandleDeclarationUnsupportedError(plan.reason);
+  const mutableScalars = plan.runtime === 'handle-scalar';
   let owner: SessionOwner;
   try {
     owner = new SessionOwner(service.handleAddon!, css, {
       from: options.from,
       document: options.document == null ? undefined : String(options.document),
+      mutableScalars,
     });
   } catch (error) {
     // The V2 ABI carries status/message only. Reuse structured parser diagnostics
@@ -325,7 +327,7 @@ function tryHandleResult(
   try {
     const root = owner.root;
     const result = createResult(root, options, plugins, processor);
-    // A read-only execution must not silently ignore replacement through Result.
+    // A handle execution must not silently ignore replacement through Result.
     Object.defineProperty(result, 'root', {
       enumerable: true,
       configurable: false,
@@ -342,8 +344,53 @@ function tryHandleResult(
     });
     const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
     const listeners = prepareVisitors(active);
-    for (const plugin of active) runOnRootSync(plugin, helpers, result);
-    // Snapshot traversal is sufficient for this explicitly immutable contract.
+    const runWithFlush = (
+      plugin: RuntimePlugin,
+      listener: Listener | undefined,
+      node: Node,
+      extensionPoint: string,
+      proxy = true,
+    ): void => {
+      if (!listener) return;
+      helpers.result.lastPlugin = plugin;
+      try {
+        const returned = listener(proxy ? node.toProxy() : node, helpers);
+        assertSynchronous(returned, extensionPoint, plugin);
+        owner.flushPatches();
+      } catch (error) {
+        // Match PostCSS-visible mutations: flush recorded writes before propagating.
+        try {
+          owner.flushPatches();
+        } catch {
+          // Prefer the original callback error.
+        }
+        if (error && typeof error === 'object') {
+          node.addToError(error as Error);
+          attachPluginToError(error, plugin, helpers.result.processor);
+        }
+        throw error;
+      }
+    };
+    for (const plugin of active) {
+      result.lastPlugin = plugin;
+      try {
+        if (typeof plugin === 'function') {
+          const returned = plugin(asProcessRoot(result.root), result);
+          assertSynchronous(returned, 'plugin', plugin);
+          owner.flushPatches();
+          continue;
+        }
+        if (root instanceof Document) {
+          for (const child of root.nodes) runWithFlush(plugin, plugin.Once, child, 'Once', false);
+        } else {
+          runWithFlush(plugin, plugin.Once, root, 'Once', false);
+        }
+      } catch (error) {
+        attachPluginToError(error, plugin, result.processor);
+        throw error;
+      }
+    }
+    // Snapshot traversal plus dirty revisits for scalar mutations.
     const visit = (node: Node): void => {
       owner.markClean(node);
       for (const event of getEvents(node)) {
@@ -351,14 +398,23 @@ function tryHandleResult(
           for (const child of (node as Container).nodes ?? []) visit(child);
         } else {
           for (const [plugin, listener] of listeners[event] ?? [])
-            runListenerSync(plugin, listener, node, helpers, event);
+            runWithFlush(plugin, listener, node, event);
         }
       }
     };
-    visit(root);
+    let current = root;
+    while (!current.isClean) {
+      visit(current);
+      current = owner.root;
+    }
     for (const plugin of active) {
-      if (typeof plugin !== 'function')
-        runRootListenersSync(plugin, plugin.OnceExit, root, helpers, 'OnceExit');
+      if (typeof plugin === 'function') continue;
+      if (root instanceof Document) {
+        for (const child of root.nodes)
+          runWithFlush(plugin, plugin.OnceExit, child, 'OnceExit', false);
+      } else {
+        runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
+      }
     }
     fillDependencyParents(result);
     result.css = owner.session.stringify();

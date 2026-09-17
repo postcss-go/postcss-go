@@ -1,11 +1,11 @@
-# Native handle protocol 2.2
+# Native handle protocol 2.3
 
-Phase 1 established the session/ABI contract. Phase 2 adds the synchronous
-read-only facade: standard node prototypes, per-session wrapper identity, all
-read-only visitors, filters, prepare/helpers, source reads and retained results.
-`auto` and `binary` retain the hydrated runtime. Forced `handle` now selects the
-read-only facade; it does not infer a scalar-write contract from callback shape.
-The isolated scalar prototype remains covered by direct regression tests.
+Phase 1 established the session/ABI contract. Phase 2 added the synchronous
+read-only facade. Phase 3 advertises AtomicPatches and enables forced-handle
+scalar mutation: important plus all standard scalar fields, one ordered
+mixed-field patch transaction per callback, throw-time flush, Go dirty marks
+and dirty revisits. `auto` and `binary` retain the hydrated runtime. Structural
+writes, maps and async retention remain later phases.
 
 ## Schema and negotiation
 
@@ -17,11 +17,12 @@ trailing JSON, duplicate/out-of-range capability bits and required unimplemented
 capabilities. `pnpm check:handles` verifies all generated outputs.
 
 The base required mask remains 15 (ScalarSessions, StructuredErrors,
-ParseOptions and BoundedIds). Protocol 2.2 advertises mask 31, adding the optional
-ReadOnlyFacade capability. The read-only execution plan requires all 31 bits and
-`handleReadSnapshotsV2`; old compatible scalar bridges can still negotiate the
-base contract. AtomicPatches, MutationTraversal, SourceMaps and AsyncLifetime
-remain unadvertised. Patch/event constants reserve wire vocabulary only.
+ParseOptions and BoundedIds). Protocol 2.3 advertises mask 63, adding the optional
+ReadOnlyFacade and AtomicPatches capabilities. The scalar execution plan requires
+all 63 bits plus `handleReadSnapshotsV2` and `handleApplyPatchesV2`. Older
+compatible bridges can still negotiate the base or read-only contracts when those
+symbols are absent. MutationTraversal, SourceMaps and AsyncLifetime remain
+unadvertised. Remaining patch/event constants reserve wire vocabulary only.
 
 TS accepts the matching major and any uint32 minor with every required bit,
 including newer minor versions and unknown optional bits. Missing bits, throwing
@@ -116,12 +117,12 @@ replacement fail without replay; errors close the session. For invalid CSS only,
 the processor reuses binary parse diagnostics before any callback, since the base
 handle ABI exposes status/message rather than full syntax-error metadata.
 
-Forced handle runs now reject scalar writes as well as structural writes. The
-seven-case maintained corpus keeps its CSS/options/version pins and denominator;
-its Phase 2 expected handle selection is 0/7, since every case mutates, uses async
-or maps. This is an explicit change from the scalar prototype's 1/7 and is not a
-rollout improvement. General scalar transactions and revisits remain Phase 3.
-Read-only differential fixtures and page-call assertions are in
+Forced handle runs accept standard scalar writes through callback-local snapshots
+that flush as one ordered ApplyPatches batch, including important. Structural
+writes still throw without replay. The maintained corpus expects the scalar case
+to succeed under forced handle (1/7); nested/import/map cases remain unsupported.
+General relationship/raw/map/async work remains later phases.
+Read-only and scalar differential fixtures are in
 `packages/postcss-go/test/handle-facade.test.ts`, separate from rollout scoring.
 
 ## Phase 2 verification (2026-09-10)

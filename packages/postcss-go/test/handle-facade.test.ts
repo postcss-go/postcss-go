@@ -432,7 +432,7 @@ native('snapshot failures close their arenas and negotiation fails closed', () =
         null,
         { Declaration: null, lowercase: async () => {} },
       ]).runtime,
-    ).toBe('handle-readonly');
+    ).toBe('handle-scalar');
   } finally {
     service.close();
   }
@@ -489,3 +489,110 @@ native(
     }
   },
 );
+
+native('scalar mutation handle/binary differential with dirty revisits', () => {
+  const service = createNativeService();
+  const execute = (mode: string) => {
+    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+    const trace: string[] = [];
+    const plugins: AcceptedPlugin[] = [
+      {
+        postcssPlugin: 'scalars',
+        Rule(rule) {
+          trace.push(`rule:${rule.selector}`);
+          if (rule.selector === 'a') rule.selector = 'a.hero';
+        },
+        AtRule(atRule) {
+          trace.push(`atrule:${atRule.name}:${atRule.params}`);
+          if (atRule.name === 'media') atRule.params = 'print';
+        },
+        Declaration(decl) {
+          trace.push(`decl:${decl.prop}:${decl.value}:${decl.important}`);
+          if (decl.prop === 'color') {
+            decl.value = 'navy';
+            decl.important = true;
+            decl.prop = 'background';
+          }
+        },
+        Comment(comment) {
+          trace.push(`comment:${comment.text}`);
+          if (comment.text === 'note') comment.text = 'ok';
+        },
+      },
+      {
+        postcssPlugin: 'rewalk',
+        Declaration(decl) {
+          trace.push(`rewalk:${decl.prop}:${decl.value}`);
+          if (decl.value === 'navy') decl.value = 'teal';
+        },
+      },
+    ];
+    const result = runPluginsWithBridgeSync(
+      service,
+      plugins,
+      '/* note */\n@media screen { a { color: red } }',
+      { from: 'scalar.css', map: false },
+    );
+    return { css: result.css, trace };
+  };
+  try {
+    expect(execute('handle')).toEqual(execute('binary'));
+  } finally {
+    service.close();
+  }
+});
+
+native('throw after scalar writes flushes patches without replay', () => {
+  const service = createNativeService();
+  const execute = (mode: string) => {
+    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+    let calls = 0;
+    try {
+      runPluginsWithBridgeSync(
+        service,
+        [
+          {
+            postcssPlugin: 'throw-after-write',
+            Declaration(decl) {
+              calls += 1;
+              decl.value = 'navy';
+              decl.important = true;
+              throw decl.error('boom');
+            },
+          },
+        ],
+        'a{color:red}',
+        { from: 'throw.css', map: false },
+      );
+    } catch (error) {
+      const e = error as Error & { plugin: string };
+      return { calls, name: e.name, message: e.message, plugin: e.plugin };
+    }
+  };
+  try {
+    expect(execute('handle')).toEqual(execute('binary'));
+  } finally {
+    service.close();
+  }
+});
+
+native('mutable scalar SessionOwner preserves read-after-write ordering', () => {
+  const service = createNativeService();
+  const owner = new SessionOwner(service.handleAddon!, 'a{color:red}', {
+    mutableScalars: true,
+  });
+  try {
+    const decl = (owner.root.first as Rule).first as Declaration;
+    decl.value = 'blue';
+    expect(decl.value).toBe('blue');
+    decl.important = true;
+    decl.prop = 'background';
+    expect([decl.prop, decl.value, decl.important]).toEqual(['background', 'blue', true]);
+    owner.flushPatches();
+    expect(owner.session.stringify()).toBe('a{background:blue !important}');
+    expect(() => decl.remove()).toThrow(/support/);
+  } finally {
+    owner.session.close();
+    service.close();
+  }
+});

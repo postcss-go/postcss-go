@@ -8,6 +8,7 @@ import {
   HANDLE_FIELD_NAME,
   HANDLE_FIELD_PARAMS,
   HANDLE_FIELD_TEXT,
+  HANDLE_FIELD_IMPORTANT,
 } from './generated/handle-protocol.js';
 export {
   HANDLE_FIELD_PROP,
@@ -16,6 +17,7 @@ export {
   HANDLE_FIELD_NAME,
   HANDLE_FIELD_PARAMS,
   HANDLE_FIELD_TEXT,
+  HANDLE_FIELD_IMPORTANT,
 };
 
 export type HandleField =
@@ -24,7 +26,8 @@ export type HandleField =
   | typeof HANDLE_FIELD_SELECTOR
   | typeof HANDLE_FIELD_NAME
   | typeof HANDLE_FIELD_PARAMS
-  | typeof HANDLE_FIELD_TEXT;
+  | typeof HANDLE_FIELD_TEXT
+  | typeof HANDLE_FIELD_IMPORTANT;
 
 export type NativeHandleParseOptions = { from?: string; document?: string; trackSource?: boolean };
 
@@ -53,6 +56,12 @@ export type NativeHandleAddon = {
     sessionId: number,
     handles: Uint32Array,
     field: HandleField,
+    values: string[],
+  ): void;
+  handleApplyPatchesV2?(
+    sessionId: number,
+    handles: Uint32Array,
+    fields: Int32Array,
     values: string[],
   ): void;
   handleStringifyV2(sessionId: number, handle: number): string;
@@ -223,6 +232,16 @@ export class NativeHandleSession {
     this.addon.handleSetFieldsV2(this.requireSession(), handles, field, values);
   }
 
+  /** Ordered mixed-field scalar writes; Go validates the whole batch before commit. */
+  applyPatches(handles: Uint32Array, fields: Int32Array, values: string[]): void {
+    this.validateBatchSize(handles);
+    if (handles.length !== fields.length || handles.length !== values.length)
+      throw new RangeError('handle mutation batch length mismatch');
+    if (!this.addon.handleApplyPatchesV2)
+      throw new HandleDeclarationUnsupportedError('atomic patches capability');
+    this.addon.handleApplyPatchesV2(this.requireSession(), handles, fields, values);
+  }
+
   stringify(handle = this.root): string {
     return this.addon.handleStringifyV2(this.requireSession(), handle);
   }
@@ -264,19 +283,27 @@ export class HandleDeclarationUnsupportedError extends Error {
   }
 }
 
-const HANDLE_DECLARATION_STUB_KEYS = new Set(['prop', 'value']);
+const HANDLE_DECLARATION_STUB_KEYS = new Set(['prop', 'value', 'important']);
 
-export function createHandleDeclarationStub(prop: string, value: string): HandleDeclarationStub {
-  const target: HandleDeclarationStub = { prop, value, important: false };
+export function createHandleDeclarationStub(
+  prop: string,
+  value: string,
+  important = false,
+): HandleDeclarationStub {
+  const target: HandleDeclarationStub = { prop, value, important };
   return new Proxy(target, {
     get(obj, key) {
       if (typeof key === 'symbol') return Reflect.get(obj, key);
-      if (HANDLE_DECLARATION_STUB_KEYS.has(key)) return obj[key as 'prop' | 'value'];
+      if (HANDLE_DECLARATION_STUB_KEYS.has(key)) return obj[key as keyof HandleDeclarationStub];
       throw new HandleDeclarationUnsupportedError(key);
     },
     set(obj, key, next) {
-      if (typeof key === 'string' && HANDLE_DECLARATION_STUB_KEYS.has(key)) {
-        obj[key as 'prop' | 'value'] = String(next);
+      if (key === 'important') {
+        obj.important = Boolean(next);
+        return true;
+      }
+      if (typeof key === 'string' && (key === 'prop' || key === 'value')) {
+        obj[key] = String(next);
         return true;
       }
       throw new HandleDeclarationUnsupportedError(String(key));

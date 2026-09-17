@@ -4,7 +4,6 @@ import { expect, test, vi } from 'vitest';
 import {
   HANDLE_FIELD_PROP,
   HANDLE_FIELD_VALUE,
-  HandleDeclarationUnsupportedError,
   NativeHandleSession,
   createHandleDeclarationStub,
   hasNativeHandleBridge,
@@ -59,19 +58,18 @@ test('hasNativeHandleBridge rejects incomplete addons', () => {
   expect(hasNativeHandleBridge(mockAddon())).toBe(true);
 });
 
-test('createHandleDeclarationStub only allows prop and value', () => {
+test('createHandleDeclarationStub allows prop, value, and important', () => {
   const stub = createHandleDeclarationStub('color', 'red');
   expect(stub.prop).toBe('color');
   expect(stub.value).toBe('red');
+  expect(stub.important).toBe(false);
   stub.prop = 'background';
   stub.value = 'navy';
+  stub.important = true;
   expect(stub.prop).toBe('background');
   expect(stub.value).toBe('navy');
+  expect(stub.important).toBe(true);
   expect(Reflect.get(stub, Symbol.toStringTag)).toBeUndefined();
-  expect(() => stub.important).toThrow(HandleDeclarationUnsupportedError);
-  expect(() => {
-    stub.important = true;
-  }).toThrow(HandleDeclarationUnsupportedError);
   expect(() => {
     (stub as { parent: unknown }).parent = null;
   }).toThrow(/parent/);

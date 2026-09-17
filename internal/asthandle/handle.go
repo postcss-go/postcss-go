@@ -49,6 +49,7 @@ type Session struct {
 	root       Handle
 	closed     bool
 	cursors    map[uint32]*cursor
+	dirty      map[Handle]struct{}
 }
 
 type cursor struct {
@@ -81,6 +82,7 @@ func New() *Session {
 		slots:   make(map[uint32]slotRecord),
 		cursors: make(map[uint32]*cursor),
 		byNode:  map[ast.Node]uint32{},
+		dirty:   map[Handle]struct{}{},
 	}
 }
 
@@ -95,6 +97,7 @@ func (s *Session) Close() {
 	s.byNode = nil
 	s.root = 0
 	s.cursors = nil
+	s.dirty = nil
 }
 
 // internTree preflights the whole allocation so failed clones leave no partial IDs.
@@ -224,6 +227,15 @@ func (s *Session) GetField(h Handle, field Field) (string, error) {
 			return "", ErrBadField
 		}
 		return comment.Text, nil
+	case FieldImportant:
+		decl, ok := node.(*ast.Declaration)
+		if !ok {
+			return "", ErrBadField
+		}
+		if decl.Important {
+			return "1", nil
+		}
+		return "0", nil
 	default:
 		return "", ErrBadField
 	}
@@ -234,52 +246,173 @@ func (s *Session) SetField(h Handle, field Field, value string) error {
 	if err != nil {
 		return err
 	}
+	changed := false
 	switch field {
 	case FieldProp:
 		decl, ok := node.(*ast.Declaration)
 		if !ok {
 			return ErrBadField
 		}
-		decl.Prop = value
-		return nil
+		if decl.Prop != value {
+			decl.Prop = value
+			changed = true
+		}
 	case FieldValue:
 		decl, ok := node.(*ast.Declaration)
 		if !ok {
 			return ErrBadField
 		}
-		decl.Value = value
-		return nil
+		if decl.Value != value {
+			decl.Value = value
+			changed = true
+		}
 	case FieldSelector:
 		rule, ok := node.(*ast.Rule)
 		if !ok {
 			return ErrBadField
 		}
-		rule.Selector = value
-		return nil
+		if rule.Selector != value {
+			rule.Selector = value
+			changed = true
+		}
 	case FieldName:
 		at, ok := node.(*ast.AtRule)
 		if !ok {
 			return ErrBadField
 		}
-		at.Name = value
-		return nil
+		if at.Name != value {
+			at.Name = value
+			changed = true
+		}
 	case FieldParams:
 		at, ok := node.(*ast.AtRule)
 		if !ok {
 			return ErrBadField
 		}
-		at.Params = value
-		return nil
+		if at.Params != value {
+			at.Params = value
+			changed = true
+		}
 	case FieldText:
 		comment, ok := node.(*ast.Comment)
 		if !ok {
 			return ErrBadField
 		}
-		comment.Text = value
-		return nil
+		if comment.Text != value {
+			comment.Text = value
+			changed = true
+		}
+	case FieldImportant:
+		decl, ok := node.(*ast.Declaration)
+		if !ok {
+			return ErrBadField
+		}
+		important, err := parseImportant(value)
+		if err != nil {
+			return err
+		}
+		if decl.Important != important {
+			decl.Important = important
+			changed = true
+		}
 	default:
 		return ErrBadField
 	}
+	if changed {
+		s.markDirty(h)
+	}
+	return nil
+}
+
+func parseImportant(value string) (bool, error) {
+	switch value {
+	case "0", "":
+		return false, nil
+	case "1":
+		return true, nil
+	default:
+		return false, fmt.Errorf("%w: important must be 0 or 1", ErrInvalidArgument)
+	}
+}
+
+func (s *Session) markDirty(h Handle) {
+	if s == nil || s.closed {
+		return
+	}
+	if s.dirty == nil {
+		s.dirty = map[Handle]struct{}{}
+	}
+	for current := h; current != 0; {
+		if _, seen := s.dirty[current]; seen {
+			return
+		}
+		s.dirty[current] = struct{}{}
+		parent, err := s.Parent(current)
+		if err != nil || parent == 0 {
+			return
+		}
+		current = parent
+	}
+}
+
+// IsDirty reports whether a live handle has been marked dirty by a scalar write.
+func (s *Session) IsDirty(h Handle) (bool, error) {
+	if _, err := s.lookup(h); err != nil {
+		return false, err
+	}
+	_, ok := s.dirty[h]
+	return ok, nil
+}
+
+// HasDirty reports whether any node in the session still needs a revisit.
+func (s *Session) HasDirty() bool {
+	return s != nil && !s.closed && len(s.dirty) > 0
+}
+
+// ClearDirty removes dirty marks for h and, when h is the root, the whole tree.
+func (s *Session) ClearDirty(h Handle) error {
+	if _, err := s.lookup(h); err != nil {
+		return err
+	}
+	if h == s.root {
+		s.dirty = map[Handle]struct{}{}
+		return nil
+	}
+	delete(s.dirty, h)
+	return nil
+}
+
+// FieldPatch is one ordered scalar write inside an atomic ApplyPatches batch.
+type FieldPatch struct {
+	Handle Handle
+	Field  Field
+	Value  string
+}
+
+// ApplyPatches validates every scalar write, then commits them in order.
+func (s *Session) ApplyPatches(patches []FieldPatch) error {
+	if s == nil || s.closed {
+		return ErrClosed
+	}
+	if len(patches) > int(MaxBatchSize) {
+		return fmt.Errorf("%w: patch batch exceeds maximum", ErrInvalidArgument)
+	}
+	for _, patch := range patches {
+		if _, err := s.GetField(patch.Handle, patch.Field); err != nil {
+			return err
+		}
+		if patch.Field == FieldImportant {
+			if _, err := parseImportant(patch.Value); err != nil {
+				return err
+			}
+		}
+	}
+	for _, patch := range patches {
+		if err := s.SetField(patch.Handle, patch.Field, patch.Value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Session) Parent(h Handle) (Handle, error) {
