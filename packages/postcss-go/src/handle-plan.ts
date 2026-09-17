@@ -25,6 +25,7 @@ export function planHandleExecution(
   addon: NativeHandleAddon | null | undefined,
   sourceMaps: boolean,
   plugins: readonly unknown[] = [],
+  previousMaps = false,
 ): HandleExecutionPlan {
   if (!['auto', 'binary', 'handle'].includes(mode))
     throw new Error('invalid POSTCSS_GO_NATIVE_AST mode');
@@ -60,6 +61,14 @@ export function planHandleExecution(
     (!wantsAsync || has(HANDLE_CAPABILITY_ASYNCLIFETIME));
 
   if (mode === 'auto') {
+    // Handle parse does not yet compose previous maps into source positions.
+    if (previousMaps) {
+      return {
+        runtime: 'binary',
+        requiredCapabilities,
+        reason: 'previous map composition uses binary parse',
+      };
+    }
     if (fullReady) {
       requiredCapabilities[0] |= FULL_MASK;
       if (sourceMaps) requiredCapabilities[0] |= HANDLE_CAPABILITY_SOURCEMAPS;

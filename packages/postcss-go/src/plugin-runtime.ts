@@ -335,11 +335,13 @@ function openHandleSession(
 ): { owner: SessionOwner; plan: ReturnType<typeof planHandleExecution> } | undefined {
   const mode =
     typeof process === 'undefined' ? 'auto' : (process.env.POSTCSS_GO_NATIVE_AST ?? 'auto');
+  const previousMaps = hasPreviousMap(css, options as ProcessOptions);
   const plan = planHandleExecution(
     mode,
     service.handleAddon,
-    Boolean(options.map) || hasPreviousMap(css, options as ProcessOptions),
+    Boolean(options.map) || previousMaps,
     plugins,
+    previousMaps,
   );
   if (plan.runtime === 'binary') return undefined;
   if (plan.runtime === 'unsupported') throw new HandleDeclarationUnsupportedError(plan.reason);
@@ -349,6 +351,7 @@ function openHandleSession(
     const owner = new SessionOwner(service.handleAddon!, css, {
       from: options.from,
       document: options.document == null ? undefined : String(options.document),
+      map: (options as ProcessOptions).map,
       mutableScalars,
       mutableStructure,
     });
@@ -387,11 +390,40 @@ function stringifyHandleResult(
   css: string,
   options: ProcessFileOptions,
   result: PluginResult,
-): void {
+  service: Pick<
+    PluginBridgeService,
+    'stringifyResultSync' | 'stringifyResultLive' | 'stringifyResult'
+  >,
+  allowAsync: boolean,
+): void | Promise<void> {
   fillDependencyParents(result);
   const wantsMap = Boolean(options.map) || hasPreviousMap(css, options as ProcessOptions);
+  const prepared = prepareStringifyOptions(root, options as ProcessOptions);
+
+  const apply = (stringified: { css: string; map?: string; mapFile?: string }): void => {
+    result.css = stringified.css;
+    result.map = hydrateResultMap(stringified.map);
+    result.mapFile = stringified.mapFile;
+  };
+
+  // Prefer the full native stringify path so annotations, previous-map composition,
+  // and inline maps match the binary backend.
+  if (!allowAsync && typeof service.stringifyResultSync === 'function') {
+    apply(service.stringifyResultSync(root, prepared as ProcessOptions));
+    return;
+  }
+  if (allowAsync && typeof service.stringifyResultLive === 'function') {
+    return service.stringifyResultLive(root, prepared as ProcessOptions).then(apply);
+  }
+  if (allowAsync && typeof service.stringifyResult === 'function') {
+    return service.stringifyResult(toAst(root), prepared as ProcessOptions).then(apply);
+  }
+  if (typeof service.stringifyResultSync === 'function') {
+    apply(service.stringifyResultSync(root, prepared as ProcessOptions));
+    return;
+  }
+
   if (wantsMap) {
-    const prepared = prepareStringifyOptions(root, options as ProcessOptions);
     const mapOpts =
       prepared.map && typeof prepared.map === 'object' ? prepared.map : { inline: false };
     const mapped = owner.session.stringifyMap(owner.session.rootHandle, {
@@ -414,7 +446,15 @@ function executeHandleSync(
   css: string,
   options: ProcessFileOptions,
   processor: ResultProcessorFacade | undefined,
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  service: Pick<
+    PluginBridgeService,
+    | 'capabilities'
+    | 'handleAddon'
+    | 'parseSync'
+    | 'stringifyResultSync'
+    | 'stringifyResultLive'
+    | 'stringifyResult'
+  >,
 ): PluginResult {
   const root = owner.root;
   const result = createResult(root, options, plugins, processor);
@@ -521,7 +561,7 @@ function executeHandleSync(
       runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
     }
   }
-  stringifyHandleResult(owner, root, css, options, result);
+  stringifyHandleResult(owner, root, css, options, result, service, false);
   attachHandleDiagnostics(result, plan, owner);
   return result;
 }
@@ -533,7 +573,15 @@ async function executeHandleAsync(
   css: string,
   options: ProcessFileOptions,
   processor: ResultProcessorFacade | undefined,
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  service: Pick<
+    PluginBridgeService,
+    | 'capabilities'
+    | 'handleAddon'
+    | 'parseSync'
+    | 'stringifyResultSync'
+    | 'stringifyResultLive'
+    | 'stringifyResult'
+  >,
 ): Promise<PluginResult> {
   const root = owner.root;
   const result = createResult(root, options, plugins, processor);
@@ -644,7 +692,7 @@ async function executeHandleAsync(
       await runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
     }
   }
-  stringifyHandleResult(owner, root, css, options, result);
+  await stringifyHandleResult(owner, root, css, options, result, service, true);
   attachHandleDiagnostics(result, plan, owner);
   return result;
 }

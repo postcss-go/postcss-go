@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "corpusVersion": "1.4.0",
+  "corpusVersion": "1.4.1",
   "owner": "postcss-go maintainers",
   "denominator": "Every case has equal weight, including unsupported and map cases; no exclusions. Require ceil(0.95 * cases.length). Forced success is not proof of auto selection or no hydration.",
   "plugins": {
@@ -82,10 +82,10 @@
       "field": "map.mappings",
       "upstream": "AAAQ,cAAU,YAAY",
       "binary": "AAAQ,cAAU,OAAO,GAAG,EAAE",
-      "handle": "AAAQ,cAAU,OAAO,GAAI,EAAd",
+      "handle": "AAAQ,cAAU,OAAO,GAAG,EAAE",
       "owner": "postcss-go maintainers",
-      "reason": "Bulk and handle stringifiers emit additional nested-declaration segments versus upstream; handle segments differ slightly from binary. CSS and non-mapping fields match."
+      "reason": "Bulk/handle native stringify (shared after handle Result serialization) emits additional nested-declaration segments versus upstream. CSS and non-mapping fields match."
     }
   ],
-  "handleContract": "Phase 4–7 forced handle mode uses the mutable Go-backed facade with structural mutation, maps and async retention when capabilities are advertised. Auto selects handle-full for capability-complete workloads."
+  "handleContract": "Phase 4\u20137 forced handle mode uses the mutable Go-backed facade; auto selects handle-full for capability-complete workloads except previous-map composition, which stays on binary parse. Map annotations/inline use the full native stringify path."
 }

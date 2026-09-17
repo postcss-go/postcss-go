@@ -25,6 +25,7 @@ import {
   type NativeHandleAddon,
   type NativeHandleParseOptions,
 } from './handle-session.js';
+import type { ProcessOptions } from './types.js';
 
 type Snapshot = {
   id: number;
@@ -148,6 +149,8 @@ export type SessionOwnerOptions = NativeHandleParseOptions & {
   mutableScalars?: boolean;
   /** When true, parent/nodes/raws and structural methods stay live against Go. */
   mutableStructure?: boolean;
+  /** Process map options so Input can attach PreviousMap for composition. */
+  map?: ProcessOptions['map'];
 };
 
 export type HandleDiagnostics = {
@@ -167,6 +170,7 @@ export class SessionOwner {
     hydration: false,
     visits: 0,
   };
+  private readonly addon: NativeHandleAddon;
   private readonly snapshots = new Map<number, Snapshot>();
   private readonly wrappers = new Map<number, Node>();
   private readonly handleIds = new WeakMap<Node, number>();
@@ -178,10 +182,16 @@ export class SessionOwner {
   private pending: PendingPatch[] = [];
 
   constructor(addon: NativeHandleAddon, css: string, options: SessionOwnerOptions = {}) {
+    this.addon = addon;
     this.mutableStructure = options.mutableStructure === true;
     this.mutableScalars = options.mutableScalars === true || this.mutableStructure;
     this.session = new NativeHandleSession(addon);
-    this.input = new Input(css, { ...options, map: false });
+    // Keep map options so PreviousMap attaches for previous-map composition.
+    this.input = new Input(css, {
+      from: options.from,
+      document: options.document,
+      map: options.map,
+    });
     this.input.fromOffset(0); // Initialize the Input's read cache before protecting it.
     this.input = immutable(this.input, this.readCache);
     try {
@@ -324,7 +334,7 @@ export class SessionOwner {
         }
         if (!Array.isArray(value)) return unsupported(key);
         (this.structuralMethod(id, 'removeAll') as () => Node)();
-        for (const child of flattenChildren(value as NodeChild[])) {
+        for (const child of this.expandChildren(value as NodeChild[])) {
           this.session.append(id, this.materialize(child));
         }
         this.afterStructure(id);
@@ -499,7 +509,7 @@ export class SessionOwner {
     switch (name) {
       case 'append':
         return (...children: NodeChild[]) => {
-          for (const child of flattenChildren(children)) {
+          for (const child of this.expandChildren(children)) {
             const childId = this.materialize(child);
             move(childId, () => this.session.append(id, childId));
           }
@@ -507,7 +517,7 @@ export class SessionOwner {
         };
       case 'prepend':
         return (...children: NodeChild[]) => {
-          for (const child of flattenChildren(children).reverse()) {
+          for (const child of this.expandChildren(children).reverse()) {
             const childId = this.materialize(child);
             move(childId, () => this.session.prepend(id, childId));
           }
@@ -516,7 +526,7 @@ export class SessionOwner {
       case 'insertBefore':
         return (existing: Node | number, ...children: NodeChild[]) => {
           const target = this.resolveChild(id, existing);
-          for (const child of flattenChildren(children)) {
+          for (const child of this.expandChildren(children)) {
             const childId = this.materialize(child);
             move(childId, () => this.session.insertBefore(target, childId));
           }
@@ -525,7 +535,7 @@ export class SessionOwner {
       case 'insertAfter':
         return (existing: Node | number, ...children: NodeChild[]) => {
           let target = this.resolveChild(id, existing);
-          for (const child of flattenChildren(children)) {
+          for (const child of this.expandChildren(children)) {
             const childId = this.materialize(child);
             move(childId, () => this.session.insertAfter(target, childId));
             target = childId;
@@ -557,7 +567,7 @@ export class SessionOwner {
         };
       case 'replaceWith':
         return (...children: NodeChild[]) => {
-          const ids = flattenChildren(children).map((child) => this.materialize(child));
+          const ids = this.expandChildren(children).map((child) => this.materialize(child));
           for (const childId of ids) {
             const oldParent = this.session.parent(childId);
             if (oldParent) this.invalidate(oldParent);
@@ -596,7 +606,7 @@ export class SessionOwner {
         return (...children: NodeChild[]) => {
           const parent = this.session.parent(id);
           if (!parent) throw new Error('Cannot insert before a node without a parent');
-          for (const child of flattenChildren(children)) {
+          for (const child of this.expandChildren(children)) {
             const childId = this.materialize(child);
             const oldParent = this.session.parent(childId);
             this.session.insertBefore(id, childId);
@@ -609,7 +619,7 @@ export class SessionOwner {
           const parent = this.session.parent(id);
           if (!parent) throw new Error('Cannot insert after a node without a parent');
           let target = id;
-          for (const child of flattenChildren(children)) {
+          for (const child of this.expandChildren(children)) {
             const childId = this.materialize(child);
             const oldParent = this.session.parent(childId);
             this.session.insertAfter(target, childId);
@@ -660,7 +670,7 @@ export class SessionOwner {
       }
       this.invalidate(cloned);
       if (Array.isArray(nodes)) {
-        for (const child of flattenChildren(nodes as NodeChild[])) {
+        for (const child of this.expandChildren(nodes as NodeChild[])) {
           this.session.append(cloned, this.materialize(child));
         }
       }
@@ -685,9 +695,36 @@ export class SessionOwner {
     return id;
   }
 
+  private expandChildren(children: readonly NodeChild[]): unknown[] {
+    const out: unknown[] = [];
+    for (const child of flattenChildren(children)) {
+      if (typeof child === 'string') out.push(...this.parseCssString(child));
+      else out.push(child);
+    }
+    return out;
+  }
+
+  /** Parse a CSS string into session-local nodes via a temporary arena. */
+  private parseCssString(css: string): Node[] {
+    const temporary = new SessionOwner(this.addon, css, { mutableStructure: true });
+    try {
+      return [...(temporary.root.nodes ?? [])].map((node) => {
+        // Clone into this arena immediately; the temporary session closes below.
+        const id = this.materialize(node);
+        return this.node(id);
+      });
+    } finally {
+      temporary.session.close();
+    }
+  }
+
   private materialize(input: unknown): number {
-    if (typeof input === 'string')
-      throw new HandleDeclarationUnsupportedError('string node insertion');
+    if (typeof input === 'string') {
+      const nodes = this.parseCssString(input);
+      if (nodes.length === 0) throw new HandleDeclarationUnsupportedError('string node insertion');
+      if (nodes.length === 1) return this.handleIds.get(nodes[0])!;
+      throw new HandleDeclarationUnsupportedError('multi-node string insertion');
+    }
     if (!isPlainRecord(input) && !(input instanceof Node))
       throw new HandleDeclarationUnsupportedError('node creation');
     const unwrapped =
@@ -755,7 +792,7 @@ export class SessionOwner {
     }
     const childNodes = record.nodes;
     if (Array.isArray(childNodes)) {
-      for (const child of flattenChildren(childNodes as NodeChild[])) {
+      for (const child of this.expandChildren(childNodes as NodeChild[])) {
         this.session.append(id, this.materialize(child));
       }
       this.invalidate(id);
