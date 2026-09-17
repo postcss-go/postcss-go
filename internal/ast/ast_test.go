@@ -626,6 +626,25 @@ func TestMutationBeforeAndPrepareNodes(t *testing.T) {
 	}
 }
 
+func TestRootRemoveChildTransfersBefore(t *testing.T) {
+	root := NewRoot()
+	first := NewRule(".card")
+	SetRawString(first, "before", "")
+	second := NewAtRule("phone", "")
+	SetRawString(second, "before", " ")
+	root.Append(first)
+	root.Append(second)
+	if err := root.RemoveChild(first); err != nil {
+		t.Fatalf("remove first: %v", err)
+	}
+	if before, ok := LookupRawString(second, "before"); !ok || before != "" {
+		t.Fatalf("expected first-child before transfer, got %q ok=%v", before, ok)
+	}
+	if root.First() != second || len(root.Children()) != 1 {
+		t.Fatal("expected only the bubbled sibling to remain")
+	}
+}
+
 func TestIteratorNilGuardsAndInsertShift(t *testing.T) {
 	base := &BaseNode{}
 	if base.iteratorIndex(1) != 0 {

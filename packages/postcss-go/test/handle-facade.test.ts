@@ -246,23 +246,23 @@ native('errors, warnings, and callback side effects are not replayed', () => {
     expect(execute('handle')).toEqual(execute('binary'));
     vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
     let calls = 0;
-    expect(() =>
-      runPluginsWithBridgeSync(
-        service,
-        [
-          {
-            postcssPlugin: 'write',
-            Once(root) {
-              calls++;
-              root.append({ prop: 'x', value: 'y' });
-            },
+    const structural = runPluginsWithBridgeSync(
+      service,
+      [
+        {
+          postcssPlugin: 'write',
+          Once(root) {
+            calls++;
+            root.append({ prop: 'x', value: 'y' });
           },
-        ],
-        'a{}',
-        {},
-      ),
-    ).toThrow(/support/);
+        },
+      ],
+      'a{}',
+      {},
+    );
     expect(calls).toBe(1);
+    expect(structural.css).toContain('x');
+    expect(structural.css).toContain('y');
     expect(() =>
       runPluginsWithBridgeSync(
         service,
@@ -301,12 +301,13 @@ native('errors, warnings, and callback side effects are not replayed', () => {
 test('execution plan reports capability requirements and fallback reasons', () => {
   expect(planHandleExecution('auto', undefined, false)).toMatchObject({
     runtime: 'binary',
-    reason: 'callback access requirements are unknown',
-    requiredCapabilities: [31],
+    reason: 'handle facade unavailable',
   });
   expect(planHandleExecution('binary', undefined, false).runtime).toBe('binary');
   expect(planHandleExecution('handle', undefined, false).runtime).toBe('unsupported');
-  expect(planHandleExecution('handle', undefined, true).reason).toBe('source maps');
+  expect(planHandleExecution('handle', undefined, true).reason).toMatch(
+    /read-only facade|source maps/,
+  );
   expect(() => planHandleExecution('unknown', undefined, false)).toThrow(/invalid/);
 });
 
@@ -420,19 +421,19 @@ native('snapshot failures close their arenas and negotiation fails closed', () =
       capabilities: new Uint32Array([15]),
     });
     expect(planHandleExecution('handle', old, false).runtime).toBe('unsupported');
-    expect(planHandleExecution('handle', original, false, [async () => {}]).reason).toBe(
-      'async callbacks',
+    expect(planHandleExecution('handle', original, false, [async () => {}]).runtime).toBe(
+      'handle-full',
     );
     expect(
       planHandleExecution('handle', original, false, [{ Declaration: { x: async () => {} } }])
-        .reason,
-    ).toBe('async callbacks');
+        .runtime,
+    ).toBe('handle-full');
     expect(
       planHandleExecution('handle', original, false, [
         null,
         { Declaration: null, lowercase: async () => {} },
       ]).runtime,
-    ).toBe('handle-scalar');
+    ).toBe('handle-full');
   } finally {
     service.close();
   }
@@ -593,6 +594,262 @@ native('mutable scalar SessionOwner preserves read-after-write ordering', () => 
     expect(() => decl.remove()).toThrow(/support/);
   } finally {
     owner.session.close();
+    service.close();
+  }
+});
+
+native('mutable structure SessionOwner applies append/remove/raws immediately', () => {
+  const service = createNativeService();
+  const owner = new SessionOwner(service.handleAddon!, 'a{color:red}', {
+    mutableStructure: true,
+  });
+  try {
+    const rule = owner.root.first as Rule;
+    rule.append({ prop: 'margin', value: '0' });
+    expect(rule.nodes).toHaveLength(2);
+    expect(owner.session.stringify()).toContain('margin');
+    rule.raws.semicolon = true;
+    const cloned = rule.clone({ selector: 'b' });
+    expect(cloned).toBeInstanceOf(Rule);
+    expect((cloned as Rule).selector).toBe('b');
+    rule.first!.remove();
+    expect(rule.nodes).toHaveLength(1);
+    expect(owner.session.stringify()).toMatch(/margin:\s*0/);
+  } finally {
+    owner.session.close();
+    service.close();
+  }
+});
+
+native('handle-full plan supports maps and nested structural plugins', async () => {
+  const service = createNativeService();
+  const nested = (await import('postcss-nested')).default;
+  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+  try {
+    const plan = planHandleExecution('handle', service.handleAddon!, true, []);
+    expect(plan.runtime).toBe('handle-full');
+    const result = await runPluginsWithBridge(
+      service,
+      [nested()],
+      '.card { &:hover { color: blue } }',
+      { from: 'map.css', map: { inline: false, annotation: false } },
+    );
+    expect(result.css).toContain('.card:hover');
+    expect(result.map).toBeTruthy();
+    expect(
+      (result as { nativePlan?: { hydration: boolean; runtime: string } }).nativePlan,
+    ).toMatchObject({
+      hydration: false,
+      runtime: 'handle-full',
+    });
+  } finally {
+    service.close();
+  }
+});
+
+native('live first/last/next/prev track structural mutations', () => {
+  const service = createNativeService();
+  const owner = new SessionOwner(service.handleAddon!, 'a{color:red;margin:0}', {
+    mutableStructure: true,
+  });
+  try {
+    const rule = owner.root.first as Rule;
+    const first = rule.first as Declaration;
+    const last = rule.last as Declaration;
+    expect(rule.first).toBe(first);
+    expect(rule.last).toBe(last);
+    expect(first.next()).toBe(last);
+    expect(last.prev()).toBe(first);
+    expect(first.prev()).toBeUndefined();
+    expect(last.next()).toBeUndefined();
+    first.remove();
+    expect(rule.first).toBe(last);
+    expect(rule.last).toBe(last);
+    expect(last.prev()).toBeUndefined();
+    rule.prepend({ prop: 'display', value: 'block' });
+    expect(rule.first!.prop).toBe('display');
+    expect(rule.first!.next()).toBe(last);
+    expect(last.prev()).toBe(rule.first!);
+  } finally {
+    owner.session.close();
+    service.close();
+  }
+});
+
+native('raws differentials survive structural clone and semicolon writes', () => {
+  const service = createNativeService();
+  const execute = (mode: string) => {
+    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+    return runPluginsWithBridgeSync(
+      service,
+      [
+        {
+          postcssPlugin: 'raws',
+          Rule(rule) {
+            rule.raws.semicolon = true;
+            rule.append({ prop: 'margin', value: '0', raws: { before: ' ' } });
+            const copy = rule.clone({ selector: 'b' });
+            rule.after(copy);
+          },
+        },
+      ],
+      'a{color:red}',
+      { from: 'raws.css', map: false },
+    ).css;
+  };
+  try {
+    expect(execute('handle')).toEqual(execute('binary'));
+  } finally {
+    service.close();
+  }
+});
+
+native('structural mutation during traversal visits inserted siblings', () => {
+  const service = createNativeService();
+  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+  try {
+    const seen: string[] = [];
+    const result = runPluginsWithBridgeSync(
+      service,
+      [
+        {
+          postcssPlugin: 'insert-while-walking',
+          Rule(rule) {
+            rule.walkDecls((decl) => {
+              seen.push(decl.prop);
+              if (decl.prop === 'color') rule.append({ prop: 'opacity', value: '1' });
+            });
+          },
+        },
+      ],
+      'a{color:red}',
+      { from: 'walk.css', map: false },
+    );
+    expect(seen).toEqual(['color', 'opacity']);
+    expect(result.css).toMatch(/opacity:\s*1/);
+    expect(
+      (result as { nativePlan?: { visits: number; hydration: boolean; runtime: string } })
+        .nativePlan,
+    ).toMatchObject({
+      hydration: false,
+      runtime: 'handle-full',
+      visits: expect.any(Number),
+    });
+    expect((result as { nativePlan?: { visits: number } }).nativePlan!.visits).toBeGreaterThan(0);
+  } finally {
+    service.close();
+  }
+});
+
+native('async retained Result.root stays Go-backed after await', async () => {
+  const service = createNativeService();
+  const parse = vi.spyOn(service, 'parseSync');
+  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+  try {
+    const result = await runPluginsWithBridge(
+      service,
+      [
+        {
+          postcssPlugin: 'async-mutate',
+          async Declaration(decl) {
+            await Promise.resolve();
+            if (decl.prop === 'color') decl.value = 'navy';
+          },
+        },
+      ],
+      'a{color:red}',
+      { from: 'async.css', map: false },
+    );
+    expect(parse).not.toHaveBeenCalled();
+    expect(result.css).toContain('navy');
+    const root = result.root;
+    expect(root.first).toBeInstanceOf(Rule);
+    expect((root.first as Rule).first).toMatchObject({ prop: 'color', value: 'navy' });
+    expect(root.toString()).toBe(result.css);
+    expect(
+      (result as { nativePlan?: { hydration: boolean; runtime: string; visits: number } })
+        .nativePlan,
+    ).toMatchObject({
+      hydration: false,
+      runtime: 'handle-full',
+      visits: expect.any(Number),
+    });
+  } finally {
+    service.close();
+  }
+});
+
+native('auto selects handle-full when capabilities are ready', () => {
+  const service = createNativeService();
+  expect(planHandleExecution('auto', service.handleAddon!, false, []).runtime).toBe('handle-full');
+  expect(planHandleExecution('auto', service.handleAddon!, true, []).runtime).toBe('handle-full');
+  expect(
+    planHandleExecution('auto', service.handleAddon!, false, [
+      {
+        postcssPlugin: 'async',
+        async Once() {},
+      },
+    ]).runtime,
+  ).toBe('handle-full');
+  service.close();
+});
+
+native('async callbacks retain Go-backed Result.root after await', async () => {
+  const service = createNativeService();
+  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+  try {
+    const result = await runPluginsWithBridge(
+      service,
+      [
+        {
+          postcssPlugin: 'async-mut',
+          async Declaration(decl) {
+            await Promise.resolve();
+            if (decl.prop !== 'color' || decl.value === 'navy') return;
+            decl.value = 'navy';
+            decl.parent!.append({ prop: 'opacity', value: '1' });
+          },
+        },
+      ],
+      'a{color:red}',
+      { from: 'async.css', map: false },
+    );
+    expect(result.css).toContain('navy');
+    expect(result.css).toContain('opacity');
+    expect(result.root).toBeInstanceOf(Root);
+    expect(result.root.first).toBeInstanceOf(Rule);
+    expect((result.root.first as Rule).first).toBeInstanceOf(Declaration);
+    expect(((result.root.first as Rule).first as Declaration).value).toBe('navy');
+    expect(
+      (result as { nativePlan?: { hydration: boolean; runtime: string } }).nativePlan,
+    ).toMatchObject({
+      hydration: false,
+      runtime: 'handle-full',
+    });
+  } finally {
+    service.close();
+  }
+});
+
+native('auto selects handle-full for structural plugins without hydration', async () => {
+  const service = createNativeService();
+  const nested = (await import('postcss-nested')).default;
+  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'auto');
+  try {
+    const result = await runPluginsWithBridge(
+      service,
+      [nested()],
+      '.card { &:hover { color: blue } }',
+      { from: 'auto.css', map: false },
+    );
+    expect(result.css).toContain('.card:hover');
+    expect(
+      (result as { nativePlan?: { hydration: boolean; runtime: string } }).nativePlan,
+    ).toMatchObject({
+      hydration: false,
+      runtime: 'handle-full',
+    });
+  } finally {
     service.close();
   }
 });

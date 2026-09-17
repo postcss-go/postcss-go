@@ -3,9 +3,9 @@ package asthandle
 
 const (
 	ProtocolMajor               uint32 = 2
-	ProtocolMinor               uint32 = 3
+	ProtocolMinor               uint32 = 4
 	MaxBatchSize                uint32 = 4096
-	Capabilities                uint32 = 63
+	Capabilities                uint32 = 511
 	RequiredCapabilities        uint32 = 15
 	CapabilityScalarSessions    uint32 = 1
 	CapabilityStructuredErrors  uint32 = 2
@@ -42,6 +42,22 @@ const (
 	OperationDispose            uint32 = 16
 	OperationReadSnapshots      uint32 = 17
 	OperationApplyPatches       uint32 = 18
+	OperationInsertBefore       uint32 = 19
+	OperationRemove             uint32 = 20
+	OperationClone              uint32 = 21
+	OperationPrepend            uint32 = 22
+	OperationInsertAfter        uint32 = 23
+	OperationReplaceWith        uint32 = 24
+	OperationNewRule            uint32 = 25
+	OperationNewAtRule          uint32 = 26
+	OperationNewComment         uint32 = 27
+	OperationSetRaw             uint32 = 28
+	OperationGetRaw             uint32 = 29
+	OperationStringifyMap       uint32 = 30
+	OperationParent             uint32 = 31
+	OperationChildCount         uint32 = 32
+	OperationChildAt            uint32 = 33
+	OperationRefreshSnapshot    uint32 = 34
 	TypeNone                    int32  = 0
 	TypeRoot                    int32  = 1
 	TypeDocument                int32  = 2

@@ -484,6 +484,7 @@ func (s *Session) Append(parent, child Handle) error {
 		}
 	}
 	container.Append(childNode)
+	s.markDirty(parent)
 	return nil
 }
 
@@ -504,7 +505,13 @@ func (s *Session) InsertBefore(target, child Handle) error {
 			return ErrCycle
 		}
 	}
-	return targetNode.Before(childNode)
+	if err := targetNode.Before(childNode); err != nil {
+		return err
+	}
+	if parent, err := s.Parent(target); err == nil && parent != 0 {
+		s.markDirty(parent)
+	}
+	return nil
 }
 
 func (s *Session) Remove(h Handle) error {
@@ -512,7 +519,11 @@ func (s *Session) Remove(h Handle) error {
 	if err != nil {
 		return err
 	}
+	parent, _ := s.Parent(h)
 	node.Remove()
+	if parent != 0 {
+		s.markDirty(parent)
+	}
 	return nil
 }
 

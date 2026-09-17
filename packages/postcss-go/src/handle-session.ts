@@ -68,6 +68,21 @@ export type NativeHandleAddon = {
   handleNewDeclV2(sessionId: number, prop: string, value: string): number;
   handleAppendV2(sessionId: number, parent: number, child: number): void;
   handleDisposeV2(sessionId: number, handle: number): void;
+  handleInsertBeforeV2?(sessionId: number, target: number, child: number): void;
+  handleRemoveV2?(sessionId: number, handle: number): void;
+  handleCloneV2?(sessionId: number, handle: number): number;
+  handlePrependV2?(sessionId: number, parent: number, child: number): void;
+  handleInsertAfterV2?(sessionId: number, target: number, child: number): void;
+  handleReplaceWithV2?(sessionId: number, target: number, handles: Uint32Array): void;
+  handleNewRuleV2?(sessionId: number, selector: string): number;
+  handleNewAtRuleV2?(sessionId: number, name: string, params: string): number;
+  handleNewCommentV2?(sessionId: number, text: string): number;
+  handleSetRawV2?(sessionId: number, handle: number, patchJSON: string): void;
+  handleGetRawsV2?(sessionId: number, handle: number): string;
+  handleStringifyMapV2?(sessionId: number, handle: number, optionsJSON?: string): string;
+  handleParentV2?(sessionId: number, handle: number): number;
+  handleChildCountV2?(sessionId: number, handle: number): number;
+  handleChildAtV2?(sessionId: number, handle: number, index: number): number;
 };
 
 function negotiateNativeHandleBridge(addon: unknown): number | undefined {
@@ -244,6 +259,91 @@ export class NativeHandleSession {
 
   stringify(handle = this.root): string {
     return this.addon.handleStringifyV2(this.requireSession(), handle);
+  }
+
+  stringifyMap(
+    handle = this.root,
+    options: Record<string, unknown> = {},
+  ): { css: string; map: string } {
+    if (!this.addon.handleStringifyMapV2)
+      throw new HandleDeclarationUnsupportedError('source maps capability');
+    const payload = JSON.parse(
+      this.addon.handleStringifyMapV2(this.requireSession(), handle, JSON.stringify(options)),
+    ) as { css: string; map: string };
+    return payload;
+  }
+
+  insertBefore(target: number, child: number): void {
+    this.requireMutation('handleInsertBeforeV2')(this.requireSession(), target, child);
+  }
+
+  remove(handle: number): void {
+    this.requireMutation('handleRemoveV2')(this.requireSession(), handle);
+  }
+
+  clone(handle: number): number {
+    return this.requireMutation('handleCloneV2')(this.requireSession(), handle);
+  }
+
+  prepend(parent: number, child: number): void {
+    this.requireMutation('handlePrependV2')(this.requireSession(), parent, child);
+  }
+
+  insertAfter(target: number, child: number): void {
+    this.requireMutation('handleInsertAfterV2')(this.requireSession(), target, child);
+  }
+
+  replaceWith(target: number, handles: Uint32Array): void {
+    this.requireMutation('handleReplaceWithV2')(this.requireSession(), target, handles);
+  }
+
+  append(parent: number, child: number): void {
+    this.addon.handleAppendV2(this.requireSession(), parent, child);
+  }
+
+  newDecl(prop: string, value: string): number {
+    return this.addon.handleNewDeclV2(this.requireSession(), prop, value);
+  }
+
+  newRule(selector: string): number {
+    return this.requireMutation('handleNewRuleV2')(this.requireSession(), selector);
+  }
+
+  newAtRule(name: string, params: string): number {
+    return this.requireMutation('handleNewAtRuleV2')(this.requireSession(), name, params);
+  }
+
+  newComment(text: string): number {
+    return this.requireMutation('handleNewCommentV2')(this.requireSession(), text);
+  }
+
+  setRaw(handle: number, patch: { key: string; kind: string; value?: unknown }): void {
+    this.requireMutation('handleSetRawV2')(this.requireSession(), handle, JSON.stringify(patch));
+  }
+
+  getRaws(handle: number): Record<string, unknown> {
+    const json = this.requireMutation('handleGetRawsV2')(this.requireSession(), handle);
+    return JSON.parse(json) as Record<string, unknown>;
+  }
+
+  parent(handle: number): number {
+    return this.requireMutation('handleParentV2')(this.requireSession(), handle);
+  }
+
+  childCount(handle: number): number {
+    return this.requireMutation('handleChildCountV2')(this.requireSession(), handle);
+  }
+
+  childAt(handle: number, index: number): number {
+    return this.requireMutation('handleChildAtV2')(this.requireSession(), handle, index);
+  }
+
+  private requireMutation<K extends keyof NativeHandleAddon>(
+    name: K,
+  ): NonNullable<NativeHandleAddon[K]> {
+    const method = this.addon[name];
+    if (typeof method !== 'function') throw new HandleDeclarationUnsupportedError(String(name));
+    return method.bind(this.addon) as NonNullable<NativeHandleAddon[K]>;
   }
 
   private validateBatchSize(handles: Uint32Array): void {

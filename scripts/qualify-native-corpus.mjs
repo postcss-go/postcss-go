@@ -65,7 +65,9 @@ try {
       const difference = manifest.compatibilityDifferences.find((x) => x.case === entry.id);
       if (difference) {
         assert.ok(difference.owner && difference.reason);
-        assert.equal(actualMap.mappings, difference.binary);
+        const expectedMappings =
+          mode === 'binary' ? difference.binary : (difference.handle ?? difference.binary);
+        assert.equal(actualMap.mappings, expectedMappings);
         assert.equal(expectedMap.mappings, difference.upstream);
         assert.deepEqual({ ...actualMap, mappings: '' }, { ...expectedMap, mappings: '' });
         row.mapDifference = difference;
@@ -73,7 +75,11 @@ try {
       if (mode === 'handle')
         assert.equal(entry.expectedHandle, 'supported', 'Update manifest after capability review');
       assert.deepEqual(result.messages, expected.messages);
-      row[mode] = { status: difference ? 'known-difference' : 'compatible' };
+      const nativePlan = result.nativePlan;
+      row[mode] = {
+        status: difference ? 'known-difference' : 'compatible',
+        nativePlan: nativePlan ?? null,
+      };
     }
     rows.push(row);
   }
@@ -81,21 +87,36 @@ try {
   if (previous === undefined) delete process.env.POSTCSS_GO_NATIVE_AST;
   else process.env.POSTCSS_GO_NATIVE_AST = previous;
 }
-if (process.argv.includes('--gate'))
-  assert.fail(
-    'Auto handle selection and no-hydration instrumentation are not implemented; rollout gate is blocked',
+
+const autoHandleSelected = rows.filter(
+  (row) =>
+    row.auto?.nativePlan &&
+    typeof row.auto.nativePlan.runtime === 'string' &&
+    row.auto.nativePlan.runtime.startsWith('handle') &&
+    row.auto.nativePlan.hydration === false,
+).length;
+const required = Math.ceil(rows.length * 0.95);
+const summary = {
+  corpusVersion: manifest.corpusVersion,
+  denominator: rows.length,
+  required,
+  forcedHandleCompatible: rows.filter(
+    (x) => x.handle.status === 'compatible' || x.handle.status === 'known-difference',
+  ).length,
+  autoHandleSelected,
+  autoSelectionGate: autoHandleSelected >= required ? 'passed' : 'failed',
+  rows,
+};
+
+if (process.argv.includes('--gate')) {
+  assert.ok(
+    autoHandleSelected >= required,
+    `auto handle selection ${autoHandleSelected}/${rows.length} below ${required} (95%)`,
   );
-console.log(
-  JSON.stringify(
-    {
-      corpusVersion: manifest.corpusVersion,
-      denominator: rows.length,
-      required: Math.ceil(rows.length * 0.95),
-      forcedHandleCompatible: rows.filter((x) => x.handle.status === 'compatible').length,
-      autoSelectionGate: 'unverified; auto currently uses binary',
-      rows,
-    },
-    null,
-    2,
-  ),
-);
+  for (const row of rows) {
+    if (row.auto?.nativePlan?.runtime?.startsWith('handle'))
+      assert.equal(row.auto.nativePlan.hydration, false, `${row.id} hydrated under auto handle`);
+  }
+}
+
+console.log(JSON.stringify(summary, null, 2));

@@ -6,9 +6,11 @@ import {
   Node,
   Root,
   Rule,
+  type NodeChild,
   type ProcessRoot,
 } from './ast.js';
 import { Input } from './input.js';
+import { list } from './list.js';
 import {
   HANDLE_FIELD_IMPORTANT,
   HANDLE_FIELD_NAME,
@@ -63,11 +65,28 @@ const SCALAR_FIELDS: Record<string, Partial<Record<string, HandleField>>> = {
   comment: { text: HANDLE_FIELD_TEXT },
 };
 
+const STRUCTURAL_METHODS = new Set([
+  'append',
+  'prepend',
+  'insertBefore',
+  'insertAfter',
+  'remove',
+  'replaceWith',
+  'clone',
+  'cloneBefore',
+  'cloneAfter',
+  'before',
+  'after',
+  'removeAll',
+  'removeChild',
+]);
+
 const unsupported = (key: PropertyKey): never => {
   throw new HandleDeclarationUnsupportedError(String(key));
 };
 
 const protectedObjects = new WeakSet<object>();
+const wrapperOwners = new WeakMap<Node, SessionOwner>();
 
 /** Protect snapshots, including reflection and nested array/raw writes. */
 function immutable<T extends object>(value: T, cache: WeakMap<object, object>): T {
@@ -110,24 +129,57 @@ function encodeScalar(key: string, value: unknown): { local: unknown; wire: stri
   return { local, wire: local };
 }
 
+function flattenChildren(children: readonly NodeChild[]): unknown[] {
+  const out: unknown[] = [];
+  for (const child of children) {
+    if (child === undefined) continue;
+    if (Array.isArray(child)) out.push(...flattenChildren(child));
+    else out.push(child);
+  }
+  return out;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 export type SessionOwnerOptions = NativeHandleParseOptions & {
   /** When true, standard scalar fields accept ordered callback-local writes. */
   mutableScalars?: boolean;
+  /** When true, parent/nodes/raws and structural methods stay live against Go. */
+  mutableStructure?: boolean;
+};
+
+export type HandleDiagnostics = {
+  planReason: string;
+  hydration: boolean;
+  visits: number;
+  runtime?: string;
 };
 
 /** One owner and wrapper cache per Go arena. Every retained wrapper retains this owner. */
 export class SessionOwner {
   readonly session: NativeHandleSession;
   readonly mutableScalars: boolean;
+  readonly mutableStructure: boolean;
+  readonly diagnostics: HandleDiagnostics = {
+    planReason: '',
+    hydration: false,
+    visits: 0,
+  };
   private readonly snapshots = new Map<number, Snapshot>();
   private readonly wrappers = new Map<number, Node>();
+  private readonly handleIds = new WeakMap<Node, number>();
+  private readonly childrenCache = new Map<number, Node[]>();
+  private readonly rawsCache = new Map<number, Node['raws']>();
   private readonly input: Input;
   private readonly readCache = new WeakMap<object, object>();
   private readonly targets = new WeakMap<Node, Node>();
   private pending: PendingPatch[] = [];
 
   constructor(addon: NativeHandleAddon, css: string, options: SessionOwnerOptions = {}) {
-    this.mutableScalars = options.mutableScalars === true;
+    this.mutableStructure = options.mutableStructure === true;
+    this.mutableScalars = options.mutableScalars === true || this.mutableStructure;
     this.session = new NativeHandleSession(addon);
     this.input = new Input(css, { ...options, map: false });
     this.input.fromOffset(0); // Initialize the Input's read cache before protecting it.
@@ -185,9 +237,14 @@ export class SessionOwner {
     this.session.applyPatches(handles, fields, values);
   }
 
+  handleId(node: Node): number | undefined {
+    return this.handleIds.get(node);
+  }
+
   node(id: number): Node {
     const known = this.wrappers.get(id);
     if (known) return known;
+    this.ensureSnapshot(id);
     const row = this.snapshots.get(id);
     if (!row) throw new Error('invalid snapshot relationship');
     const target = Object.create(prototypes[row.type]) as Node;
@@ -215,7 +272,6 @@ export class SessionOwner {
     if (row.type === 'comment') fields.text = row.text ?? '';
     if (row.parent) fields.parent = undefined;
     Object.assign(target, fields);
-    let children: Node[] | undefined;
     const read = (key: PropertyKey): unknown => {
       if (typeof key === 'symbol') return Reflect.get(target, key);
       if (key === 'source') {
@@ -234,20 +290,71 @@ export class SessionOwner {
           this.readCache,
         ));
       }
-      if (key === 'raws') return (raws ??= immutable(row.raws ?? {}, this.readCache));
-
-      if (key === 'parent' && row.parent) return this.node(row.parent);
+      if (key === 'raws') {
+        if (this.mutableStructure) return this.trackedRaws(id, row);
+        return (raws ??= immutable(row.raws ?? {}, this.readCache));
+      }
+      if (key === 'parent') {
+        const parentId = this.mutableStructure ? this.session.parent(id) : row.parent;
+        return parentId ? this.node(parentId) : undefined;
+      }
       if (key === 'nodes' && Object.hasOwn(fields, 'nodes')) {
-        if (row.type === 'atrule' && !row.block) return undefined;
-        return (children ??= immutable(
-          (row.nodes ?? []).map((child) => this.node(child)),
-          this.readCache,
-        ));
+        if (row.type === 'atrule' && !row.block && !this.mutableStructure) return undefined;
+        if (this.mutableStructure) {
+          if (row.type === 'atrule') {
+            const live = this.liveNodes(id);
+            if (live.length === 0 && !row.block) return undefined;
+            return live;
+          }
+          return this.liveNodes(id);
+        }
+        return this.frozenNodes(id, row);
+      }
+      if (key === 'selectors' && row.type === 'rule') {
+        return list.comma(String(Reflect.get(target, 'selector') ?? ''));
       }
       return Reflect.get(target, key, wrapper);
     };
+    const writeStructural = (key: string, value: unknown): boolean => {
+      if (!this.mutableStructure) return unsupported(key);
+      if (key === 'nodes') {
+        if (value == null) {
+          (this.structuralMethod(id, 'removeAll') as () => Node)();
+          return true;
+        }
+        if (!Array.isArray(value)) return unsupported(key);
+        (this.structuralMethod(id, 'removeAll') as () => Node)();
+        for (const child of flattenChildren(value as NodeChild[])) {
+          this.session.append(id, this.materialize(child));
+        }
+        this.afterStructure(id);
+        return true;
+      }
+      if (key === 'parent') {
+        if (value == null) {
+          const parent = this.session.parent(id);
+          if (parent) {
+            this.session.remove(id);
+            this.invalidate(id);
+            this.invalidate(parent);
+            Node.prototype.markDirty.call(this.node(id));
+            Node.prototype.markDirty.call(this.node(parent));
+          }
+          return true;
+        }
+        return unsupported(key);
+      }
+      return unsupported(key);
+    };
     const writeScalar = (key: string, value: unknown): boolean => {
+      if (key === 'nodes' || key === 'parent') return writeStructural(key, value);
       if (!this.mutableScalars) return unsupported(key);
+      if (key === 'selectors' && row.type === 'rule') {
+        const values = Array.isArray(value) ? value.map(String) : [String(value)];
+        const match = String(Reflect.get(target, 'selector') ?? '').match(/,\s*/);
+        const sep = match ? match[0] : ',';
+        return writeScalar('selector', values.join(sep));
+      }
       const field = SCALAR_FIELDS[row.type]?.[key];
       if (field === undefined) return unsupported(key);
       const encoded = encodeScalar(key, value);
@@ -272,13 +379,11 @@ export class SessionOwner {
             stringifier === undefined
               ? this.session.stringify(id)
               : Node.prototype.toString.call(wrapper, stringifier);
-        if (key === 'each')
-          return (callback: (node: Node, index: number) => unknown) => {
-            const nodes = read('nodes') as Node[] | undefined;
-            for (let i = 0; i < (nodes?.length ?? 0); i++)
-              if (callback(nodes![i], i) === false) return false;
-            return undefined;
-          };
+        if (key === 'each') return this.makeEach(id, read);
+        if (typeof key === 'string' && STRUCTURAL_METHODS.has(key)) {
+          if (!this.mutableStructure) return unsupported(key);
+          return this.structuralMethod(id, key);
+        }
         return read(key);
       },
       getOwnPropertyDescriptor: (_target, key) => {
@@ -302,6 +407,443 @@ export class SessionOwner {
     protectedObjects.add(wrapper);
     this.wrappers.set(id, wrapper);
     this.targets.set(wrapper, target);
+    this.handleIds.set(wrapper, id);
+    wrapperOwners.set(wrapper, this);
     return wrapper;
+  }
+
+  private makeEach(id: number, read: (key: PropertyKey) => unknown) {
+    return (callback: (node: Node, index: number) => unknown) => {
+      let index = 0;
+      for (;;) {
+        const nodes = read('nodes') as Node[] | undefined;
+        if (!nodes || index >= nodes.length) return undefined;
+        const child = nodes[index];
+        if (callback(child, index) === false) return false;
+        // Prefer O(1) advance when the child is still at the same slot; fall back
+        // to indexOf only after structural mutation moved or removed it.
+        const nextNodes = read('nodes') as Node[] | undefined;
+        if (!nextNodes) return undefined;
+        if (nextNodes[index] === child) {
+          index += 1;
+        } else {
+          const next = nextNodes.indexOf(child);
+          index = next === -1 ? index : next + 1;
+        }
+      }
+    };
+  }
+
+  private frozenNodes(id: number, row: Snapshot): Node[] {
+    const known = this.childrenCache.get(id);
+    if (known) return known;
+    const children = immutable(
+      (row.nodes ?? []).map((child) => this.node(child)),
+      this.readCache,
+    );
+    this.childrenCache.set(id, children);
+    return children;
+  }
+
+  private liveNodes(id: number): Node[] {
+    const known = this.childrenCache.get(id);
+    if (known) return known;
+    const count = this.session.childCount(id);
+    const children: Node[] = [];
+    for (let i = 0; i < count; i++) children.push(this.node(this.session.childAt(id, i)));
+    this.childrenCache.set(id, children);
+    return children;
+  }
+
+  private trackedRaws(id: number, row: Snapshot): Node['raws'] {
+    const known = this.rawsCache.get(id);
+    if (known) return known;
+    const local = { ...(row.raws ?? {}) } as Record<string, unknown>;
+    const proxy = new Proxy(local, {
+      get: (target, key, receiver) => Reflect.get(target, key, receiver),
+      set: (target, key, value) => {
+        if (typeof key !== 'string') return Reflect.set(target, key, value);
+        Reflect.set(target, key, value);
+        row.raws = target as Node['raws'];
+        if (value === undefined) {
+          this.session.setRaw(id, { key, kind: 'delete' });
+        } else if (typeof value === 'boolean') {
+          this.session.setRaw(id, { key, kind: 'bool', value });
+        } else if (isPlainRecord(value) && ('value' in value || 'raw' in value)) {
+          this.session.setRaw(id, { key, kind: 'value', value });
+        } else {
+          this.session.setRaw(id, { key, kind: 'string', value: String(value) });
+        }
+        Node.prototype.markDirty.call(this.node(id));
+        return true;
+      },
+      deleteProperty: (target, key) => {
+        if (typeof key !== 'string') return Reflect.deleteProperty(target, key);
+        Reflect.deleteProperty(target, key);
+        row.raws = target as Node['raws'];
+        this.session.setRaw(id, { key, kind: 'delete' });
+        Node.prototype.markDirty.call(this.node(id));
+        return true;
+      },
+    }) as Node['raws'];
+    this.rawsCache.set(id, proxy);
+    return proxy;
+  }
+
+  private structuralMethod(id: number, name: string) {
+    const move = (childId: number, apply: () => void): void => {
+      const oldParent = this.session.parent(childId);
+      apply();
+      if (oldParent && oldParent !== id) this.invalidate(oldParent);
+    };
+    switch (name) {
+      case 'append':
+        return (...children: NodeChild[]) => {
+          for (const child of flattenChildren(children)) {
+            const childId = this.materialize(child);
+            move(childId, () => this.session.append(id, childId));
+          }
+          return this.afterStructure(id);
+        };
+      case 'prepend':
+        return (...children: NodeChild[]) => {
+          for (const child of flattenChildren(children).reverse()) {
+            const childId = this.materialize(child);
+            move(childId, () => this.session.prepend(id, childId));
+          }
+          return this.afterStructure(id);
+        };
+      case 'insertBefore':
+        return (existing: Node | number, ...children: NodeChild[]) => {
+          const target = this.resolveChild(id, existing);
+          for (const child of flattenChildren(children)) {
+            const childId = this.materialize(child);
+            move(childId, () => this.session.insertBefore(target, childId));
+          }
+          return this.afterStructure(id);
+        };
+      case 'insertAfter':
+        return (existing: Node | number, ...children: NodeChild[]) => {
+          let target = this.resolveChild(id, existing);
+          for (const child of flattenChildren(children)) {
+            const childId = this.materialize(child);
+            move(childId, () => this.session.insertAfter(target, childId));
+            target = childId;
+          }
+          return this.afterStructure(id);
+        };
+      case 'remove':
+        return () => {
+          const parent = this.session.parent(id);
+          if (parent) {
+            const parentRow = this.snapshots.get(parent);
+            // Root#removeChild transfers the first child's before onto the next sibling.
+            if (parentRow?.type === 'root') {
+              const count = this.session.childCount(parent);
+              if (count > 1 && this.session.childAt(parent, 0) === id) {
+                const next = this.session.childAt(parent, 1);
+                const before = this.node(id).raws.before;
+                if (before === undefined) delete this.node(next).raws.before;
+                else this.node(next).raws.before = before;
+              }
+            }
+          }
+          this.session.remove(id);
+          this.invalidate(id);
+          if (parent) this.invalidate(parent);
+          Node.prototype.markDirty.call(this.node(id));
+          if (parent) Node.prototype.markDirty.call(this.node(parent));
+          return this.node(id);
+        };
+      case 'replaceWith':
+        return (...children: NodeChild[]) => {
+          const ids = flattenChildren(children).map((child) => this.materialize(child));
+          for (const childId of ids) {
+            const oldParent = this.session.parent(childId);
+            if (oldParent) this.invalidate(oldParent);
+          }
+          this.session.replaceWith(id, Uint32Array.from(ids));
+          this.invalidate(id);
+          for (const child of ids) this.ensureSnapshot(child);
+          const parent = this.session.parent(ids[0] ?? id) || this.session.parent(id);
+          if (parent) this.invalidate(parent);
+          Node.prototype.markDirty.call(this.node(id));
+          return this.node(id);
+        };
+      case 'clone':
+        return (overrides: Record<string, unknown> = {}) => this.cloneNode(id, overrides);
+      case 'cloneBefore':
+        return (overrides: Record<string, unknown> = {}) => {
+          const copy = this.cloneNode(id, overrides);
+          const parent = this.session.parent(id);
+          if (!parent) throw new Error('Cannot clone before a node without a parent');
+          this.session.insertBefore(id, this.handleIds.get(copy)!);
+          this.invalidate(parent);
+          Node.prototype.markDirty.call(this.node(parent));
+          return copy;
+        };
+      case 'cloneAfter':
+        return (overrides: Record<string, unknown> = {}) => {
+          const copy = this.cloneNode(id, overrides);
+          const parent = this.session.parent(id);
+          if (!parent) throw new Error('Cannot clone after a node without a parent');
+          this.session.insertAfter(id, this.handleIds.get(copy)!);
+          this.invalidate(parent);
+          Node.prototype.markDirty.call(this.node(parent));
+          return copy;
+        };
+      case 'before':
+        return (...children: NodeChild[]) => {
+          const parent = this.session.parent(id);
+          if (!parent) throw new Error('Cannot insert before a node without a parent');
+          for (const child of flattenChildren(children)) {
+            const childId = this.materialize(child);
+            const oldParent = this.session.parent(childId);
+            this.session.insertBefore(id, childId);
+            if (oldParent && oldParent !== parent) this.invalidate(oldParent);
+          }
+          return this.afterStructure(parent, this.node(id));
+        };
+      case 'after':
+        return (...children: NodeChild[]) => {
+          const parent = this.session.parent(id);
+          if (!parent) throw new Error('Cannot insert after a node without a parent');
+          let target = id;
+          for (const child of flattenChildren(children)) {
+            const childId = this.materialize(child);
+            const oldParent = this.session.parent(childId);
+            this.session.insertAfter(target, childId);
+            if (oldParent && oldParent !== parent) this.invalidate(oldParent);
+            target = childId;
+          }
+          return this.afterStructure(parent, this.node(id));
+        };
+      case 'removeAll':
+        return () => {
+          // Remove from the end so Root first-child before transfer does not
+          // rewrite siblings that PostCSS would only detach via nodes = [].
+          for (;;) {
+            const count = this.session.childCount(id);
+            if (count === 0) break;
+            this.session.remove(this.session.childAt(id, count - 1));
+          }
+          return this.afterStructure(id);
+        };
+      case 'removeChild':
+        return (child: Node | number) => {
+          const childId = this.resolveChild(id, child);
+          this.session.remove(childId);
+          return this.afterStructure(id);
+        };
+      default:
+        return unsupported(name);
+    }
+  }
+
+  private afterStructure(id: number, result?: Node): Node {
+    this.invalidate(id);
+    this.ensureSnapshot(id);
+    Node.prototype.markDirty.call(this.node(id));
+    return result ?? this.node(id);
+  }
+
+  private cloneNode(id: number, overrides: Record<string, unknown>): Node {
+    const cloned = this.session.clone(id);
+    this.ingestSubtree(cloned);
+    const wrapper = this.node(cloned);
+    if (Object.prototype.hasOwnProperty.call(overrides, 'nodes')) {
+      const nodes = overrides.nodes;
+      for (;;) {
+        const count = this.session.childCount(cloned);
+        if (count === 0) break;
+        this.session.remove(this.session.childAt(cloned, count - 1));
+      }
+      this.invalidate(cloned);
+      if (Array.isArray(nodes)) {
+        for (const child of flattenChildren(nodes as NodeChild[])) {
+          this.session.append(cloned, this.materialize(child));
+        }
+      }
+    }
+    for (const [key, value] of Object.entries(overrides)) {
+      if (key === 'nodes' || key === 'type') continue;
+      Reflect.set(wrapper, key, value);
+    }
+    this.flushPatches();
+    this.invalidate(cloned);
+    return this.node(cloned);
+  }
+
+  private resolveChild(parent: number, existing: Node | number): number {
+    if (typeof existing === 'number') {
+      const child = this.session.childAt(parent, existing);
+      if (!child) throw new Error('Node is not a child of this container');
+      return child;
+    }
+    const id = this.handleIds.get(existing);
+    if (!id) throw new Error('foreign handle wrapper');
+    return id;
+  }
+
+  private materialize(input: unknown): number {
+    if (typeof input === 'string')
+      throw new HandleDeclarationUnsupportedError('string node insertion');
+    if (!isPlainRecord(input) && !(input instanceof Node))
+      throw new HandleDeclarationUnsupportedError('node creation');
+    const unwrapped =
+      input && typeof input === 'object' && 'proxyOf' in input
+        ? ((input as { proxyOf: Node }).proxyOf as Node)
+        : (input as Node | Record<string, unknown>);
+    const existing = unwrapped instanceof Node ? this.handleIds.get(unwrapped) : undefined;
+    if (existing) {
+      const owner = wrapperOwners.get(unwrapped as Node);
+      if (!owner || owner === this) return existing;
+      // Foreign session identity cannot move; clone values into this arena.
+      return this.materialize(this.cloneRecord(unwrapped as Node));
+    }
+    if (unwrapped instanceof Node) {
+      const owner = wrapperOwners.get(unwrapped);
+      if (owner && owner !== this) return this.materialize(this.cloneRecord(unwrapped));
+    }
+    const record = unwrapped as Record<string, unknown>;
+    const type =
+      typeof record.type === 'string'
+        ? record.type
+        : 'prop' in record
+          ? 'decl'
+          : 'selector' in record
+            ? 'rule'
+            : 'name' in record
+              ? 'atrule'
+              : 'text' in record
+                ? 'comment'
+                : 'nodes' in record
+                  ? 'root'
+                  : undefined;
+    if (!type) throw new HandleDeclarationUnsupportedError('node creation');
+    let id: number;
+    switch (type) {
+      case 'decl': {
+        if (record.value === undefined) throw new Error('Value field is missed in node creation');
+        id = this.session.newDecl(String(record.prop ?? ''), String(record.value));
+        this.ensureSnapshot(id);
+        if (record.important) (this.node(id) as Declaration).important = true;
+        break;
+      }
+      case 'rule': {
+        id = this.session.newRule(String(record.selector ?? ''));
+        this.ensureSnapshot(id);
+        break;
+      }
+      case 'atrule': {
+        id = this.session.newAtRule(String(record.name ?? ''), String(record.params ?? ''));
+        this.ensureSnapshot(id);
+        break;
+      }
+      case 'comment': {
+        id = this.session.newComment(String(record.text ?? ''));
+        this.ensureSnapshot(id);
+        break;
+      }
+      default:
+        throw new HandleDeclarationUnsupportedError(`create ${type}`);
+    }
+    if (record.raws && isPlainRecord(record.raws)) {
+      for (const [key, value] of Object.entries(record.raws)) {
+        Reflect.set(this.node(id).raws, key, value);
+      }
+    }
+    const childNodes = record.nodes;
+    if (Array.isArray(childNodes)) {
+      for (const child of flattenChildren(childNodes as NodeChild[])) {
+        this.session.append(id, this.materialize(child));
+      }
+      this.invalidate(id);
+    }
+    this.flushPatches();
+    return id;
+  }
+
+  /** Copy public fields from a foreign/hydrated node for session-local creation. */
+  private cloneRecord(node: Node): Record<string, unknown> {
+    const record: Record<string, unknown> = { type: node.type };
+    if (node.type === 'decl') {
+      record.prop = (node as Declaration).prop;
+      record.value = (node as Declaration).value;
+      record.important = (node as Declaration).important;
+    } else if (node.type === 'rule') {
+      record.selector = (node as Rule).selector;
+    } else if (node.type === 'atrule') {
+      record.name = (node as AtRule).name;
+      record.params = (node as AtRule).params;
+    } else if (node.type === 'comment') {
+      record.text = (node as Comment).text;
+    }
+    if (node.raws && isPlainRecord(node.raws)) record.raws = { ...node.raws };
+    if (Array.isArray((node as unknown as { nodes?: unknown }).nodes))
+      record.nodes = [...(node as unknown as { nodes: NodeChild[] }).nodes];
+    return record;
+  }
+
+  private ensureSnapshot(id: number): void {
+    if (this.snapshots.has(id)) return;
+    this.ingestSubtree(id);
+  }
+
+  private ingestSubtree(id: number): void {
+    const pending = [id];
+    const seen = new Set<number>();
+    while (pending.length) {
+      const batch: number[] = [];
+      while (pending.length && batch.length < 256) {
+        const next = pending.pop()!;
+        if (seen.has(next)) continue;
+        seen.add(next);
+        batch.push(next);
+      }
+      if (!batch.length) continue;
+      const rows = JSON.parse(this.session.readSnapshots(Uint32Array.from(batch))) as Snapshot[];
+      for (const row of rows) {
+        this.snapshots.set(row.id, row);
+        this.childrenCache.delete(row.id);
+        for (const child of row.nodes ?? []) {
+          if (!this.snapshots.has(child)) pending.push(child);
+        }
+      }
+    }
+  }
+
+  private invalidate(...ids: number[]): void {
+    for (const id of ids) {
+      this.childrenCache.delete(id);
+      this.rawsCache.delete(id);
+      if (this.mutableStructure && this.snapshots.has(id)) {
+        try {
+          const rows = JSON.parse(this.session.readSnapshots(Uint32Array.from([id]))) as Snapshot[];
+          const row = rows[0];
+          if (row) {
+            const existing = this.snapshots.get(id);
+            if (existing) Object.assign(existing, row);
+            else this.snapshots.set(id, row);
+            // Sibling raws can change when Root transfers before on first-child removal.
+            for (const child of row.nodes ?? []) {
+              this.rawsCache.delete(child);
+              const known = this.snapshots.get(child);
+              if (!known) continue;
+              try {
+                const childRows = JSON.parse(
+                  this.session.readSnapshots(Uint32Array.from([child])),
+                ) as Snapshot[];
+                if (childRows[0]) Object.assign(known, childRows[0]);
+              } catch {
+                // Child may have been detached in the same mutation.
+              }
+            }
+          }
+        } catch {
+          // Detached or disposed nodes keep their last known snapshot.
+        }
+      }
+    }
   }
 }

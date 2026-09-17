@@ -1,11 +1,11 @@
-# Native handle protocol 2.3
+# Native handle protocol 2.4
 
 Phase 1 established the session/ABI contract. Phase 2 added the synchronous
-read-only facade. Phase 3 advertises AtomicPatches and enables forced-handle
-scalar mutation: important plus all standard scalar fields, one ordered
-mixed-field patch transaction per callback, throw-time flush, Go dirty marks
-and dirty revisits. `auto` and `binary` retain the hydrated runtime. Structural
-writes, maps and async retention remain later phases.
+read-only facade. Phase 3 advertises AtomicPatches for scalar mutation. Phases
+4–7 advertise MutationTraversal, SourceMaps and AsyncLifetime: live relationships
+and raws, structural mutation, stringifyMap, and async SessionOwner retention.
+Forced `handle` and capability-complete `auto` select `handle-full`. Explicit
+`binary` retains the hydrated runtime as the rollback override.
 
 ## Schema and negotiation
 
@@ -17,12 +17,13 @@ trailing JSON, duplicate/out-of-range capability bits and required unimplemented
 capabilities. `pnpm check:handles` verifies all generated outputs.
 
 The base required mask remains 15 (ScalarSessions, StructuredErrors,
-ParseOptions and BoundedIds). Protocol 2.3 advertises mask 63, adding the optional
-ReadOnlyFacade and AtomicPatches capabilities. The scalar execution plan requires
-all 63 bits plus `handleReadSnapshotsV2` and `handleApplyPatchesV2`. Older
-compatible bridges can still negotiate the base or read-only contracts when those
-symbols are absent. MutationTraversal, SourceMaps and AsyncLifetime remain
-unadvertised. Remaining patch/event constants reserve wire vocabulary only.
+ParseOptions and BoundedIds). Protocol 2.4 advertises mask 511 (all nine named
+capability bits through AsyncLifetime). Full handle execution requires
+ReadOnlyFacade | AtomicPatches | MutationTraversal (and SourceMaps / AsyncLifetime
+when maps or async callbacks are present), plus the corresponding optional
+`handle*V2` methods. Older compatible bridges can still negotiate base, read-only
+or scalar contracts when optional symbols are absent; Windows clears capability
+bits when companion DLL symbols are missing.
 
 TS accepts the matching major and any uint32 minor with every required bit,
 including newer minor versions and unknown optional bits. Missing bits, throwing

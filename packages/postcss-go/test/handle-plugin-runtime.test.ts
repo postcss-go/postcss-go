@@ -195,13 +195,17 @@ test.skipIf(!isNativeBridgeAvailable())(
       expect(calls).toBe(1);
       calls = 0;
       vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
-      expect(() => runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {})).toThrow(/support/);
+      const removed = runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {});
       expect(calls).toBe(1);
+      expect(removed.css).toBe('a{}');
       calls = 0;
-      expect(() => runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', { map: true })).toThrow(
-        /source maps/,
-      );
-      expect(calls).toBe(0);
+      const mapped = runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {
+        from: 'map.css',
+        map: { inline: false, annotation: false },
+      });
+      expect(calls).toBe(1);
+      expect(mapped.map).toBeTruthy();
+      expect((mapped as { nativePlan?: { hydration: boolean } }).nativePlan?.hydration).toBe(false);
       vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'invalid');
       expect(() => runPluginsWithBridgeSync(service, [plugin], '', {})).toThrow(/mode/);
     } finally {

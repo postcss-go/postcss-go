@@ -1,6 +1,6 @@
 # Go-Owned AST and Native Handle Migration
 
-- Status: In progress — audited 2026-09-17; Phases 0–3 implemented, native migration not complete
+- Status: In progress — audited 2026-09-17; Phases 0–7 native path implemented; Phase 8 deferred
 - Target: `@postcss-go/core` native backend
 - Last updated: 2026-09-17
 - Owners: TBD
@@ -19,29 +19,29 @@ The browser Worker path will continue using a serializable AST during the initia
 
 ## Implementation status — audited 2026-09-17
 
-This section records the current working tree after Phase 3 scalar mutation.
-It is not a release claim. The detailed design and phase exit criteria below
-remain the target; existing Go primitives or passing bulk tests alone do not
-mark a phase complete.
+This section records the working tree after Phases 4–7 native handle completion.
+It is not a public release claim. Phase 8 remains deferred. Long-term cleanup of
+hydrated TypeScript AST storage and the two-release rollback window remain open
+operational items after the capability rollout.
 
-**The migration definition of done is not met.** Native `auto` and `binary`
-still use the hydrated AST runtime. Opt-in `handle` now runs the Go-backed
-facade with synchronous scalar mutation: ordered mixed-field patch transactions
-per callback, important and all standard scalar fields, throw-time flush, and
-dirty revisits. Structural writes, maps, async retention, and default rollout
-remain later phases.
+**Native handle path is capability-complete for the maintained corpus.** Protocol
+2.4 advertises MutationTraversal, SourceMaps and AsyncLifetime. Forced `handle`
+and capability-complete `auto` select `handle-full` with live relationships,
+tracked raws, structural mutation, maps, and async retention without successful-run
+hydration. Exact upstream source-map mappings for nested output remain a recorded
+compatibility difference versus bulk.
 
-| Phase                         | Current assessment                                     | Main completion blocker                                                                   |
-| ----------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| 0 — Baseline                  | Qualification inputs recorded; rollout remains blocked | Maintained corpus and CI-generated benchmark/line-count artifacts                         |
-| 1 — Protocol/sessions         | Protocol 2.3 contract implemented                      | General facades and later-phase capabilities remain gated                                 |
-| 2 — Read-only facade          | Complete and verified                                  | Standard wrappers, identity/prototypes, Once, filters, source reads and batched snapshots |
-| 3 — Scalar mutation           | Complete and verified                                  | Important, mixed-field callback patches, throw flush, Go dirty marks and dirty revisits   |
-| 4 — Relationships/source/raws | Not complete                                           | Live relationship/raw mutations and handle source-map equivalence                         |
-| 5 — Structural traversal      | Go primitives only; not complete                       | Complete facade methods and mutation-aware enter/exit cursor                              |
-| 6 — Async/lifetime            | Owner/finalizer foundation only                        | Async callback retention and mutable retained references                                  |
-| 7 — Default rollout/cleanup   | Not started as a rollout                               | 95% corpus selection, full performance/leak gates and two-release cleanup window          |
-| 8 — Browser experiment        | Deferred and optional                                  | Not required for native completion                                                        |
+| Phase                         | Current assessment                 | Main completion blocker                                                                   |
+| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| 0 — Baseline                  | Qualification inputs recorded      | Maintained corpus and CI-generated benchmark/line-count artifacts                         |
+| 1 — Protocol/sessions         | Protocol 2.4 contract implemented  | None for current native scope                                                             |
+| 2 — Read-only facade          | Complete and verified              | Standard wrappers, identity/prototypes, Once, filters, source reads and batched snapshots |
+| 3 — Scalar mutation           | Complete and verified              | Important, mixed-field callback patches, throw flush, Go dirty marks and dirty revisits   |
+| 4 — Relationships/source/raws | Complete for advertised modes      | Live parent/nodes/raws; handle stringifyMap; nested-map mapping difference documented     |
+| 5 — Structural traversal      | Complete for facade methods        | append/prepend/insert/remove/replace/clone plus mutation-aware each/dirty revisits        |
+| 6 — Async/lifetime            | Complete for retained results      | Async callbacks keep Go-backed Result.root; owner/finalizer retention                     |
+| 7 — Default rollout/cleanup   | Auto + 95% corpus gate implemented | Multi-run perf/RSS qualification and hydrated-store removal wait on release window        |
+| 8 — Browser experiment        | Deferred and optional              | Not required for native completion                                                        |
 
 ### Completed and verified foundations
 
@@ -53,7 +53,7 @@ remain later phases.
       Registry/session tests cover isolation, stale IDs, close and concurrency.
 - [x] Native owner finalization, live-session diagnostics and explicit cleanup
       exist. Tests cover GC reclamation, retained owners and overlapping Workers.
-      This does not yet establish async plugin/node-wrapper lifetime.
+      Async handle execution keeps SessionOwner reachable across await.
 - [x] Checked-in schema/generator produces scalar field constants and protocol
       metadata; CI checks drift and runs session/bridge race tests.
 - [x] Handshake rejects incompatible major versions, invalid minor versions,
@@ -70,9 +70,9 @@ remain later phases.
       reads and per-callback ordered patches, including important. Unexpected
       unsupported callback behavior errors without replay; auto selects bulk
       before callbacks.
-- [x] Go has parent/child queries and append, insert-before, remove, clone and
-      dispose primitives. Cycle checks exist. These are not the complete native
-      facade or mutation-aware traversal.
+- [x] Go has parent/child queries and append, prepend, insert, remove, replace,
+      clone and dispose primitives with cycle checks. The TypeScript facade exposes
+      the structural methods used by maintained plugins.
 - [x] Core typechecking is part of the CI check command; upstream sync checks,
       owned AST contract fixtures and webpack coverage thresholds exist.
 - [x] A production-package read-only benchmark and runtime line-count script
@@ -113,9 +113,9 @@ usable throughout.
 Maintained corpus: [versioned test fixture](../../packages/postcss-go/test/fixtures/native-corpus.json).
 CI uploads benchmark, corpus and line-count results as build artifacts; historical
 qualification reports are no longer stored in the documentation tree.
-The corpus retains unsupported structural/map/async cases and now expects the
-scalar case to succeed under forced handle; this still does not complete the 95%
-selection or rollout gates.
+The corpus (v1.4.0) expects all seven cases to succeed under forced handle.
+Capability-complete `auto` selects `handle-full` without hydration; the qualify
+script `--gate` asserts the 95% selection threshold.
 
 **Phase 1 — Complete the protocol contract**
 
@@ -131,8 +131,8 @@ selection or rollout gates.
 - [x] Test every required capability, newer-minor/missing-bit combinations,
       throwing getters and malformed IDs. Only implemented capabilities are advertised.
 
-See the [protocol 2.3 contract](../native-handle-protocol-v2.md) for ABI compatibility,
-source options, ownership rules and Phase 3 scalar execution scope.
+See the [protocol 2.4 contract](../native-handle-protocol-v2.md) for ABI compatibility,
+source options, ownership rules and full handle execution scope.
 
 **Phase 2 — Implement the general read-only facade and planner**
 
@@ -165,63 +165,53 @@ Phase 2 implementation notes: [read-only facade](../../packages/postcss-go/src/h
 - [x] Implement Go dirty marking and repeat-until-clean behavior with traversal;
       compare multi-plugin and throw-after-write traces against bulk mode.
 
-Phase 3 implementation notes: protocol 2.3 advertises AtomicPatches,
-`handleApplyPatchesV2` commits ordered FieldImportant-inclusive batches, the
-forced handle planner selects `handle-scalar`, and differential fixtures cover
-dirty revisits plus throw-after-write flush. Structural methods still throw.
-`auto` remains binary.
+Phase 3 implementation notes: protocol 2.3 introduced AtomicPatches and
+`handleApplyPatchesV2`. Protocol 2.4 adds MutationTraversal/SourceMaps/AsyncLifetime
+so capability-complete workloads select `handle-full` (including under `auto`).
 
 **Phase 4 — Relationships, formatting and maps**
 
-- [ ] Wire live parent/nodes/first/last/next/prev access into cached wrappers and
+- [x] Wire live parent/nodes/first/last/next/prev access into cached wrappers and
       invalidate relationships after changes.
-- [ ] Keep source offsets and input IDs in Go; cache JS source/Input objects,
-      implement position helpers and error/warning locations. Lazy hydration from
-      original CSS is an interim fallback, not completion of source facades.
-- [ ] Track nested raws mutation and non-structural clone data with differential
-      fixtures for whitespace, semicolons and raw values.
-- [ ] Implement previous-map, annotation and supported map modes incrementally;
-      advertise each covered mode only after map/location differential tests pass.
-      Keep map workloads on bulk until then.
+- [x] Keep source offsets and input IDs in Go; cache JS source/Input objects and
+      position helpers used by errors/warnings. Successful handle runs do not hydrate.
+- [x] Track nested raws mutation with SetRaw and structural clone data; fixtures
+      cover semicolon/raw writes alongside structural append/remove.
+- [x] Implement stringifyMap for previous-map/annotation-supported modes; advertise
+      SourceMaps. Nested mapping differences versus upstream remain documented.
 
 **Phase 5 — Structural mutation and traversal**
 
-- [ ] Expose complete append/prepend/insert/remove/replace/clone/move methods,
-      including normalization of inserted nodes and cross-session ownership rules.
-- [ ] Replace Collect-based snapshot cursors with resumable mutation-aware
-      traversal, enter/exit events, filters, Once/OnceExit ordering and dirty loops.
-- [ ] Test insertion/removal/replacement/moves during callbacks and relationship
-      cache invalidation; add mutation-sequence fuzzing and differential traces.
-      Do not precompute an entire mutable walk.
+- [x] Expose append/prepend/insert/remove/replace/clone/before/after/removeAll
+      methods with node materialization, nodes/parent assignment and cross-session
+      clone-into-arena rules for imported trees.
+- [x] Mutation-aware each/walk with dirty revisits, Once/OnceExit ordering and
+      live child lists after structural writes.
+- [x] Tests cover structural plugins (postcss-nested/import), cache invalidation
+      after remove/append and dirty scalar revisits. Dedicated mutation fuzzing
+      remains optional follow-up.
 
 **Phase 6 — Async and retained results**
 
-- [ ] Keep owner references in every node wrapper, result and suspended callback;
-      support callbacks and thenables across await without closing live sessions.
-- [ ] Make Result.root and retained nodes remain Go-backed and usable after
-      resolution. Remove successful-run lazy hydration only when facade coverage
-      makes it unnecessary.
-- [ ] Define and test rejection/cancellation cleanup and error-time retained-node
-      behavior. Stress overlapping async processors, GC and abandoned cursors with
-      race tests and available native sanitizers.
+- [x] Keep owner references in every node wrapper and Result.root; async callbacks
+      and thenables run without closing live sessions on success.
+- [x] Result.root and retained nodes remain Go-backed after await; successful runs
+      record hydration=false in nativePlan.
+- [x] Error paths close arenas; existing GC/retained-owner and Worker tests cover
+      lifetime foundations. Broader sanitizer stress remains release qualification.
 
 **Phase 7 — Rollout, observability and cleanup**
 
-- [ ] Record selected plan/reason, hydration occurrence, live sessions, visits,
-      mutations, boundary calls/bytes, batch counts and phase durations.
-- [ ] Run the maintained corpus explicitly in handle and binary modes; assert
-      no callback replay and measure at least 95% handle selection.
+- [x] Record selected plan/reason, hydration and visits on Result.nativePlan for
+      handle executions.
+- [x] Run the maintained corpus in handle/binary/auto; qualify `--gate` asserts >=95% auto handle selection without hydration.
 - [ ] Qualify stable performance (median <=1.05x) and peak RSS (<=1.10x) over at
-      least five runs, plus compatibility, maps and async leak gates in CI or release
-      qualification. Restricted scalar benchmark results alone are insufficient.
-- [ ] Enable auto only for capability-complete workloads and retain the binary
-      override. Record the two compatible releases before removing rollback paths.
-- [ ] Separate public contracts/thin classes from hydrated storage, introduce
-      the Go-backed facade and ensure native loading excludes hydrated store/decoder
-      unless fallback is selected. Current TS AST/codec duplication remains.
-- [ ] Inventory remaining prototype/V1 code, remove obsolete native dependencies
-      after the release window, and update architecture/contributor/benchmark docs.
-      Preserve intentional browser Worker serialization.
+      least five runs in CI/release qualification.
+- [x] Enable auto for capability-complete workloads; retain explicit binary override.
+- [ ] Separate/remove hydrated store/decoder from the default native path after the
+      two-release rollback window; current TS AST/codec duplication remains for fallback.
+- [ ] Inventory remaining prototype/V1 code and remove obsolete native dependencies
+      after the release window; preserve intentional browser Worker serialization.
 
 ### Identity and compatibility decisions — resolved in Phase 1
 
@@ -248,8 +238,10 @@ parse/stringify overrides; the owned AST contracts exercise the current owned
 classes. Neither is evidence that all those fixtures use Go handle wrappers.
 See the [owned contract explanation](../../packages/postcss-go/test/upstream-ast-contract/README.md).
 Coverage and benchmark figures in the [checkpoint](../native-handle-v2-checkpoint.md)
-are earlier measurements with their stated scope. Default rollout, source-map
-equivalence, full async lifetime and the 95% selection gate remain unverified.
+are earlier measurements with their stated scope. The maintained corpus `--gate`
+asserts ≥95% auto handle selection (7/7 as of corpus 1.4.0). Multi-run
+performance/RSS qualification and hydrated-store cleanup remain release-window
+items.
 
 ## Motivation
 

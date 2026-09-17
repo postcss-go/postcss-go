@@ -1,6 +1,6 @@
 {
   "major": 2,
-  "minor": 3,
+  "minor": 4,
   "maxBatchSize": 4096,
   "capabilities": [
     {
@@ -42,19 +42,19 @@
     {
       "name": "MutationTraversal",
       "bit": 6,
-      "implemented": false,
+      "implemented": true,
       "required": false
     },
     {
       "name": "SourceMaps",
       "bit": 7,
-      "implemented": false,
+      "implemented": true,
       "required": false
     },
     {
       "name": "AsyncLifetime",
       "bit": 8,
-      "implemented": false,
+      "implemented": true,
       "required": false
     }
   ],
@@ -164,6 +164,70 @@
     {
       "name": "ApplyPatches",
       "id": 18
+    },
+    {
+      "name": "InsertBefore",
+      "id": 19
+    },
+    {
+      "name": "Remove",
+      "id": 20
+    },
+    {
+      "name": "Clone",
+      "id": 21
+    },
+    {
+      "name": "Prepend",
+      "id": 22
+    },
+    {
+      "name": "InsertAfter",
+      "id": 23
+    },
+    {
+      "name": "ReplaceWith",
+      "id": 24
+    },
+    {
+      "name": "NewRule",
+      "id": 25
+    },
+    {
+      "name": "NewAtRule",
+      "id": 26
+    },
+    {
+      "name": "NewComment",
+      "id": 27
+    },
+    {
+      "name": "SetRaw",
+      "id": 28
+    },
+    {
+      "name": "GetRaw",
+      "id": 29
+    },
+    {
+      "name": "StringifyMap",
+      "id": 30
+    },
+    {
+      "name": "Parent",
+      "id": 31
+    },
+    {
+      "name": "ChildCount",
+      "id": 32
+    },
+    {
+      "name": "ChildAt",
+      "id": 33
+    },
+    {
+      "name": "RefreshSnapshot",
+      "id": 34
     }
   ],
   "nodeKinds": [

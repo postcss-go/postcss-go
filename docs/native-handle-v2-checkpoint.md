@@ -1,11 +1,12 @@
 # Native handle migration checkpoint
 
-Current Phase 3 implementation and validation are described in the
-[protocol 2.3 contract](native-handle-protocol-v2.md) and
-[migration status](specs/go-owned-ast-handle-migration.md). Forced `handle` now
-uses the Go-backed facade with scalar mutation; retained Result.root no longer
-hydrates a second AST. Structural writes, maps and async retention remain later
-phases. The earlier scalar-only prototype measurements below are historical.
+Current Phases 4–7 implementation and validation are described in the
+[protocol 2.4 contract](native-handle-protocol-v2.md) and
+[migration status](specs/go-owned-ast-handle-migration.md). Forced `handle` and
+capability-complete `auto` use the Go-backed facade with structural mutation,
+maps and async retention; successful runs record `hydration: false`. Exact nested
+source-map mappings versus upstream remain a documented compatibility difference.
+The earlier scalar-only prototype measurements below are historical.
 
 ## Phase 2 verification (2026-09-10)
 
@@ -13,10 +14,10 @@ The general read-only facade, capability-based planner and batch snapshots are
 implemented. Source/raws wrapping is lazy and uses a shared session cache.
 Tests cover exact enumeration order, Document dispatch, original source identity,
 parse/plugin errors, nested reflection writes, retained-wrapper GC and Workers.
-Current verification totals are recorded in the migration specification after
-final checks. `auto` remains binary. Mutation, async and source maps still require
-later phases; the frozen mutation corpus is intentionally 0/7 in forced read-only
-mode. See the protocol contract for the updated read-only benchmark scope.
+Later phases added structural mutation, maps, async retention and auto
+`handle-full` selection; the maintained corpus is now expected to pass under
+forced handle and capability-complete auto. See the protocol contract and
+migration status for current scope.
 
 ## Historical September 7 checkpoint
 
@@ -127,10 +128,10 @@ The following distinguishes implemented foundations from phase exit criteria:
 | 1     | Protocol 2.1 contract, structured errors, source options and bounded IDs implemented | Protocol enums and capability bits are generated; patch/event execution and general facade capabilities remain gated for later phases.                                                                      |
 | 2     | Not complete                                                                         | Runtime supplies restricted declaration stubs, not identity-cached standard node facades, Once, all visitors or source reads.                                                                               |
 | 3     | Partial                                                                              | Go scalar field batches exist; JS supports only prop/value. Important, general scalar visitors, callback-level ordered multi-field patches, throw-time mutation retention and dirty revisits remain absent. |
-| 4     | Not complete                                                                         | Relationships, tracked raws, source facades and handle source maps remain unavailable.                                                                                                                      |
-| 5     | Not complete                                                                         | Snapshot cursors are not mutation-aware traversal; general structural plugin methods remain unavailable.                                                                                                    |
-| 6     | Partial foundation                                                                   | Native owner GC exists, but async visitors are rejected and Result.root materializes a hydrated AST.                                                                                                        |
-| 7     | Not complete                                                                         | Auto still selects binary; 95% corpus selection and native hydrated-store removal have not been achieved.                                                                                                   |
+| 4     | Complete for advertised modes                                                        | Live relationships/raws and stringifyMap; nested-map mapping difference documented.                                                                                                                         |
+| 5     | Complete for facade methods                                                          | Structural mutation methods and mutation-aware each/dirty revisits are available.                                                                                                                           |
+| 6     | Complete for retained results                                                        | Async callbacks retain Go-backed Result.root; owner/finalizer lifetime remains.                                                                                                                             |
+| 7     | Auto + 95% corpus gate implemented                                                   | Perf/RSS multi-run gates and hydrated-store removal wait on the release window.                                                                                                                             |
 | 8     | Deferred, optional                                                                   | Browser serialization remains intentional.                                                                                                                                                                  |
 
 Audit fixes: malformed or throwing protocol handshakes now reject handle

@@ -222,7 +222,7 @@ async function runPluginsWithBridgeBody(
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
   if (service.capabilities?.backend !== 'wasm-worker') {
-    const handled = tryHandleResult(service, normalized, css, options, processor);
+    const handled = await tryHandleResultAsync(service, normalized, css, options, processor);
     if (handled) return handled;
   }
   const parsed = liveService
@@ -290,7 +290,7 @@ function hasLiveAsyncPluginBridge(
   );
 }
 
-/** The explicit handle contract is synchronous; callbacks are never replayed. */
+/** Forced/auto handle execution; callbacks are never replayed onto the binary AST. */
 function tryHandleResult(
   service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
   plugins: ActivePlugin[],
@@ -298,6 +298,41 @@ function tryHandleResult(
   options: ProcessFileOptions,
   processor?: ResultProcessorFacade,
 ): PluginResult | undefined {
+  const opened = openHandleSession(service, plugins, css, options);
+  if (!opened) return undefined;
+  const { owner, plan } = opened;
+  try {
+    return executeHandleSync(owner, plan, plugins, css, options, processor, service);
+  } catch (error) {
+    owner.session.close();
+    throw error;
+  }
+}
+
+async function tryHandleResultAsync(
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor?: ResultProcessorFacade,
+): Promise<PluginResult | undefined> {
+  const opened = openHandleSession(service, plugins, css, options);
+  if (!opened) return undefined;
+  const { owner, plan } = opened;
+  try {
+    return await executeHandleAsync(owner, plan, plugins, css, options, processor, service);
+  } catch (error) {
+    owner.session.close();
+    throw error;
+  }
+}
+
+function openHandleSession(
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+): { owner: SessionOwner; plan: ReturnType<typeof planHandleExecution> } | undefined {
   const mode =
     typeof process === 'undefined' ? 'auto' : (process.env.POSTCSS_GO_NATIVE_AST ?? 'auto');
   const plan = planHandleExecution(
@@ -308,121 +343,310 @@ function tryHandleResult(
   );
   if (plan.runtime === 'binary') return undefined;
   if (plan.runtime === 'unsupported') throw new HandleDeclarationUnsupportedError(plan.reason);
-  const mutableScalars = plan.runtime === 'handle-scalar';
-  let owner: SessionOwner;
+  const mutableStructure = plan.runtime === 'handle-full';
+  const mutableScalars = plan.runtime === 'handle-scalar' || mutableStructure;
   try {
-    owner = new SessionOwner(service.handleAddon!, css, {
+    const owner = new SessionOwner(service.handleAddon!, css, {
       from: options.from,
       document: options.document == null ? undefined : String(options.document),
       mutableScalars,
+      mutableStructure,
     });
+    owner.diagnostics.planReason = plan.reason;
+    owner.diagnostics.hydration = false;
+    owner.diagnostics.runtime = plan.runtime;
+    return { owner, plan };
   } catch (error) {
-    // The V2 ABI carries status/message only. Reuse structured parser diagnostics
-    // for invalid input before any callback; successful runs never hydrate an AST.
     if ((error as { status?: number })?.status === HANDLE_STATUS_PARSE && service.parseSync) {
       service.parseSync(css, { from: options.from });
     }
     throw error;
   }
-  try {
-    const root = owner.root;
-    const result = createResult(root, options, plugins, processor);
-    // A handle execution must not silently ignore replacement through Result.
-    Object.defineProperty(result, 'root', {
-      enumerable: true,
-      configurable: false,
-      get: () => root,
-      set: () => {
-        throw new HandleDeclarationUnsupportedError('result.root');
-      },
+}
+
+function attachHandleDiagnostics(
+  result: PluginResult,
+  plan: ReturnType<typeof planHandleExecution>,
+  owner: SessionOwner,
+): void {
+  Object.defineProperty(result, 'nativePlan', {
+    enumerable: false,
+    configurable: true,
+    value: {
+      runtime: plan.runtime,
+      reason: owner.diagnostics.planReason,
+      hydration: owner.diagnostics.hydration,
+      visits: owner.diagnostics.visits,
+    },
+  });
+}
+
+function stringifyHandleResult(
+  owner: SessionOwner,
+  root: ProcessRoot,
+  css: string,
+  options: ProcessFileOptions,
+  result: PluginResult,
+): void {
+  fillDependencyParents(result);
+  const wantsMap = Boolean(options.map) || hasPreviousMap(css, options as ProcessOptions);
+  if (wantsMap) {
+    const prepared = prepareStringifyOptions(root, options as ProcessOptions);
+    const mapOpts =
+      prepared.map && typeof prepared.map === 'object' ? prepared.map : { inline: false };
+    const mapped = owner.session.stringifyMap(owner.session.rootHandle, {
+      from: options.from,
+      to: options.to,
+      absolute: Boolean(mapOpts.absolute),
+      preserveAnnotation: mapOpts.annotation !== false,
     });
-    result.backend = service.capabilities?.backend;
-    const active = plugins.map((plugin) => {
-      if (typeof plugin === 'function') return plugin;
-      const prepared = preparePluginSync(plugin, result);
-      return prepared ? { ...plugin, ...prepared } : plugin;
-    });
-    const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
-    const listeners = prepareVisitors(active);
-    const runWithFlush = (
-      plugin: RuntimePlugin,
-      listener: Listener | undefined,
-      node: Node,
-      extensionPoint: string,
-      proxy = true,
-    ): void => {
-      if (!listener) return;
-      helpers.result.lastPlugin = plugin;
-      try {
-        const returned = listener(proxy ? node.toProxy() : node, helpers);
-        assertSynchronous(returned, extensionPoint, plugin);
-        owner.flushPatches();
-      } catch (error) {
-        // Match PostCSS-visible mutations: flush recorded writes before propagating.
-        try {
-          owner.flushPatches();
-        } catch {
-          // Prefer the original callback error.
-        }
-        if (error && typeof error === 'object') {
-          node.addToError(error as Error);
-          attachPluginToError(error, plugin, helpers.result.processor);
-        }
-        throw error;
-      }
-    };
-    for (const plugin of active) {
-      result.lastPlugin = plugin;
-      try {
-        if (typeof plugin === 'function') {
-          const returned = plugin(asProcessRoot(result.root), result);
-          assertSynchronous(returned, 'plugin', plugin);
-          owner.flushPatches();
-          continue;
-        }
-        if (root instanceof Document) {
-          for (const child of root.nodes) runWithFlush(plugin, plugin.Once, child, 'Once', false);
-        } else {
-          runWithFlush(plugin, plugin.Once, root, 'Once', false);
-        }
-      } catch (error) {
-        attachPluginToError(error, plugin, result.processor);
-        throw error;
-      }
-    }
-    // Snapshot traversal plus dirty revisits for scalar mutations.
-    const visit = (node: Node): void => {
-      owner.markClean(node);
-      for (const event of getEvents(node)) {
-        if (event === CHILDREN) {
-          for (const child of (node as Container).nodes ?? []) visit(child);
-        } else {
-          for (const [plugin, listener] of listeners[event] ?? [])
-            runWithFlush(plugin, listener, node, event);
-        }
-      }
-    };
-    let current = root;
-    while (!current.isClean) {
-      visit(current);
-      current = owner.root;
-    }
-    for (const plugin of active) {
-      if (typeof plugin === 'function') continue;
-      if (root instanceof Document) {
-        for (const child of root.nodes)
-          runWithFlush(plugin, plugin.OnceExit, child, 'OnceExit', false);
-      } else {
-        runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
-      }
-    }
-    fillDependencyParents(result);
+    result.css = mapped.css;
+    result.map = hydrateResultMap(mapped.map || undefined);
+  } else {
     result.css = owner.session.stringify();
-    return result;
-  } catch (error) {
-    owner.session.close();
-    throw error;
   }
+}
+
+function executeHandleSync(
+  owner: SessionOwner,
+  plan: ReturnType<typeof planHandleExecution>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor: ResultProcessorFacade | undefined,
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+): PluginResult {
+  const root = owner.root;
+  const result = createResult(root, options, plugins, processor);
+  Object.defineProperty(result, 'root', {
+    enumerable: true,
+    configurable: false,
+    get: () => root,
+    set: () => {
+      throw new HandleDeclarationUnsupportedError('result.root');
+    },
+  });
+  result.backend = service.capabilities?.backend;
+  const active = plugins.map((plugin) => {
+    if (typeof plugin === 'function') return plugin;
+    const prepared = preparePluginSync(plugin, result);
+    return prepared ? { ...plugin, ...prepared } : plugin;
+  });
+  const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
+  const listeners = prepareVisitors(active);
+  const runWithFlush = (
+    plugin: RuntimePlugin,
+    listener: Listener | undefined,
+    node: Node,
+    extensionPoint: string,
+    proxy = true,
+  ): void => {
+    if (!listener) return;
+    helpers.result.lastPlugin = plugin;
+    owner.diagnostics.visits += 1;
+    try {
+      const returned = listener(proxy ? node.toProxy() : node, helpers);
+      assertSynchronous(returned, extensionPoint, plugin);
+      owner.flushPatches();
+    } catch (error) {
+      try {
+        owner.flushPatches();
+      } catch {
+        // Prefer the original callback error.
+      }
+      if (error && typeof error === 'object') {
+        node.addToError(error as Error);
+        attachPluginToError(error, plugin, helpers.result.processor);
+      }
+      throw error;
+    }
+  };
+  for (const plugin of active) {
+    result.lastPlugin = plugin;
+    try {
+      if (typeof plugin === 'function') {
+        const returned = plugin(asProcessRoot(result.root), result);
+        assertSynchronous(returned, 'plugin', plugin);
+        owner.flushPatches();
+        continue;
+      }
+      if (root instanceof Document) {
+        for (const child of root.nodes ?? [])
+          runWithFlush(plugin, plugin.Once, child, 'Once', false);
+      } else {
+        runWithFlush(plugin, plugin.Once, root, 'Once', false);
+      }
+    } catch (error) {
+      attachPluginToError(error, plugin, result.processor);
+      throw error;
+    }
+  }
+  const visit = (node: Node): void => {
+    if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+    owner.markClean(node);
+    for (const event of getEvents(node)) {
+      if (event === CHILDREN) {
+        if (node instanceof Container && node.nodes?.length) {
+          node.markClean();
+          let index = 0;
+          while (index < node.nodes.length) {
+            const child = node.nodes[index];
+            if (!child.isClean) {
+              child.markClean();
+              visit(child);
+            }
+            const currentIndex = node.nodes.indexOf(child);
+            index = currentIndex === -1 ? index : currentIndex + 1;
+          }
+        }
+        continue;
+      }
+      for (const [plugin, listener] of listeners[event] ?? []) {
+        runWithFlush(plugin, listener, node, event);
+        if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+      }
+    }
+  };
+  let current = root;
+  while (!current.isClean) {
+    visit(current);
+    current = owner.root;
+  }
+  for (const plugin of active) {
+    if (typeof plugin === 'function') continue;
+    if (root instanceof Document) {
+      for (const child of root.nodes ?? [])
+        runWithFlush(plugin, plugin.OnceExit, child, 'OnceExit', false);
+    } else {
+      runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
+    }
+  }
+  stringifyHandleResult(owner, root, css, options, result);
+  attachHandleDiagnostics(result, plan, owner);
+  return result;
+}
+
+async function executeHandleAsync(
+  owner: SessionOwner,
+  plan: ReturnType<typeof planHandleExecution>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor: ResultProcessorFacade | undefined,
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+): Promise<PluginResult> {
+  const root = owner.root;
+  const result = createResult(root, options, plugins, processor);
+  Object.defineProperty(result, 'root', {
+    enumerable: true,
+    configurable: false,
+    get: () => root,
+    set: () => {
+      throw new HandleDeclarationUnsupportedError('result.root');
+    },
+  });
+  result.backend = service.capabilities?.backend;
+  const active: ActivePlugin[] = [];
+  for (const plugin of plugins) {
+    if (typeof plugin === 'function') {
+      active.push(plugin);
+      continue;
+    }
+    const prepared = await preparePlugin(plugin, result);
+    active.push(prepared ? { ...plugin, ...prepared } : plugin);
+  }
+  const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
+  const listeners = prepareVisitors(active);
+  const runWithFlush = async (
+    plugin: RuntimePlugin,
+    listener: Listener | undefined,
+    node: Node,
+    _extensionPoint: string,
+    proxy = true,
+  ): Promise<void> => {
+    if (!listener) return;
+    helpers.result.lastPlugin = plugin;
+    owner.diagnostics.visits += 1;
+    try {
+      const returned = listener(proxy ? node.toProxy() : node, helpers);
+      if (isThenable(returned)) await returned;
+      owner.flushPatches();
+    } catch (error) {
+      try {
+        owner.flushPatches();
+      } catch {
+        // Prefer the original callback error.
+      }
+      if (error && typeof error === 'object') {
+        node.addToError(error as Error);
+        attachPluginToError(error, plugin, helpers.result.processor);
+      }
+      throw error;
+    }
+  };
+  for (const plugin of active) {
+    result.lastPlugin = plugin;
+    try {
+      if (typeof plugin === 'function') {
+        const returned = plugin(asProcessRoot(result.root), result);
+        if (isThenable(returned)) await returned;
+        owner.flushPatches();
+        continue;
+      }
+      if (root instanceof Document) {
+        for (const child of root.nodes ?? [])
+          await runWithFlush(plugin, plugin.Once, child, 'Once', false);
+      } else {
+        await runWithFlush(plugin, plugin.Once, root, 'Once', false);
+      }
+    } catch (error) {
+      attachPluginToError(error, plugin, result.processor);
+      throw error;
+    }
+  }
+  const visit = async (node: Node): Promise<void> => {
+    if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+    owner.markClean(node);
+    for (const event of getEvents(node)) {
+      if (event === CHILDREN) {
+        if (node instanceof Container && node.nodes?.length) {
+          node.markClean();
+          let index = 0;
+          while (index < node.nodes.length) {
+            const child = node.nodes[index];
+            if (!child.isClean) {
+              child.markClean();
+              await visit(child);
+            }
+            const currentIndex = node.nodes.indexOf(child);
+            index = currentIndex === -1 ? index : currentIndex + 1;
+          }
+        }
+        continue;
+      }
+      for (const [plugin, listener] of listeners[event] ?? []) {
+        await runWithFlush(plugin, listener, node, event);
+        if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+      }
+    }
+  };
+  let current = root;
+  while (!current.isClean) {
+    await visit(current);
+    current = owner.root;
+  }
+  for (const plugin of active) {
+    if (typeof plugin === 'function') continue;
+    if (root instanceof Document) {
+      for (const child of root.nodes ?? [])
+        await runWithFlush(plugin, plugin.OnceExit, child, 'OnceExit', false);
+    } else {
+      await runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
+    }
+  }
+  stringifyHandleResult(owner, root, css, options, result);
+  attachHandleDiagnostics(result, plan, owner);
+  return result;
 }
 
 /**
