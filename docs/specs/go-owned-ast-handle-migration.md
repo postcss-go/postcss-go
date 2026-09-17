@@ -19,10 +19,12 @@ The browser Worker path will continue using a serializable AST during the initia
 
 ## Implementation status — audited 2026-09-17
 
-This section records the working tree after Phases 4–7 native handle completion.
-It is not a public release claim. Phase 8 remains deferred. Long-term cleanup of
-hydrated TypeScript AST storage and the two-release rollback window remain open
-operational items after the capability rollout.
+This section records the working tree after Phases 4–7 native handle completion
+and Phase 7 soft cleanup (V1 inventory retirement + codec module soft-gate).
+It is not a public release claim. Phase 8 remains deferred. Hard deletion of
+hydrated TypeScript AST/codec from the native fallback path waits on the
+two-release rollback window that starts with the next public release that ships
+handle-default auto selection.
 
 **Native handle path is capability-complete for the maintained corpus.** Protocol
 2.4 advertises MutationTraversal, SourceMaps and AsyncLifetime. Forced `handle`
@@ -40,7 +42,7 @@ compatibility difference versus bulk.
 | 4 — Relationships/source/raws | Complete for advertised modes      | Live parent/nodes/raws; handle stringifyMap; nested-map mapping difference documented     |
 | 5 — Structural traversal      | Complete for facade methods        | append/prepend/insert/remove/replace/clone plus mutation-aware each/dirty revisits        |
 | 6 — Async/lifetime            | Complete for retained results      | Async callbacks keep Go-backed Result.root; owner/finalizer retention                     |
-| 7 — Default rollout/cleanup   | Auto + 95% corpus gate implemented | Multi-run perf/RSS qualification and hydrated-store removal wait on release window        |
+| 7 — Default rollout/cleanup   | Soft cleanup done; auto + 95% gate | Multi-run perf/RSS qualification; hard hydrated-store removal after two releases          |
 | 8 — Browser experiment        | Deferred and optional              | Not required for native completion                                                        |
 
 ### Completed and verified foundations
@@ -84,8 +86,8 @@ Implementation evidence:
 [C ABI](../../internal/nativeaddon/cabi/handles.go),
 [Node addon](../../packages/postcss-go/native/addon.c),
 [TS session](../../packages/postcss-go/src/handle-session.ts),
-[restricted callbacks](../../packages/postcss-go/src/handle-plugin-runtime.ts),
-[selection/scalar visitor execution](../../packages/postcss-go/src/plugin-runtime.ts),
+[handle facade](../../packages/postcss-go/src/handle-facade.ts),
+[selection/visitor execution](../../packages/postcss-go/src/plugin-runtime.ts),
 [CI](../../.github/workflows/ci.yml).
 
 ### Remaining updates by phase
@@ -209,9 +211,14 @@ so capability-complete workloads select `handle-full` (including under `auto`).
       least five runs in CI/release qualification.
 - [x] Enable auto for capability-complete workloads; retain explicit binary override.
 - [ ] Separate/remove hydrated store/decoder from the default native path after the
-      two-release rollback window; current TS AST/codec duplication remains for fallback.
-- [ ] Inventory remaining prototype/V1 code and remove obsolete native dependencies
-      after the release window; preserve intentional browser Worker serialization.
+      two-release rollback window. Soft-gate is in place: binary codec helpers live
+      in [`native-codec.ts`](../../packages/postcss-go/src/native-codec.ts); the
+      handle facade does not import codec. Current TS AST/codec duplication remains
+      for binary fallback until the window closes.
+- [x] Inventory remaining prototype/V1 code and remove obsolete native dependencies
+      outside the release window: deleted `benchmark/boundary` V1 prototypes,
+      retired `handle-plugin-runtime.ts`, and dropped `pnpm bench:boundary`. Preserve
+      intentional browser Worker serialization.
 
 ### Identity and compatibility decisions — resolved in Phase 1
 
@@ -221,8 +228,9 @@ so capability-complete workloads select `handle-full` (including under `auto`).
   nodes retain identity and can be reinserted. The Phase 2 facade must enforce
   ownership when converting wrapper arguments into session-local numeric IDs.
 - Production JS exposes V2 methods; current C calls use V2_1 symbols. Original
-  V2.0 C signatures remain as rollback adapters. Unversioned V1 is limited to
-  boundary benchmark prototypes, scheduled for Phase 7 cleanup.
+  V2.0 C signatures remain as rollback adapters. Unversioned V1 prototypes under
+  `benchmark/boundary/` and the restricted declaration runtime were removed in
+  Phase 7 cleanup.
 
 ### Verification evidence and limits
 
@@ -240,8 +248,10 @@ See the [owned contract explanation](../../packages/postcss-go/test/upstream-ast
 Coverage and benchmark figures in the [checkpoint](../native-handle-v2-checkpoint.md)
 are earlier measurements with their stated scope. The maintained corpus `--gate`
 asserts ≥95% auto handle selection (7/7 as of corpus 1.4.0). Multi-run
-performance/RSS qualification and hydrated-store cleanup remain release-window
-items.
+performance/RSS qualification and hard hydrated-store removal remain
+release-window items. Phase 7 soft cleanup (V1 inventory + codec module boundary)
+is complete. Working-tree runtime lines after soft cleanup
+(`scripts/count-runtime-lines.mjs`): TypeScript 11807, Go 10970.
 
 ## Motivation
 
@@ -552,7 +562,8 @@ Deliverables:
 - Replace the global native session with the session registry.
 - Implement non-reused session-scoped node IDs and cursor IDs.
 - Add lifecycle, stale-ID, cross-session, concurrent-session, and close-idempotency tests.
-- Retain V2.0 C signature adapters through the rollback window; isolate existing V1 benchmark prototypes until Phase 7 cleanup.
+- Retain V2.0 C signature adapters through the rollback window. V1 benchmark
+  prototypes and the restricted declaration runtime were removed in Phase 7.
 
 Exit criteria:
 
@@ -667,7 +678,9 @@ Deliverables:
 
 - Enable V2 handle mode by default for capability-complete workloads.
 - Keep a documented environment override for emergency rollback during the rollout window.
-- Remove V1 and native-path dependencies on hydrated AST/codec code after two compatible releases.
+- Soft-gate binary codec behind `native-codec.ts`; remove V1 prototypes and the
+  restricted declaration runtime. Hard-delete hydrated AST/codec from the native
+  fallback path only after two compatible releases.
 - Update architecture, benchmark, and contributor documentation.
 
 Exit criteria:
@@ -740,7 +753,7 @@ Commands may be wrapped by package scripts, but CI must cover the equivalent of:
 pnpm check:all
 pnpm --filter @postcss-go/core test
 pnpm test:upstream:go
-pnpm bench:boundary
+pnpm bench:handles
 go test -race ./internal/asthandle ./internal/nativebridge
 go test ./...
 ```

@@ -338,6 +338,30 @@ test('postcss-go browser entry exports BrowserPostcssGoService and createBrowser
   expect(browserApi).not.toHaveProperty('PostcssGoService');
 });
 
+test('built wasm entry does not pull the native binary codec', () => {
+  const wasmJs = resolve(packageRoot, 'dist/wasm.js');
+  const wasmBrowser = resolve(packageRoot, 'dist/wasm/browser.js');
+  expect(existsSync(wasmJs)).toBe(true);
+  expect(existsSync(wasmBrowser)).toBe(true);
+  for (const file of [wasmJs, wasmBrowser]) {
+    const source = readFileSync(file, 'utf8');
+    expect(source).not.toMatch(/native-codec/);
+    expect(source).not.toMatch(/from ["']\.\/codec\.js["']/);
+    expect(source).not.toMatch(/hydrateAst/);
+  }
+});
+
+test('native binary codec is soft-gated behind native-codec.js', () => {
+  const nativeJs = resolve(packageRoot, 'dist/native.js');
+  const codecBridge = resolve(packageRoot, 'dist/native-codec.js');
+  expect(existsSync(nativeJs)).toBe(true);
+  expect(existsSync(codecBridge)).toBe(true);
+  const nativeSource = readFileSync(nativeJs, 'utf8');
+  expect(nativeSource).toMatch(/native-codec\.js/);
+  expect(nativeSource).not.toMatch(/from ["']\.\/codec\.js["']/);
+  expect(readFileSync(codecBridge, 'utf8')).toMatch(/from ["']\.\/codec\.js["']/);
+});
+
 test('postcss-go wasm entry re-exports the browser API and declares asset subpaths', async () => {
   const wasmApi = await import('../src/wasm/index.ts');
   expect(wasmApi).toHaveProperty('createBrowserProcessor');

@@ -1,14 +1,16 @@
 # Benchmarks
 
 All benchmark runners, implementations, fixtures, and support code live in
-`benchmark/`. There are two independent suites:
+`benchmark/`. The engine-comparison suite answers how fast the Go engine is
+compared with upstream PostCSS on equivalent PostCSS-shaped workloads.
 
-| Suite                                   | Question it answers                                               |
-| --------------------------------------- | ----------------------------------------------------------------- |
-| [Engine comparison](#engine-comparison) | How fast is the Go engine compared with upstream PostCSS?         |
-| [Boundary cost](#boundary-cost)         | Where does time go when an AST crosses between Go and JavaScript? |
+| Suite                                   | Question it answers                                       |
+| --------------------------------------- | --------------------------------------------------------- |
+| [Engine comparison](#engine-comparison) | How fast is the Go engine compared with upstream PostCSS? |
 
-Both share the fixtures in `benchmark/fixtures/`.
+Historical V1 boundary-cost prototypes under `benchmark/boundary/` were removed
+in Phase 7 cleanup. Production qualification uses `pnpm bench:handles`,
+`benchmark/qualification-metrics.mjs`, and the maintained native corpus instead.
 
 ## Engine comparison
 
@@ -42,7 +44,7 @@ Deterministic CSS with a fixed number of rules:
 | Medium | 1,000  |
 | Large  | 10,000 |
 
-The generator lives in `benchmark/fixtures.go` and is mirrored in `benchmark/postcss.bench.mjs` and `benchmark/boundary/lib/fixtures.mjs`.
+The generator lives in `benchmark/fixtures.go` and is mirrored in `benchmark/postcss.bench.mjs`.
 
 #### Real-world CSS fixtures
 
@@ -168,7 +170,7 @@ Authentication uses
 stored in the repository.
 
 Only the Go engine suite is tracked in CI. The cross-engine comparison table
-(`pnpm bench`) and the boundary suite stay local / opt-in.
+(`pnpm bench`) stays local / opt-in.
 
 To reproduce a CodSpeed run locally:
 
@@ -211,94 +213,6 @@ record a fresh baseline. Otherwise, run the affected benchmarks on one machine
 with `-count=6` and compare with
 [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat) before
 concluding.
-
-## Boundary cost
-
-Lives in `benchmark/boundary/`. Production plugin runs use one Go↔JS boundary:
-
-1. **Native async + binary codec (default and required)** — `packages/postcss-go/native` links Go into a Node-API addon. Most targets embed a c-archive. Companion-library targets keep the same private ABI while loading Go beside the addon; Windows ARM64 needs this because MSVC cannot consume Go's clang-produced GNU archive. Promise operations run through `napi_async_work`, while explicit `*Sync` APIs use the synchronous exports. Parse returns a compact binary AST (`internal/codec`); after plugins run, binary encoding feeds stringify. A missing compatible async addon is reported instead of silently changing transports.
-
-The boundary benchmark suite compares this with a synthetic JSON DTO baseline,
-without retaining a production stdio transport, so the serialization design can
-be argued from measurements instead of intuition.
-
-It also prices a single **synchronous** crossing, by building two things that do not otherwise exist in the repo:
-
-- a Node-API addon — Go compiled with `-buildmode=c-archive`, linked into a `.node` through a thin C shim
-- a wasip1 reactor module — Go compiled with `//go:wasmexport` and `-buildmode=c-shared`, callable synchronously from Node
-
-Both spike artifacts under `benchmark/boundary/` are gated by build tags (`boundary_napi`
-for the NAPI c-archive, `wasip1` for the WASM reactor) so their cgo and WASM code
-never reaches default `go build ./...` or CI. Build them via `pnpm bench:boundary`
-or the commands in `benchmark/run-boundary.mjs`. The production native path lives
-in `internal/nativeaddon`, `internal/nativebridge`, and `packages/postcss-go/native`.
-
-### The two halves
-
-The suite measures opposite sides of the same boundary. The runner executes
-both halves by default so a single command produces the full picture:
-
-```bash
-pnpm bench:boundary
-```
-
-Use `node benchmark/run-boundary.mjs --js-only` or `--go-only` when working on
-one half. The JavaScript half builds the addon and the WASM module, then runs
-five parts:
-
-| Part | Script             | Measures                                                                                                                    |
-| ---- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| A    | `01-hydration.mjs` | `JSON.parse` / `JSON.stringify`, `fromAst`, `toAst`, and DTO payload sizes                                                  |
-| B    | `02-napi.mjs`      | NAPI dispatch, the cgo transition, string reads/writes, batching                                                            |
-| C    | `03-wasm.mjs`      | The same operations over WASM, plus direct linear-memory reads                                                              |
-| D    | `04-verdict.mjs`   | Combines A–C to project a handle-based AST against the current design                                                       |
-| E    | `05-plugins.mjs`   | Measured 1/3/5/10/30-plugin pipelines on binary, JSON DTO, native handles, cached handles, batched/cursor handles, and WASM |
-
-The Go half covers `ToDTO`, `json.Marshal`, `json.Unmarshal`, and `FromDTO`,
-each against a compact binary encoding of the same tree (`binary.go`). Because
-`-bench=.` also runs tests, `TestBinaryCodec` executes too — it asserts the
-codec round-trips every fixture and prints JSON vs binary payload sizes.
-
-Prerequisites differ:
-
-- The default `pnpm bench:boundary` run needs `packages/postcss-go/dist` and
-  the native addon built (`pnpm build`), a working cgo toolchain, and network
-  access the first time `node-gyp` fetches Node headers.
-- `node benchmark/run-boundary.mjs --go-only` needs only the Go toolchain.
-
-### Reading the output
-
-- **Part A vs the Go numbers.** The two halves are reported per fixture using the same manifest IDs, so a stage-by-stage total is the sum of both runs.
-- **Part D's break-even.** A handle-based AST replaces bulk serialization with many small crossings, so it only wins when one crossing costs less than the per-call break-even Part A reports. Part D repeats the comparison at several plugin counts, because the current design pays once per file while a handle model pays once per pass.
-- **Part E's measured pipelines.** Part D is a projection. Part E runs the same declaration visitors on real CSS through the production binary path, a synthetic JSON DTO, native handles (raw, cached, batched+cursor), and WASM handles. Cached native handles beat bulk binary transfer on that visitor shape; production Node N-API now also provides the Phase 2 read-only facade (see [the protocol contract](native-handle-protocol-v2.md)); these historical declaration measurements do not characterize that broader facade while the WASM Worker path still needs a serializable tree. The Go handle ABI is `internal/asthandle`.
-- **Go banners.** The Go half prints a short `before` / `after` (or metric)
-  banner immediately above each result group, so the raw `go test -bench`
-  lines can be scanned without memorizing stage names. `GoWire` groups JSON
-  (before) against binary (after); `ParseScaling` groups newline-separated
-  (before) against single-line (after).
-- **`BenchmarkParseScaling`.** Feeds identical rules with and without newlines. `ns/op` should roughly double as the rule count doubles; where it quadruples instead, parsing is quadratic in input size.
-- **`BenchmarkParseThroughput`.** `MB/s` across fixtures. Large gaps between formatted and minified stylesheets of similar size point at newline-sensitive work rather than at raw volume.
-
-To profile the parser:
-
-```bash
-go test ./benchmark/boundary/ -run XXX \
-  -bench 'BenchmarkParseScaling/single-line/4000' -cpuprofile /tmp/parse.prof
-go tool pprof -top -nodecount=15 /tmp/parse.prof
-```
-
-### Fixtures
-
-The boundary suite uses `ModernNormalize`, `TailwindPreflight`, `AnimateMin`, and `Bootstrap`, plus a generated 10,000-rule stylesheet. `BootstrapMin` is left out to keep runs short. The Go half resolves fixtures through `benchmark.RealWorldFixtureByID`; the JavaScript half reads the same manifest, so both sides stay on one source of truth.
-
-### Caveats
-
-- Parts A–C and E are measured. **Part D is a projection**: it multiplies measured per-crossing costs by counted operations rather than running a real handle-based AST, so treat it as a sizing estimate.
-- Part D's operation counts come from a modelled "typical plugin" walk, not from a real plugin such as autoprefixer.
-- Part E uses declaration visitors (read/write `prop`/`value`) at 1/3/5/10/30 plugins. It skips `Generated10k` to keep the run short. It is not a full PostCSS plugin-runtime or `raws`/custom-node contract.
-- The binary encoder covers only the `raws` keys on the stringifier's hot path, so its payload sizes are a lower bound.
-- Build artifacts (`napi/go-out/`, `napi/build/`, `wasm/core.wasm`, `results/`)
-  are gitignored and regenerated by `benchmark/run-boundary.mjs`.
 
 ## Notes
 

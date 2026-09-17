@@ -9,7 +9,6 @@ import {
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
 import { Node, asProcessRoot, fromAst, setSyncCssRuntime, type Builder, type Root } from './ast.js';
-import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
 import {
   AsyncBackendUnavailableError,
   AsyncPluginError,
@@ -21,6 +20,7 @@ import {
 } from './errors.js';
 import { attachInputMetadata } from './input.js';
 import { currentModulePath } from './module-path.js';
+import * as binaryCodec from './native-codec.js';
 import {
   NATIVE_BACKEND_CAPABILITIES,
   type PostcssGoService,
@@ -33,7 +33,6 @@ import type {
   ParseResult,
   ProcessOptions,
   ProcessResult,
-  ResultMessage,
 } from './types.js';
 import { prepareStringifyOptions } from './source-map-output.js';
 import { hasNativeHandleBridge, type NativeHandleAddon } from './handle-session.js';
@@ -52,8 +51,6 @@ type NativeAddon = {
 
 export type LiveParseResult = { root: Root };
 
-const PROCESS_FRAME_MAGIC = 'PCGP';
-const PROCESS_FRAME_HEADER_SIZE = 8;
 const CSS_SYNTAX_ERROR_PREFIX = 'postcss-go:css-syntax:';
 
 let cachedAddon: NativeAddon | null | undefined;
@@ -116,31 +113,6 @@ function loadAddon(): NativeAddon | null {
     cachedAddon = null;
     return null;
   }
-}
-
-function encodeBoundaryAst(ast: AstNode | Node): Buffer {
-  return ast instanceof Node ? serializeAst(ast) : encodeAst(ast);
-}
-
-function indexLiveNodes(node: Node): Node[] {
-  const nodes: Node[] = [];
-  const visit = (current: Node): void => {
-    nodes.push(current);
-    for (const child of (current as Node & { nodes?: Node[] }).nodes ?? []) visit(child);
-  };
-  visit(node);
-  return nodes;
-}
-
-/** Encode the node's root so Go can infer raws from siblings, plus a 1-based index. */
-function encodeStringifyTarget(node: Node): { buffer: Buffer; options?: string } {
-  const root = node.root();
-  if (root === node) return { buffer: serializeAst(node) };
-  const nodeIndex = indexLiveNodes(root).indexOf(node) + 1;
-  return {
-    buffer: serializeAst(root),
-    options: nodeIndex > 0 ? JSON.stringify({ nodeIndex }) : undefined,
-  };
 }
 
 /** True when the sync native addon is available for this platform. */
@@ -221,7 +193,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     options = materializePreviousMap(options);
     try {
       const buffer = await this.addon.parseAsync(css, options.from);
-      return { root: decodeAst(buffer) as ParseResult['root'] };
+      return { root: binaryCodec.decodeRootAst(buffer) as ParseResult['root'] };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
@@ -231,7 +203,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
   async parseLive(css: string, options: ProcessOptions = {}): Promise<LiveParseResult> {
     options = materializePreviousMap(options);
     try {
-      return { root: hydrateAst(await this.addon.parseAsync(css, options.from)) };
+      return { root: binaryCodec.hydrateRootAst(await this.addon.parseAsync(css, options.from)) };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
@@ -252,7 +224,9 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     ) as ProcessOptions;
     try {
       return {
-        ...decodeProcessFrame(await this.addon.processAsync(css, JSON.stringify(normalized))),
+        ...binaryCodec.decodeProcessFrame(
+          await this.addon.processAsync(css, JSON.stringify(normalized)),
+        ),
         backend: 'native',
       };
     } catch (nativeError) {
@@ -275,7 +249,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     ) as ProcessOptions;
     try {
       return {
-        ...decodeProcessFrame(this.addon.process(css, JSON.stringify(normalized))),
+        ...binaryCodec.decodeProcessFrame(this.addon.process(css, JSON.stringify(normalized))),
         backend: 'native',
       };
     } catch (nativeError) {
@@ -318,7 +292,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       joinMapAnnotationPath,
     ) as ProcessOptions;
     return JSON.parse(
-      await this.addon.stringifyAsync(encodeAst(ast), JSON.stringify(normalized)),
+      await this.addon.stringifyAsync(binaryCodec.encodeRootAst(ast), JSON.stringify(normalized)),
     ) as AstStringifyResult;
   }
 
@@ -335,7 +309,10 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       joinMapAnnotationPath,
     ) as ProcessOptions;
     return JSON.parse(
-      await this.addon.stringifyAsync(encodeBoundaryAst(ast), JSON.stringify(normalized)),
+      await this.addon.stringifyAsync(
+        binaryCodec.encodeBoundaryAst(ast),
+        JSON.stringify(normalized),
+      ),
     ) as AstStringifyResult;
   }
 
@@ -350,7 +327,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
   parseSync(css: string, options: ProcessOptions = {}): LiveParseResult {
     options = materializePreviousMap(options);
     try {
-      return { root: hydrateAst(this.addon.parse(css, options.from)) };
+      return { root: binaryCodec.hydrateRootAst(this.addon.parse(css, options.from)) };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
@@ -369,7 +346,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       joinMapAnnotationPath,
     ) as ProcessOptions;
     return JSON.parse(
-      this.addon.stringify(encodeBoundaryAst(ast), JSON.stringify(normalized)),
+      this.addon.stringify(binaryCodec.encodeBoundaryAst(ast), JSON.stringify(normalized)),
     ) as AstStringifyResult;
   }
 
@@ -379,20 +356,20 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   /** Stringify a live node without map options, for `Node#toString()`. */
   stringifyNodeSync(node: Node): string {
-    const target = encodeStringifyTarget(node);
+    const target = binaryCodec.encodeStringifyTarget(node);
     return (JSON.parse(this.addon.stringify(target.buffer, target.options)) as AstStringifyResult)
       .css;
   }
 
   /** Replay Go builder chunks onto a PostCSS-shaped callback. */
   stringifyBuilderSync(node: Node, builder: Builder): void {
-    const target = encodeStringifyTarget(node);
+    const target = binaryCodec.encodeStringifyTarget(node);
     const parts = JSON.parse(this.addon.stringifyBuilder(target.buffer, target.options)) as Array<{
       css: string;
       node?: number;
       type?: string;
     }>;
-    const indexed = indexLiveNodes(node);
+    const indexed = binaryCodec.indexLiveNodes(node);
     for (const part of parts) {
       const live = part.node && part.node > 0 ? indexed[part.node - 1] : undefined;
       builder(part.css, live, part.type || undefined);
@@ -478,35 +455,6 @@ function hasAnnotationCallback(options: ProcessOptions): boolean {
   return (
     !!options.map && typeof options.map === 'object' && typeof options.map.annotation === 'function'
   );
-}
-
-function decodeProcessFrame(frame: Buffer): ProcessResult {
-  if (
-    frame.length < PROCESS_FRAME_HEADER_SIZE ||
-    frame.subarray(0, 4).toString('ascii') !== PROCESS_FRAME_MAGIC
-  ) {
-    throw new Error('postcss-go native process response has an invalid frame');
-  }
-  const metadataLength = frame.readUInt32LE(4);
-  const rootOffset = PROCESS_FRAME_HEADER_SIZE + metadataLength;
-  if (rootOffset > frame.length) {
-    throw new Error('postcss-go native process response has invalid metadata length');
-  }
-  const metadata = JSON.parse(
-    frame.subarray(PROCESS_FRAME_HEADER_SIZE, rootOffset).toString('utf8'),
-  ) as {
-    css: string;
-    map?: string;
-    mapFile?: string;
-    messages?: ResultMessage[];
-  };
-  return {
-    css: metadata.css,
-    map: metadata.map,
-    mapFile: metadata.mapFile,
-    root: hydrateAst(frame.subarray(rootOffset)),
-    messages: metadata.messages ?? [],
-  };
 }
 
 function throwStructuredSyntaxError(

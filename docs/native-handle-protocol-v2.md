@@ -56,9 +56,8 @@ NaN, infinity and values exceeding uint32 instead of N-API's default truncation.
 as adapters. Legacy signed cursor callers fail closed above INT32_MAX. The current
 addon never uses those fallible legacy exports. Keep them through the two-release
 rollback window; remove them only with the corresponding native rollback cleanup.
-Unversioned V1 exports exist only in isolated boundary benchmark prototypes,
-which are not production imports or qualification evidence. Retire those prototypes
-with Phase 7 cleanup; there is no production V1 bridge to retain.
+Unversioned V1 exports existed only in isolated boundary benchmark prototypes
+and were removed during Phase 7 cleanup; there is no production V1 bridge to retain.
 
 ## Source and identity
 

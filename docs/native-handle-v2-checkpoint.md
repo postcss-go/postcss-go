@@ -6,7 +6,10 @@ Current Phases 4–7 implementation and validation are described in the
 capability-complete `auto` use the Go-backed facade with structural mutation,
 maps and async retention; successful runs record `hydration: false`. Exact nested
 source-map mappings versus upstream remain a documented compatibility difference.
-The earlier scalar-only prototype measurements below are historical.
+Phase 7 soft cleanup removed V1 `benchmark/boundary` prototypes and the
+restricted declaration runtime, and soft-gated binary codec helpers behind
+`native-codec.ts`. Hard hydrated-store removal still waits on the two-release
+window. The earlier scalar-only prototype measurements below are historical.
 
 ## Phase 2 verification (2026-09-10)
 
