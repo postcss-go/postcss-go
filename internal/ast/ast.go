@@ -290,6 +290,20 @@ func (r *Root) InsertAfter(target Node, nodes ...Node) error {
 }
 
 func (r *Root) RemoveChild(target Node) error {
+	index := indexNode(r.Nodes, target)
+	if index < 0 {
+		return fmt.Errorf("target node not found")
+	}
+	// Match PostCSS Root#removeChild: the first child's before is inherited by
+	// the next sibling so bubbling/unwrapping does not leave leading whitespace.
+	if index == 0 && len(r.Nodes) > 1 {
+		next := r.Nodes[1]
+		if before, ok := LookupRaw(r.Nodes[0], "before"); ok {
+			ApplyRaw(next, "before", before)
+		} else {
+			DeleteRaw(next, "before")
+		}
+	}
 	return removeChildFrom(r, &r.Nodes, target)
 }
 

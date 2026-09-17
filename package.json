@@ -26,7 +26,10 @@
     "build": "turbo run build",
     "build:release": "pnpm --filter @postcss-go/core build:js && pnpm --filter @postcss-go/core build:wasm && pnpm --filter @postcss-go/vite-loader --filter @postcss-go/webpack-loader --filter @postcss-go/rspack-loader build",
     "check": "turbo run check",
-    "check:all": "pnpm format:check && pnpm lint && pnpm check && pnpm check:upstream && pnpm test && pnpm test:upstream && pnpm test:upstream:go && pnpm build",
+    "check:all": "pnpm check:handles && pnpm format:check && pnpm lint && pnpm check && pnpm check:upstream && pnpm test && pnpm test:upstream && pnpm test:upstream:go && pnpm build",
+    "generate:handles": "go generate ./internal/asthandle",
+    "check:handles": "cd internal/asthandle && go run ./cmd/genprotocol -check",
+    "bench:handles": "node benchmark/run-handles.mjs",
     "check:upstream": "node ./scripts/check-upstream-postcss-sync.mjs",
     "changeset": "changeset",
     "changeset:check": "changeset status",
@@ -52,7 +55,8 @@
     "test:upstream": "POSTCSS_COMPAT_MODE=upstream node ./scripts/run-upstream-tests.mjs",
     "test:upstream:go": "pnpm --filter @postcss-go/compat test:upstream:go",
     "bench": "node benchmark/run.mjs",
-    "bench:boundary": "node benchmark/run-boundary.mjs"
+    "qualify:native": "pnpm test:qualification && node scripts/qualify-native-corpus.mjs",
+    "test:qualification": "node --test --experimental-test-coverage --test-coverage-include=benchmark/qualification-metrics.mjs --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 benchmark/qualification-metrics.test.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",

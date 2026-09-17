@@ -329,6 +329,9 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 				p.attachSource(node, trimmed[0].Start, trimmed[0].Start)
 			}
 			ast.AppendParsed(container, node)
+			// This unterminated at-rule is now the last significant child;
+			// do not inherit a previous sibling's terminating semicolon.
+			ast.SetRawBool(container, "semicolon", false)
 			return nil
 		}
 		if len(trimmed) == 1 && trimmed[0].Kind == "comment" {

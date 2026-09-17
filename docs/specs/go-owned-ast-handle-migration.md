@@ -1,17 +1,257 @@
 # Go-Owned AST and Native Handle Migration
 
-- Status: Proposed
+- Status: In progress — audited 2026-09-17; Phases 0–7 native path implemented; Phase 8 deferred
 - Target: `@postcss-go/core` native backend
-- Last updated: 2026-09-04
+- Last updated: 2026-09-17
 - Owners: TBD
 
 ## Summary
+
+See the [implementation checkpoint](../native-handle-v2-checkpoint.md) for the
+implemented subset, verification results, rollout restrictions, and remaining
+work. The phases below remain the target design, not a claim of completion.
 
 Move native PostCSS execution toward a Go-owned AST session while retaining JavaScript/TypeScript for the public PostCSS API, JavaScript plugin callbacks, configuration loading, and environment adapters.
 
 The native path will expose session-scoped node handles to a thin TypeScript facade. Go will own parsing, node storage, traversal state, mutation, stringification, and source-map inputs. TypeScript will normalize plugins, invoke JavaScript callbacks, and project Go-backed nodes into PostCSS-compatible JavaScript objects.
 
 The browser Worker path will continue using a serializable AST during the initial migration. A later, separately gated experiment may move the browser-side mutable AST into a main-thread Go/WASM handle runtime. Repository language percentages are not a reason to weaken browser isolation or compatibility.
+
+## Implementation status — audited 2026-09-17
+
+This section records the working tree after Phases 4–7 native handle completion
+and Phase 7 soft cleanup (V1 inventory retirement + codec module soft-gate).
+It is not a public release claim. Phase 8 remains deferred. Hard deletion of
+hydrated TypeScript AST/codec from the native fallback path waits on the
+two-release rollback window that starts with the next public release that ships
+handle-default auto selection.
+
+**Native handle path is capability-complete for the maintained corpus.** Protocol
+2.4 advertises MutationTraversal, SourceMaps and AsyncLifetime. Forced `handle`
+and capability-complete `auto` select `handle-full` with live relationships,
+tracked raws, structural mutation, maps, and async retention without successful-run
+hydration. Exact upstream source-map mappings for nested output remain a recorded
+compatibility difference versus bulk.
+
+| Phase                         | Current assessment                 | Main completion blocker                                                                   |
+| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| 0 — Baseline                  | Qualification inputs recorded      | Maintained corpus and CI-generated benchmark/line-count artifacts                         |
+| 1 — Protocol/sessions         | Protocol 2.4 contract implemented  | None for current native scope                                                             |
+| 2 — Read-only facade          | Complete and verified              | Standard wrappers, identity/prototypes, Once, filters, source reads and batched snapshots |
+| 3 — Scalar mutation           | Complete and verified              | Important, mixed-field callback patches, throw flush, Go dirty marks and dirty revisits   |
+| 4 — Relationships/source/raws | Complete for advertised modes      | Live parent/nodes/raws; handle stringifyMap; nested-map mapping difference documented     |
+| 5 — Structural traversal      | Complete for facade methods        | append/prepend/insert/remove/replace/clone plus mutation-aware each/dirty revisits        |
+| 6 — Async/lifetime            | Complete for retained results      | Async callbacks keep Go-backed Result.root; owner/finalizer retention                     |
+| 7 — Default rollout/cleanup   | Soft cleanup done; auto + 95% gate | Multi-run perf/RSS qualification; hard hydrated-store removal after two releases          |
+| 8 — Browser experiment        | Deferred and optional              | Not required for native completion                                                        |
+
+### Completed and verified foundations
+
+- [x] Production addon exposes explicit `*V2` methods and C exports carrying
+      session IDs. Unversioned production handle exports are no longer published;
+      the bulk API remains available.
+- [x] Go registry and per-session leases isolate concurrent sessions. Close is
+      idempotent; node IDs are not recycled; disposal tombstones attached subtrees.
+      Registry/session tests cover isolation, stale IDs, close and concurrency.
+- [x] Native owner finalization, live-session diagnostics and explicit cleanup
+      exist. Tests cover GC reclamation, retained owners and overlapping Workers.
+      Async handle execution keeps SessionOwner reachable across await.
+- [x] Checked-in schema/generator produces scalar field constants and protocol
+      metadata; CI checks drift and runs session/bridge race tests.
+- [x] Handshake rejects incompatible major versions, invalid minor versions,
+      missing current capability masks, malformed limits and throwing responses.
+      Required TS masks come from the schema. Cursor pages honor the negotiated
+      maximum; oversized field batches are rejected before addon entry rather than
+      split into partially committed writes.
+- [x] Go supports scalar reads/writes for prop, value, important, selector, name,
+      params and text. Same-field batches validate before commit and preserve
+      duplicate-target ordering. Dynamic CSS/field buffers avoid fixed-size
+      truncation. Ordered mixed-field ApplyPatches transactions validate before
+      commit and mark dirty ancestors on change.
+- [x] Restricted declaration callbacks execute in node-major order with batched
+      reads and per-callback ordered patches, including important. Unexpected
+      unsupported callback behavior errors without replay; auto selects bulk
+      before callbacks.
+- [x] Go has parent/child queries and append, prepend, insert, remove, replace,
+      clone and dispose primitives with cycle checks. The TypeScript facade exposes
+      the structural methods used by maintained plugins.
+- [x] Core typechecking is part of the CI check command; upstream sync checks,
+      owned AST contract fixtures and webpack coverage thresholds exist.
+- [x] A production-package read-only benchmark and runtime line-count script
+      exist. Neither demonstrates general handle compatibility or rollout readiness.
+
+Implementation evidence:
+[Go arena](../../internal/asthandle/handle.go),
+[registry](../../internal/asthandle/registry.go),
+[C ABI](../../internal/nativeaddon/cabi/handles.go),
+[Node addon](../../packages/postcss-go/native/addon.c),
+[TS session](../../packages/postcss-go/src/handle-session.ts),
+[handle facade](../../packages/postcss-go/src/handle-facade.ts),
+[selection/visitor execution](../../packages/postcss-go/src/plugin-runtime.ts),
+[CI](../../.github/workflows/ci.yml).
+
+### Remaining updates by phase
+
+The unchecked items below are required work, not newly advertised capabilities.
+Implement them in independently reviewable increments and keep bulk fallback
+usable throughout.
+
+**Phase 0 — Finish qualification inputs**
+
+- [x] Pin a maintained plugin/fixture corpus and its versioned manifest, owners,
+      supported options and selection denominator for the 95% gate. Existing
+      postcss-import/postcss-nested fixtures are useful seeds, not a measured
+      handle-selection corpus.
+- [x] Record a reproducible base revision and CI/release results. Preserve any
+      narrow compatibility differences with ownership/reason; do not equate
+      vendored-node tests with Go-backed facade coverage.
+- [x] Capture representative bulk/handle benchmark artifacts with runtime, CPU,
+      OS, fixture size and iterations. Investigate the recorded unstable, high-RSS
+      bulk baseline before using ratios to justify rollout.
+- [x] Refresh line-count artifacts at phase boundaries using
+      `scripts/count-runtime-lines.mjs`; keep the historical motivation numbers
+      distinct from newly measured counts.
+
+Maintained corpus: [versioned test fixture](../../packages/postcss-go/test/fixtures/native-corpus.json).
+CI uploads benchmark, corpus and line-count results as build artifacts; historical
+qualification reports are no longer stored in the documentation tree.
+The corpus (v1.4.0) expects all seven cases to succeed under forced handle.
+Capability-complete `auto` selects `handle-full` without hydration; the qualify
+script `--gate` asserts the 95% selection threshold.
+
+**Phase 1 — Complete the protocol contract**
+
+- [x] Generate explicit operations, node/patch/event kinds, status codes and named
+      capabilities from the schema in Go, TS and C. Unimplemented traversal,
+      map and async capabilities remain unadvertised.
+- [x] Expose call-scoped structured status/message errors through V2_1 C exports;
+      retain V2.0 C signature adapters and free errors in their allocating runtime.
+- [x] Pass from/document/trackSource options into session creation and preserve
+      original Go Input identity. Map/custom parser workloads remain on binary.
+- [x] Specify non-reused uint32 IDs, detach versus dispose and prototype retirement;
+      test exact session/node/cursor exhaustion and atomic failed clone allocation.
+- [x] Test every required capability, newer-minor/missing-bit combinations,
+      throwing getters and malformed IDs. Only implemented capabilities are advertised.
+
+See the [protocol 2.4 contract](../native-handle-protocol-v2.md) for ABI compatibility,
+source options, ownership rules and full handle execution scope.
+
+**Phase 2 — Implement the general read-only facade and planner**
+
+- [x] Create a shared SessionOwner plus per-session wrapper identity cache for
+      Root, Document, Rule, AtRule, Declaration and Comment.
+- [x] Preserve class prototypes, instanceof, enumeration, documented methods
+      and reflection behavior. The isolated scalar prototype
+      remains outside production selection.
+- [x] Support Once, all standard read-only visitors and filters, prepare/helper
+      behavior where covered, parent/type identity and basic source reads.
+- [x] Replace boolean declaration-shape selection with an explicit execution
+      plan, required capability set and diagnostic fallback reason. Arbitrary JS
+      callback shape cannot prove scalar-only access.
+- [x] Batch event metadata and scalar snapshots; measure boundary calls
+      independently of property-read count. Add forced handle/binary differential
+      fixtures for CSS, identity, callback trace, messages, warnings and errors.
+
+Phase 2 implementation notes: [read-only facade](../../packages/postcss-go/src/handle-facade.ts),
+[execution planner](../../packages/postcss-go/src/handle-plan.ts),
+[flat Go snapshots](../../internal/asthandle/snapshot.go) and
+[forced-mode differential tests](../../packages/postcss-go/test/handle-facade.test.ts).
+
+**Phase 3 — Complete scalar mutation semantics**
+
+- [x] Add important and all standard scalar fields to the protocol/facade.
+- [x] Implement one ordered, mixed-field patch transaction per callback. Current
+      prop/value updates are no longer separate same-field page batches.
+- [x] Preserve local read-after-write and multiple-write ordering; flush mutations
+      made before a thrown callback as required by existing behavior.
+- [x] Implement Go dirty marking and repeat-until-clean behavior with traversal;
+      compare multi-plugin and throw-after-write traces against bulk mode.
+
+Phase 3 implementation notes: protocol 2.3 introduced AtomicPatches and
+`handleApplyPatchesV2`. Protocol 2.4 adds MutationTraversal/SourceMaps/AsyncLifetime
+so capability-complete workloads select `handle-full` (including under `auto`).
+
+**Phase 4 — Relationships, formatting and maps**
+
+- [x] Wire live parent/nodes/first/last/next/prev access into cached wrappers and
+      invalidate relationships after changes.
+- [x] Keep source offsets and input IDs in Go; cache JS source/Input objects and
+      position helpers used by errors/warnings. Successful handle runs do not hydrate.
+- [x] Track nested raws mutation with SetRaw and structural clone data; fixtures
+      cover semicolon/raw writes alongside structural append/remove.
+- [x] Implement stringifyMap for previous-map/annotation-supported modes; advertise
+      SourceMaps. Nested mapping differences versus upstream remain documented.
+
+**Phase 5 — Structural mutation and traversal**
+
+- [x] Expose append/prepend/insert/remove/replace/clone/before/after/removeAll
+      methods with node materialization, nodes/parent assignment and cross-session
+      clone-into-arena rules for imported trees.
+- [x] Mutation-aware each/walk with dirty revisits, Once/OnceExit ordering and
+      live child lists after structural writes.
+- [x] Tests cover structural plugins (postcss-nested/import), cache invalidation
+      after remove/append and dirty scalar revisits. Dedicated mutation fuzzing
+      remains optional follow-up.
+
+**Phase 6 — Async and retained results**
+
+- [x] Keep owner references in every node wrapper and Result.root; async callbacks
+      and thenables run without closing live sessions on success.
+- [x] Result.root and retained nodes remain Go-backed after await; successful runs
+      record hydration=false in nativePlan.
+- [x] Error paths close arenas; existing GC/retained-owner and Worker tests cover
+      lifetime foundations. Broader sanitizer stress remains release qualification.
+
+**Phase 7 — Rollout, observability and cleanup**
+
+- [x] Record selected plan/reason, hydration and visits on Result.nativePlan for
+      handle executions.
+- [x] Run the maintained corpus in handle/binary/auto; qualify `--gate` asserts >=95% auto handle selection without hydration.
+- [ ] Qualify stable performance (median <=1.05x) and peak RSS (<=1.10x) over at
+      least five runs in CI/release qualification.
+- [x] Enable auto for capability-complete workloads; retain explicit binary override.
+- [ ] Separate/remove hydrated store/decoder from the default native path after the
+      two-release rollback window. Soft-gate is in place: binary codec helpers live
+      in [`native-codec.ts`](../../packages/postcss-go/src/native-codec.ts); the
+      handle facade does not import codec. Current TS AST/codec duplication remains
+      for binary fallback until the window closes.
+- [x] Inventory remaining prototype/V1 code and remove obsolete native dependencies
+      outside the release window: deleted `benchmark/boundary` V1 prototypes,
+      retired `handle-plugin-runtime.ts`, and dropped `pnpm bench:boundary`. Preserve
+      intentional browser Worker serialization.
+
+### Identity and compatibility decisions — resolved in Phase 1
+
+- Session, node and cursor IDs never wrap or reuse values. Zero is reserved;
+  exhaustion is recoverable and cannot leave partially allocated clone handles.
+- Remove detaches live nodes; Dispose tombstones the attached subtree. Detached
+  nodes retain identity and can be reinserted. The Phase 2 facade must enforce
+  ownership when converting wrapper arguments into session-local numeric IDs.
+- Production JS exposes V2 methods; current C calls use V2_1 symbols. Original
+  V2.0 C signatures remain as rollback adapters. Unversioned V1 prototypes under
+  `benchmark/boundary/` and the restricted declaration runtime were removed in
+  Phase 7 cleanup.
+
+### Verification evidence and limits
+
+The preceding audit ran `pnpm check:all` successfully: core 578 tests, upstream
+701 tests, Go-backed upstream 701 tests, formatting, lint, typechecks and builds.
+The focused handle/lifecycle suite passed 26 tests; `go test ./...`,
+`go test -race ./internal/asthandle ./internal/nativebridge` and
+`pnpm check:handles` also passed. This documentation follow-up does not claim
+a new full-suite, coverage, performance or memory run.
+
+The Go-backed upstream suite uses vendored PostCSS node classes with Go
+parse/stringify overrides; the owned AST contracts exercise the current owned
+classes. Neither is evidence that all those fixtures use Go handle wrappers.
+See the [owned contract explanation](../../packages/postcss-go/test/upstream-ast-contract/README.md).
+Coverage and benchmark figures in the [checkpoint](../native-handle-v2-checkpoint.md)
+are earlier measurements with their stated scope. The maintained corpus `--gate`
+asserts ≥95% auto handle selection (7/7 as of corpus 1.4.0). Multi-run
+performance/RSS qualification and hard hydrated-store removal remain
+release-window items. Phase 7 soft cleanup (V1 inventory + codec module boundary)
+is complete. Working-tree runtime lines after soft cleanup
+(`scripts/count-runtime-lines.mjs`): TypeScript 11807, Go 10970.
 
 ## Motivation
 
@@ -27,7 +267,7 @@ As of this specification:
 
 These values are planning baselines, not success metrics by themselves. Test code is deliberately excluded and must not be rewritten merely to change a language ratio.
 
-The existing handle prototype proves that declaration-only synchronous plugins can avoid full AST hydration. It is not yet a general runtime because it uses one process-global native session, exposes only a small set of fields, and falls back after encountering unsupported JavaScript behavior.
+The pre-migration handle prototype proved that declaration-only synchronous plugins could avoid full AST hydration, but used one process-global native session, exposed few fields and could fall back after unsupported JavaScript behavior. The current V2 foundation has replaced the production global session and prevents callback replay; the read-only facade is implemented and remaining mutation/async migration work are recorded in the implementation status above.
 
 ## Goals
 
@@ -91,6 +331,10 @@ Native and browser execution deliberately diverge at the AST transport boundary:
 
 ## Detailed design
 
+The following is the target contract. Implemented deviations and unresolved
+identity/lifecycle decisions are called out in the implementation status above;
+these sections must not be read as a description of already shipped behavior.
+
 ### 1. Versioned handle protocol
 
 Replace method-existence probing with an explicit handshake:
@@ -139,14 +383,14 @@ type NodeID = number; // unsigned 32-bit, scoped to SessionID
 type CursorID = number; // unsigned 32-bit, scoped to SessionID
 ```
 
-V2 node IDs must not be reused during a session. Removing or disposing a node tombstones the ID; the slot is reclaimed only when the session closes. This avoids stale-handle ABA bugs without packing a small generation counter into the JavaScript number.
+V2 node IDs must not be reused during a session. Removing a node detaches it without invalidating its ID. Disposing a node tombstones its ID and attached subtree until the session closes. This avoids stale-handle ABA bugs without packing a small generation counter into the JavaScript number.
 
 Go maintains:
 
 - A process-level registry protected by a registry lock.
 - One lock and one error state per session.
-- Monotonic session IDs that skip IDs still present after wraparound.
-- Monotonic node and cursor IDs within a session.
+- Non-reused monotonic session IDs that return Exhausted at uint32 exhaustion.
+- Non-reused monotonic node and cursor IDs within a session, with recoverable exhaustion.
 - Explicit closed/tombstoned errors with stable numeric status codes.
 
 The process-global `handleSession` and `handleErr` in `internal/nativeaddon/cabi/handles.go` must be removed before V2 is enabled outside tests.
@@ -286,6 +530,10 @@ The remaining hydrated TypeScript AST is reviewed only after native completion. 
 
 ## Work plan
 
+Use the audited phase table and remaining-work checklist above to track current
+completion. The deliverables and exit criteria here define acceptance, including
+items whose foundations already exist.
+
 Each phase should land as one or more independently revertible pull requests. A later phase may not make an earlier phase's fallback unusable.
 
 ### Phase 0 — Stabilize the baseline
@@ -314,7 +562,8 @@ Deliverables:
 - Replace the global native session with the session registry.
 - Implement non-reused session-scoped node IDs and cursor IDs.
 - Add lifecycle, stale-ID, cross-session, concurrent-session, and close-idempotency tests.
-- Keep the V1 bridge available only as an internal compatibility path.
+- Retain V2.0 C signature adapters through the rollback window. V1 benchmark
+  prototypes and the restricted declaration runtime were removed in Phase 7.
 
 Exit criteria:
 
@@ -429,7 +678,9 @@ Deliverables:
 
 - Enable V2 handle mode by default for capability-complete workloads.
 - Keep a documented environment override for emergency rollback during the rollout window.
-- Remove V1 and native-path dependencies on hydrated AST/codec code after two compatible releases.
+- Soft-gate binary codec behind `native-codec.ts`; remove V1 prototypes and the
+  restricted declaration runtime. Hard-delete hydrated AST/codec from the native
+  fallback path only after two compatible releases.
 - Update architecture, benchmark, and contributor documentation.
 
 Exit criteria:
@@ -457,7 +708,7 @@ If the experiment fails a gate, keep the hydrated browser AST and treat it as an
 
 ### Go unit and fuzz tests
 
-- Session registry creation, lookup, close, and ID wrap behavior.
+- Session registry creation, lookup, close, and non-reused ID exhaustion behavior.
 - Node tombstones and cross-session access.
 - Atomic patch validation and rollback.
 - Mutation-aware cursor invariants.
@@ -502,7 +753,7 @@ Commands may be wrapped by package scripts, but CI must cover the equivalent of:
 pnpm check:all
 pnpm --filter @postcss-go/core test
 pnpm test:upstream:go
-pnpm bench:boundary
+pnpm bench:handles
 go test -race ./internal/asthandle ./internal/nativebridge
 go test ./...
 ```

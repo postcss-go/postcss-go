@@ -1,0 +1,349 @@
+{
+  "major": 2,
+  "minor": 4,
+  "maxBatchSize": 4096,
+  "capabilities": [
+    {
+      "name": "ScalarSessions",
+      "bit": 0,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "StructuredErrors",
+      "bit": 1,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "ParseOptions",
+      "bit": 2,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "BoundedIds",
+      "bit": 3,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "ReadOnlyFacade",
+      "bit": 4,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "AtomicPatches",
+      "bit": 5,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "MutationTraversal",
+      "bit": 6,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "SourceMaps",
+      "bit": 7,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "AsyncLifetime",
+      "bit": 8,
+      "implemented": true,
+      "required": false
+    }
+  ],
+  "fields": [
+    {
+      "name": "Prop",
+      "id": 0
+    },
+    {
+      "name": "Value",
+      "id": 1
+    },
+    {
+      "name": "Selector",
+      "id": 2
+    },
+    {
+      "name": "Name",
+      "id": 3
+    },
+    {
+      "name": "Params",
+      "id": 4
+    },
+    {
+      "name": "Text",
+      "id": 5
+    },
+    {
+      "name": "Important",
+      "id": 6
+    }
+  ],
+  "operations": [
+    {
+      "name": "ProtocolInfo",
+      "id": 0
+    },
+    {
+      "name": "SessionCount",
+      "id": 1
+    },
+    {
+      "name": "Parse",
+      "id": 2
+    },
+    {
+      "name": "Close",
+      "id": 3
+    },
+    {
+      "name": "Type",
+      "id": 4
+    },
+    {
+      "name": "GetField",
+      "id": 5
+    },
+    {
+      "name": "SetField",
+      "id": 6
+    },
+    {
+      "name": "WalkDecls",
+      "id": 7
+    },
+    {
+      "name": "OpenCursor",
+      "id": 8
+    },
+    {
+      "name": "CursorNext",
+      "id": 9
+    },
+    {
+      "name": "CloseCursor",
+      "id": 10
+    },
+    {
+      "name": "ReadFields",
+      "id": 11
+    },
+    {
+      "name": "SetFields",
+      "id": 12
+    },
+    {
+      "name": "Stringify",
+      "id": 13
+    },
+    {
+      "name": "NewDecl",
+      "id": 14
+    },
+    {
+      "name": "Append",
+      "id": 15
+    },
+    {
+      "name": "Dispose",
+      "id": 16
+    },
+    {
+      "name": "ReadSnapshots",
+      "id": 17
+    },
+    {
+      "name": "ApplyPatches",
+      "id": 18
+    },
+    {
+      "name": "InsertBefore",
+      "id": 19
+    },
+    {
+      "name": "Remove",
+      "id": 20
+    },
+    {
+      "name": "Clone",
+      "id": 21
+    },
+    {
+      "name": "Prepend",
+      "id": 22
+    },
+    {
+      "name": "InsertAfter",
+      "id": 23
+    },
+    {
+      "name": "ReplaceWith",
+      "id": 24
+    },
+    {
+      "name": "NewRule",
+      "id": 25
+    },
+    {
+      "name": "NewAtRule",
+      "id": 26
+    },
+    {
+      "name": "NewComment",
+      "id": 27
+    },
+    {
+      "name": "SetRaw",
+      "id": 28
+    },
+    {
+      "name": "GetRaw",
+      "id": 29
+    },
+    {
+      "name": "StringifyMap",
+      "id": 30
+    },
+    {
+      "name": "Parent",
+      "id": 31
+    },
+    {
+      "name": "ChildCount",
+      "id": 32
+    },
+    {
+      "name": "ChildAt",
+      "id": 33
+    },
+    {
+      "name": "RefreshSnapshot",
+      "id": 34
+    }
+  ],
+  "nodeKinds": [
+    {
+      "name": "None",
+      "id": 0
+    },
+    {
+      "name": "Root",
+      "id": 1
+    },
+    {
+      "name": "Document",
+      "id": 2
+    },
+    {
+      "name": "Rule",
+      "id": 3
+    },
+    {
+      "name": "AtRule",
+      "id": 4
+    },
+    {
+      "name": "Decl",
+      "id": 5
+    },
+    {
+      "name": "Comment",
+      "id": 6
+    }
+  ],
+  "patchKinds": [
+    {
+      "name": "SetField",
+      "id": 0
+    },
+    {
+      "name": "Append",
+      "id": 1
+    },
+    {
+      "name": "InsertBefore",
+      "id": 2
+    },
+    {
+      "name": "Remove",
+      "id": 3
+    },
+    {
+      "name": "Dispose",
+      "id": 4
+    },
+    {
+      "name": "Clone",
+      "id": 5
+    }
+  ],
+  "eventKinds": [
+    {
+      "name": "Enter",
+      "id": 0
+    },
+    {
+      "name": "Exit",
+      "id": 1
+    }
+  ],
+  "statuses": [
+    {
+      "name": "OK",
+      "id": 0
+    },
+    {
+      "name": "InvalidHandle",
+      "id": 1
+    },
+    {
+      "name": "StaleHandle",
+      "id": 2
+    },
+    {
+      "name": "Closed",
+      "id": 3
+    },
+    {
+      "name": "NotContainer",
+      "id": 4
+    },
+    {
+      "name": "BadField",
+      "id": 5
+    },
+    {
+      "name": "Cursor",
+      "id": 6
+    },
+    {
+      "name": "Parse",
+      "id": 7
+    },
+    {
+      "name": "Cycle",
+      "id": 8
+    },
+    {
+      "name": "Exhausted",
+      "id": 9
+    },
+    {
+      "name": "InvalidArgument",
+      "id": 10
+    },
+    {
+      "name": "Internal",
+      "id": 11
+    }
+  ]
+}

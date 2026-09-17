@@ -990,29 +990,29 @@ func TestPatchCoverageHelpers(t *testing.T) {
 	rule := ast.NewRule(":root")
 	rule.Append(first, second)
 	root.Append(rule)
-	if !needsSemicolon(rule, first) {
+	if !new(renderCache).needsSemicolon(rule, first) {
 		t.Fatal("custom property before final decl needs semicolon")
 	}
 	orphan := ast.NewDeclaration("color", "blue")
-	if needsSemicolon(rule, orphan) {
+	if new(renderCache).needsSemicolon(rule, orphan) {
 		t.Fatal("node outside parent must not need semicolon")
 	}
 
 	importAt := ast.NewAtRule("import", `"x.css"`)
 	trailing := ast.NewComment("keep")
 	root.Append(importAt, trailing)
-	if !needsSemicolon(root, importAt) {
+	if !new(renderCache).needsSemicolon(root, importAt) {
 		t.Fatal("childless at-rule before trailing comment needs semicolon")
 	}
 	blockAt := ast.NewAtRule("media", "all")
 	blockAt.Block = true
 	root.Append(blockAt, ast.NewComment("after-block"))
-	if needsSemicolon(root, blockAt) {
+	if new(renderCache).needsSemicolon(root, blockAt) {
 		t.Fatal("block at-rule must not emit a trailing semicolon")
 	}
 	styled := ast.NewRule("div")
 	root.Append(styled, ast.NewComment("after-rule"))
-	if needsSemicolon(root, styled) {
+	if new(renderCache).needsSemicolon(root, styled) {
 		t.Fatal("rule before trailing comment must not force semicolon")
 	}
 	nonCustom := ast.NewDeclaration("width", "1px")

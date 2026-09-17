@@ -212,21 +212,23 @@ test('companion-library packages keep their runtime library beside the addon', (
   const addon = readFileSync(resolve(packageRoot, 'native/addon.c'), 'utf8');
   expect(addon).toContain('require_go_symbol("pcgoCall")');
   for (const symbol of [
-    'pcgoHandleParse',
-    'pcgoHandleClose',
-    'pcgoHandleType',
-    'pcgoHandleGetField',
-    'pcgoHandleSetField',
-    'pcgoHandleWalkDecls',
-    'pcgoHandleOpenCursor',
-    'pcgoHandleCursorNext',
-    'pcgoHandleCloseCursor',
-    'pcgoHandleReadFields',
-    'pcgoHandleSetFields',
-    'pcgoHandleNewDecl',
-    'pcgoHandleAppend',
-    'pcgoHandleDispose',
-    'pcgoHandleStringify',
+    'pcgoHandleParseV2_1',
+    'pcgoHandleFreeErrorV2_1',
+    'pcgoHandleSessionCountV2',
+    'pcgoHandleCloseV2',
+    'pcgoHandleTypeV2_1',
+    'pcgoHandleGetFieldV2_1',
+    'pcgoHandleSetFieldV2_1',
+    'pcgoHandleWalkDeclsV2_1',
+    'pcgoHandleOpenCursorV2_1',
+    'pcgoHandleCursorNextV2_1',
+    'pcgoHandleCloseCursorV2_1',
+    'pcgoHandleReadFieldsV2_1',
+    'pcgoHandleSetFieldsV2_1',
+    'pcgoHandleNewDeclV2_1',
+    'pcgoHandleAppendV2_1',
+    'pcgoHandleDisposeV2_1',
+    'pcgoHandleStringifyV2_1',
   ]) {
     expect(addon).toContain(`require_go_symbol("${symbol}")`);
   }
@@ -334,6 +336,30 @@ test('postcss-go browser entry exports BrowserPostcssGoService and createBrowser
   expect(browserApi).not.toHaveProperty('UnsupportedServiceError');
   expect(browserApi).not.toHaveProperty('WASM_WORKER_BACKEND_CAPABILITIES');
   expect(browserApi).not.toHaveProperty('PostcssGoService');
+});
+
+test('built wasm entry does not pull the native binary codec', () => {
+  const wasmJs = resolve(packageRoot, 'dist/wasm.js');
+  const wasmBrowser = resolve(packageRoot, 'dist/wasm/browser.js');
+  expect(existsSync(wasmJs)).toBe(true);
+  expect(existsSync(wasmBrowser)).toBe(true);
+  for (const file of [wasmJs, wasmBrowser]) {
+    const source = readFileSync(file, 'utf8');
+    expect(source).not.toMatch(/native-codec/);
+    expect(source).not.toMatch(/from ["']\.\/codec\.js["']/);
+    expect(source).not.toMatch(/hydrateAst/);
+  }
+});
+
+test('native binary codec is soft-gated behind native-codec.js', () => {
+  const nativeJs = resolve(packageRoot, 'dist/native.js');
+  const codecBridge = resolve(packageRoot, 'dist/native-codec.js');
+  expect(existsSync(nativeJs)).toBe(true);
+  expect(existsSync(codecBridge)).toBe(true);
+  const nativeSource = readFileSync(nativeJs, 'utf8');
+  expect(nativeSource).toMatch(/native-codec\.js/);
+  expect(nativeSource).not.toMatch(/from ["']\.\/codec\.js["']/);
+  expect(readFileSync(codecBridge, 'utf8')).toMatch(/from ["']\.\/codec\.js["']/);
 });
 
 test('postcss-go wasm entry re-exports the browser API and declares asset subpaths', async () => {

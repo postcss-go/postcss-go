@@ -132,7 +132,9 @@ Contract notes:
 
 **Compatibility** — keep PostCSS-shaped AST and visitors; preserve formatting and source locations; carry source-map options through the processor and bridge; run upstream tests via `packages/postcss-compat`.
 
-**Performance** — keep the core pipeline in Go; use the binary native boundary; measure with the fixtures in [Contributing](contributing.md). Opaque AST handles were prototyped and benchmarked; they are not the production plugin AST.
+**Performance** — keep the core pipeline in Go; prefer the native handle AST for
+capability-complete plugin workloads and the binary codec for fallback/map edge
+cases; measure with the fixtures in [Contributing](contributing.md).
 
 ## Testing
 

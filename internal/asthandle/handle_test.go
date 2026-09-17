@@ -245,6 +245,28 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 	if text != "ok" {
 		t.Fatalf("comment: %q", text)
 	}
+	if err := session.SetField(decl, FieldImportant, "1"); err != nil {
+		t.Fatal(err)
+	}
+	important, err := session.GetField(decl, FieldImportant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if important != "1" {
+		t.Fatalf("important: %q", important)
+	}
+	if !session.HasDirty() {
+		t.Fatal("expected dirty after important write")
+	}
+	if dirty, err := session.IsDirty(decl); err != nil || !dirty {
+		t.Fatalf("decl dirty: %v %v", dirty, err)
+	}
+	if err := session.ClearDirty(session.Root()); err != nil {
+		t.Fatal(err)
+	}
+	if session.HasDirty() {
+		t.Fatal("expected clean after clear")
+	}
 
 	if _, err := session.GetField(root, FieldText); !errors.Is(err, ErrBadField) {
 		t.Fatalf("root text: %v", err)
@@ -259,7 +281,7 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 		t.Fatalf("set bad field: %v", err)
 	}
 
-	for _, field := range []Field{FieldValue, FieldName, FieldParams, FieldText} {
+	for _, field := range []Field{FieldValue, FieldName, FieldParams, FieldText, FieldImportant} {
 		if _, err := session.GetField(rule, field); !errors.Is(err, ErrBadField) {
 			t.Fatalf("rule get %d: %v", field, err)
 		}
@@ -275,6 +297,9 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 			t.Fatalf("decl set %d: %v", field, err)
 		}
 	}
+	if err := session.SetField(decl, FieldImportant, "maybe"); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("bad important: %v", err)
+	}
 	if _, err := session.GetField(comment, FieldProp); !errors.Is(err, ErrBadField) {
 		t.Fatalf("comment prop: %v", err)
 	}
@@ -289,10 +314,54 @@ func TestFieldReadWriteAndBadField(t *testing.T) {
 	}
 }
 
+func TestApplyPatchesIsOrderedAndAtomic(t *testing.T) {
+	session, root, err := Parse(".a{color:red}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	rule, err := session.ChildAt(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, err := session.ChildAt(rule, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ApplyPatches([]FieldPatch{
+		{Handle: decl, Field: FieldValue, Value: "blue"},
+		{Handle: decl, Field: FieldImportant, Value: "1"},
+		{Handle: decl, Field: FieldProp, Value: "background"},
+		{Handle: rule, Field: FieldSelector, Value: ".hero"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	css, err := session.Stringify(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if css != ".hero{background:blue !important}" {
+		t.Fatalf("patched css: %q", css)
+	}
+	if err := session.ApplyPatches([]FieldPatch{
+		{Handle: decl, Field: FieldValue, Value: "green"},
+		{Handle: root, Field: FieldValue, Value: "nope"},
+	}); !errors.Is(err, ErrBadField) {
+		t.Fatalf("atomic failure: %v", err)
+	}
+	value, err := session.GetField(decl, FieldValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "blue" {
+		t.Fatalf("partial commit: %q", value)
+	}
+}
+
 func TestTypeRejectsUnknownNodes(t *testing.T) {
 	session := New()
 	defer session.Close()
-	h := session.mustHandle(&unknownHandleNode{})
+	h, _ := session.intern(&unknownHandleNode{})
 	kind, err := session.Type(h)
 	if kind != TypeNone || !errors.Is(err, ErrInvalidHandle) {
 		t.Fatalf("unknown type: %d %v", kind, err)
@@ -509,7 +578,7 @@ func TestDocumentAndCommentTypes(t *testing.T) {
 	root := ast.NewRoot()
 	doc.Append(root)
 	session.internTree(doc)
-	h := session.mustHandle(doc)
+	h := session.Identity(doc)
 	kind, err := session.Type(h)
 	if err != nil {
 		t.Fatal(err)
@@ -518,7 +587,7 @@ func TestDocumentAndCommentTypes(t *testing.T) {
 		t.Fatalf("document type: %d", kind)
 	}
 	comment := ast.NewComment("x")
-	ch := session.mustHandle(comment)
+	ch, _ := session.intern(comment)
 	kind, err = session.Type(ch)
 	if err != nil {
 		t.Fatal(err)
@@ -546,7 +615,7 @@ func TestErrorPathsAndIdentity(t *testing.T) {
 	if err != nil || kind != TypeRoot {
 		t.Fatalf("root type: %d %v", kind, err)
 	}
-	if session.intern(nil) != 0 {
+	if h, err := session.intern(nil); h != 0 || err != nil {
 		t.Fatal("intern nil")
 	}
 	if session.Identity(ast.NewDeclaration("missing", "1")) != 0 {
@@ -613,59 +682,39 @@ func TestErrorPathsAndIdentity(t *testing.T) {
 	}
 }
 
-func TestInternReusesZeroGeneration(t *testing.T) {
-	session := New()
-	defer session.Close()
-	first, err := session.NewDecl("a", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := session.Dispose(first); err != nil {
-		t.Fatal(err)
-	}
-	slot, _ := unpack(first)
-	session.slots[slot].gen = 0
-	next, err := session.NewDecl("b", "2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, gen := unpack(next)
-	if gen != 1 {
-		t.Fatalf("zero gen repaired: %d", gen)
+func TestDisposedIDsNeverRevive(t *testing.T) {
+	s := New()
+	defer s.Close()
+	first, _ := s.NewDecl("a", "1")
+	h := first
+	for i := 0; i < 1024; i++ {
+		if err := s.Dispose(h); err != nil {
+			t.Fatal(err)
+		}
+		h, _ = s.NewDecl("b", "2")
+		if h == first {
+			t.Fatal("stale ID revived")
+		}
+		if _, err := s.Type(first); !errors.Is(err, ErrStaleHandle) {
+			t.Fatal(err)
+		}
 	}
 }
 
-func TestDisposeRootAndReuseGenerationWrap(t *testing.T) {
-	session, root, err := Parse(".a { color: red; }")
-	if err != nil {
+func TestDisposeRoot(t *testing.T) {
+	s, root, _ := Parse("a {x:y}")
+	defer s.Close()
+	rule, _ := s.ChildAt(root, 0)
+	decl, _ := s.ChildAt(rule, 0)
+	if err := s.Dispose(root); err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
-	if err := session.Dispose(root); err != nil {
-		t.Fatal(err)
+	if s.Root() != 0 {
+		t.Fatal("root still live")
 	}
-	if session.Root() != 0 {
-		t.Fatal("root handle should clear")
-	}
-
-	session = New()
-	defer session.Close()
-	h, err := session.NewDecl("a", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	slot, _ := unpack(h)
-	session.slots[slot].gen = 255
-	wrapped := pack(slot, 255)
-	if err := session.Dispose(wrapped); err != nil {
-		t.Fatal(err)
-	}
-	next, err := session.NewDecl("b", "2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, gen := unpack(next)
-	if gen != 1 {
-		t.Fatalf("wrapped gen: %d", gen)
+	for _, id := range []Handle{root, rule, decl} {
+		if _, err := s.Parent(id); !errors.Is(err, ErrStaleHandle) {
+			t.Fatal(err)
+		}
 	}
 }
