@@ -722,7 +722,9 @@ native('structural mutation during traversal visits inserted siblings', () => {
               seen.push(decl.prop);
               if (
                 decl.prop === 'color' &&
-                !rule.some((node) => node.type === 'decl' && (node as Declaration).prop === 'opacity')
+                !rule.some(
+                  (node) => node.type === 'decl' && (node as Declaration).prop === 'opacity',
+                )
               ) {
                 rule.append({ prop: 'opacity', value: '1' });
               }
