@@ -138,8 +138,7 @@ export type PreviousSourceMap =
   | false
   | string
   | Record<string, unknown>
-  | import('source-map-js').SourceMapConsumer
-  | import('source-map-js').SourceMapGenerator
+  | { toString(): string; sources?: string[]; mappings?: string }
   | ((file?: string) => false | string | Record<string, unknown> | undefined);
 
 export interface SourceMapOptions {
@@ -202,10 +201,15 @@ export interface ProcessResult {
 export interface SourceMap {
   toString(): string;
   toJSON?(): Record<string, unknown>;
-  addMapping?(mapping: import('source-map-js').Mapping): void;
+  addMapping?(mapping: {
+    generated: { line: number; column: number };
+    original?: { line: number; column: number };
+    source?: string;
+    name?: string;
+  }): void;
   setSourceContent?(sourceFile: string, sourceContent: string | null | undefined): void;
   applySourceMap?(
-    consumer: import('source-map-js').SourceMapConsumer,
+    consumer: { sources?: string[]; sourcesContent?: (string | null)[]; toJSON?(): unknown },
     sourceFile?: string,
     sourceMapPath?: string,
   ): void;
@@ -246,5 +250,5 @@ export interface AstStringifyResult {
 }
 
 export interface ParseResult {
-  root: RootNode;
+  root: RootNode | import('./ast.js').ProcessRoot;
 }

@@ -24,9 +24,9 @@ function run(command, args) {
 }
 
 try {
-  run(process.execPath, ['./scripts/check-native-artifacts.mjs', 'snapshot', manifestPath]);
+  run(process.execPath, ['./scripts/native-artifacts.mjs', 'snapshot', manifestPath]);
   run(pnpm, ['build:release']);
-  run(process.execPath, ['./scripts/check-native-artifacts.mjs', 'verify', manifestPath]);
+  run(process.execPath, ['./scripts/native-artifacts.mjs', 'verify', manifestPath]);
   run(pnpm, ['changeset:publish']);
 } finally {
   rmSync(releaseDirectory, { recursive: true, force: true });

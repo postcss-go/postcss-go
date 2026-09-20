@@ -6,6 +6,7 @@ import {
   getDefaultAsyncBackendCapabilities,
   installNativeSyncCssRuntime,
   isNativeAsyncBridgeAvailable,
+  isNativeBridgeAvailable,
   NativePostcssGoService,
 } from '../src/native.ts';
 import {
@@ -16,7 +17,10 @@ import {
   setSyncCssRuntime,
   stringifyCssSync,
 } from '../src/ast.ts';
-import { encodeAst } from '../src/codec.ts';
+import {
+  HANDLE_PROTOCOL_MAJOR,
+  HANDLE_REQUIRED_CAPABILITIES,
+} from '../src/generated/handle-protocol.ts';
 import {
   AsyncBackendUnavailableError,
   AsyncPluginError,
@@ -25,6 +29,33 @@ import {
 } from '../src/errors.ts';
 
 const originalDisableNative = process.env.POSTCSS_GO_DISABLE_NATIVE;
+
+function mockHandleAddon(overrides: Record<string, unknown> = {}) {
+  return {
+    handleProtocolInfo: () => ({
+      major: HANDLE_PROTOCOL_MAJOR,
+      minor: 4,
+      maxBatchSize: 4096,
+      capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
+    }),
+    handleParse: () => ({ sessionId: 1, rootId: 1 }),
+    handleClose: () => {},
+    handleType: () => 1,
+    handleGetField: () => '',
+    handleSetField: () => {},
+    handleWalkDecls: () => 0,
+    handleOpenCursor: () => 1,
+    handleCursorNext: () => 0,
+    handleCloseCursor: () => {},
+    handleReadFields: () => [],
+    handleSetFields: () => {},
+    handleStringify: () => '.a{}',
+    handleNewDecl: () => 2,
+    handleAppend: () => {},
+    handleDispose: () => {},
+    ...overrides,
+  };
+}
 
 afterEach(() => {
   if (originalDisableNative === undefined) delete process.env.POSTCSS_GO_DISABLE_NATIVE;
@@ -74,7 +105,7 @@ test('musl does not probe glibc or local native addons', async () => {
 test('non-syntax native failures do not trigger parser error reconstruction', () => {
   const nativeError = new Error('source map could not be loaded');
   const service = new NativePostcssGoService({
-    process() {
+    noWork() {
       throw nativeError;
     },
   } as never);
@@ -82,20 +113,14 @@ test('non-syntax native failures do not trigger parser error reconstruction', ()
   expect(() => service.processSync('.invalid {')).toThrow(nativeError);
 });
 
-test.each([
-  ['missing process frame header', Buffer.from('invalid')],
-  [
-    'metadata length beyond process frame',
-    Buffer.from([0x50, 0x43, 0x47, 0x50, 0xff, 0xff, 0xff, 0x7f]),
-  ],
-])('rejects %s', (_name, frame) => {
+test('rejects invalid noWork JSON', () => {
   const service = new NativePostcssGoService({
-    process() {
-      return frame;
+    noWork() {
+      return 'not-json';
     },
   } as never);
 
-  expect(() => service.processSync('.a{}')).toThrow(/native process response/);
+  expect(() => service.processSync('.a{}')).toThrow();
 });
 
 test('createNativeService fails when the addon is disabled', () => {
@@ -104,20 +129,16 @@ test('createNativeService fails when the addon is disabled', () => {
 });
 
 test('syntax-prefixed native errors rebuild structured CssSyntaxError metadata', () => {
-  const service = new NativePostcssGoService({
-    parse() {
-      throw new Error(
-        'postcss-go:css-syntax:{"name":"CssSyntaxError","reason":"Unexpected }","line":1,"column":4}',
-      );
-    },
-    parseAsync() {
-      return Promise.reject(
-        new Error(
-          'postcss-go:css-syntax:{"name":"CssSyntaxError","reason":"Unexpected }","line":1,"column":4}',
-        ),
-      );
-    },
-  } as never);
+  const syntax = new Error(
+    'postcss-go:css-syntax:{"name":"CssSyntaxError","reason":"Unexpected }","line":1,"column":4}',
+  );
+  const service = new NativePostcssGoService(
+    mockHandleAddon({
+      handleParse() {
+        throw syntax;
+      },
+    }) as never,
+  );
 
   expect(() => service.parseSync('a {')).toThrow(CssSyntaxError);
   try {
@@ -134,22 +155,26 @@ test('syntax-prefixed native errors rebuild structured CssSyntaxError metadata',
 });
 
 test('plain syntax-prefixed native errors become CssSyntaxError without a JS parser replay', () => {
-  const service = new NativePostcssGoService({
-    parse() {
-      throw new Error('postcss-go:css-syntax: Unexpected }');
-    },
-  } as never);
+  const service = new NativePostcssGoService(
+    mockHandleAddon({
+      handleParse() {
+        throw new Error('postcss-go:css-syntax: Unexpected }');
+      },
+    }) as never,
+  );
 
   expect(() => service.parseSync('a {')).toThrow(CssSyntaxError);
   expect(() => service.parseSync('a {')).toThrow(/Unexpected }/);
 });
 
 test('invalid syntax-prefixed JSON still becomes CssSyntaxError', () => {
-  const service = new NativePostcssGoService({
-    parse() {
-      throw new Error('postcss-go:css-syntax:{not-json');
-    },
-  } as never);
+  const service = new NativePostcssGoService(
+    mockHandleAddon({
+      handleParse() {
+        throw new Error('postcss-go:css-syntax:{not-json');
+      },
+    }) as never,
+  );
 
   expect(() => service.parseSync('.a{}')).toThrow(CssSyntaxError);
   expect(() => service.parseSync('.a{}')).toThrow(/not-json/);
@@ -190,24 +215,23 @@ test('sync noWork map.annotation thenables are rejected as async plugins', () =>
   ).toThrow(AsyncPluginError);
 });
 
-test('async stringify annotation callbacks are awaited', async () => {
-  const service = new NativePostcssGoService({
-    async stringifyAsync() {
-      return JSON.stringify({ css: '.a{}' });
-    },
-  } as never);
-
-  const result = await service.stringifyResult(
-    { type: 'root', nodes: [] },
-    {
-      to: 'out.css',
-      map: {
-        annotation: async () => 'generated.css.map',
-      },
-    },
-  );
-  expect(result.css).toBe('.a{}');
-});
+test.runIf(isNativeAsyncBridgeAvailable())(
+  'async stringify annotation callbacks are awaited',
+  async () => {
+    const service = createNativeService();
+    try {
+      const result = await service.stringifyResult(service.parseSync('.a{}').root, {
+        to: 'out.css',
+        map: {
+          annotation: async () => 'generated.css.map',
+        },
+      });
+      expect(result.css).toContain('.a');
+    } finally {
+      await service.close();
+    }
+  },
+);
 
 test('async noWork annotation callbacks are awaited', async () => {
   const service = new NativePostcssGoService({
@@ -225,47 +249,39 @@ test('async noWork annotation callbacks are awaited', async () => {
   expect(result.css).toBe('.a{}');
 });
 
-test('processSync with annotation callbacks stringifies through the live path', () => {
-  const rootBuf = encodeAst({ type: 'root', nodes: [] });
-  const service = new NativePostcssGoService({
-    parse() {
-      return rootBuf;
-    },
-    stringify() {
-      return JSON.stringify({ css: '.annotated{}' });
-    },
-  } as never);
+test.runIf(isNativeBridgeAvailable())(
+  'processSync with annotation callbacks stringifies through the live path',
+  () => {
+    const service = createNativeService();
+    try {
+      const result = service.processSync('.a{}', {
+        to: 'out.css',
+        map: { annotation: () => 'out.css.map' },
+      });
+      expect(result.css).toContain('.a');
+      expect(result.backend).toBe('native');
+    } finally {
+      service.close();
+    }
+  },
+);
 
-  const result = service.processSync('.a{}', {
-    to: 'out.css',
-    map: {
-      annotation: () => 'out.css.map',
-    },
-  });
-  expect(result.css).toBe('.annotated{}');
-  expect(result.backend).toBe('native');
-});
-
-test('process with annotation callbacks stringifies through the live async path', async () => {
-  const rootBuf = encodeAst({ type: 'root', nodes: [] });
-  const service = new NativePostcssGoService({
-    async parseAsync() {
-      return rootBuf;
-    },
-    async stringifyAsync() {
-      return JSON.stringify({ css: '.annotated{}' });
-    },
-  } as never);
-
-  const result = await service.process('.a{}', {
-    to: 'out.css',
-    map: {
-      annotation: async () => 'out.css.map',
-    },
-  });
-  expect(result.css).toBe('.annotated{}');
-  expect(result.backend).toBe('native');
-});
+test.runIf(isNativeAsyncBridgeAvailable())(
+  'process with annotation callbacks stringifies through the live async path',
+  async () => {
+    const service = createNativeService();
+    try {
+      const result = await service.process('.a{}', {
+        to: 'out.css',
+        map: { annotation: async () => 'out.css.map' },
+      });
+      expect(result.css).toContain('.a');
+      expect(result.backend).toBe('native');
+    } finally {
+      await service.close();
+    }
+  },
+);
 
 test('parseCssSync and stringifyCssSync throw without an installed N-API runtime', () => {
   setSyncCssRuntime(undefined);

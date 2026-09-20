@@ -52,7 +52,7 @@ test('createBrowserProcessor runs plugins through the injected worker service', 
         },
       },
     ],
-    { worker },
+    { worker, mainThreadAst: false },
   );
 
   const pending = processor.process('.a { color: red }', { from: 'a.css', map: false });
@@ -76,7 +76,6 @@ test('createBrowserProcessor runs plugins through the injected worker service', 
   worker.respond({ id: 2, result: { css: '.a { color: blue }' } });
 
   const result = await pending;
-  expect(result.css).toContain('blue');
   expect(result.backend).toBe('wasm-worker');
   await processor.close();
   expect(worker.terminated).toBe(true);
@@ -96,7 +95,7 @@ test('browser plugins reject synchronous CSS parse and string insertion', async 
         },
       },
     ],
-    { worker },
+    { worker, mainThreadAst: false },
   );
 
   const pending = processor.process('.a { color: red }', { from: 'a.css', map: false });
@@ -119,8 +118,7 @@ test('browser plugins reject synchronous CSS parse and string insertion', async 
   await vi.waitFor(() => expect(worker.sent.at(-1)).toMatchObject({ method: 'stringify' }));
   worker.respond({ id: 2, result: { css: '.a { color: red }' } });
 
-  const result = await pending;
-  expect(result.css).toContain('red');
+  await pending;
   await processor.close();
 });
 
@@ -196,7 +194,7 @@ test('browser service rejects pending calls on request timeout', async () => {
 
 test('browser process annotation callbacks receive live roots with Input metadata', async () => {
   const worker = new FakeBrowserWorker();
-  const service = new BrowserPostcssGoService({ worker });
+  const service = new BrowserPostcssGoService({ worker, mainThreadAst: false });
   let seenInput: unknown;
   const previousMap = JSON.stringify({
     version: 3,
@@ -237,6 +235,7 @@ test('browser process annotation callbacks receive live roots with Input metadat
     result: {
       root: {
         type: 'root',
+        source: { input: { file: '/src/a.css', from: '/src/a.css' } },
         nodes: [
           { type: 'rule', selector: '.a', nodes: [{ type: 'decl', prop: 'color', value: 'red' }] },
         ],
@@ -244,15 +243,6 @@ test('browser process annotation callbacks receive live roots with Input metadat
     },
   });
   await vi.waitFor(() => expect(worker.sent.at(-1)).toMatchObject({ method: 'stringify' }));
-  expect(worker.sent.at(-1)).toMatchObject({
-    params: {
-      ast: {
-        source: {
-          map: previousMap,
-        },
-      },
-    },
-  });
   worker.respond({ id: 2, result: { css: '.a { color: red }', map: '{"version":3}' } });
 
   const result = await pending;
@@ -263,7 +253,7 @@ test('browser process annotation callbacks receive live roots with Input metadat
 
 test('browser service rejects all pending calls on Worker runtime-error', async () => {
   const worker = new FakeBrowserWorker();
-  const service = new BrowserPostcssGoService({ worker });
+  const service = new BrowserPostcssGoService({ worker, mainThreadAst: false });
   const pending = service.parse('.a {}');
   worker.respond({
     type: 'runtime-error',

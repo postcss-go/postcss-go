@@ -21,8 +21,7 @@ on:
       - 'npm/postcss-go/**'
       - 'vendor/postcss/**'
       - scripts/build-wasm.mjs
-      - scripts/run-upstream-tests.mjs
-      - scripts/prepare-upstream-compat.mjs
+      - scripts/upstream.mjs
       - .github/workflows/unit-tests.yml
   pull_request:
     paths:
@@ -41,8 +40,7 @@ on:
       - 'npm/postcss-go/**'
       - 'vendor/postcss/**'
       - scripts/build-wasm.mjs
-      - scripts/run-upstream-tests.mjs
-      - scripts/prepare-upstream-compat.mjs
+      - scripts/upstream.mjs
       - .github/workflows/unit-tests.yml
 
 concurrency:

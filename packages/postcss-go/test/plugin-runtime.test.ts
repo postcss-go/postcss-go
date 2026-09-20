@@ -2,7 +2,15 @@ import postcss from 'postcss';
 import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { expect, test, vi } from 'vitest';
 
-import { Document, fromAst, Node, Root, type Declaration, type ProcessRoot } from '../src/ast.ts';
+import {
+  Document,
+  fromAst,
+  fromJSONLocal,
+  Node,
+  Root,
+  type Declaration,
+  type ProcessRoot,
+} from '../src/ast.ts';
 import { stringifyNode } from './helpers/stringify.ts';
 import { Processor } from '../src/processor.ts';
 import {
@@ -14,10 +22,10 @@ import {
 } from '../src/plugin-runtime.ts';
 import type { AcceptedPlugin, PluginCreator, Transformer } from '../src/plugin-types.ts';
 import { NATIVE_BACKEND_CAPABILITIES } from '../src/service.ts';
-import type { AstNode, ProcessResult, RootNode } from '../src/types.ts';
+import type { AstNode, ProcessResult } from '../src/types.ts';
 
-function parsedRoot(css: string): RootNode {
-  return postcss.parse(css).toJSON() as RootNode;
+function parsedRoot(css: string): Root {
+  return fromJSONLocal(postcss.parse(css).toJSON() as never) as Root;
 }
 
 const stringifyAst = (ast: AstNode | Node): string =>
@@ -448,11 +456,11 @@ test('Comment visitors run and non-root parse responses fail', async () => {
 
   const broken = bridge();
   broken.parse = vi.fn(async () => ({
-    root: { type: 'rule', selector: '.a', nodes: [] } as unknown as RootNode,
+    root: { type: 'rule', selector: '.a', nodes: [] } as never,
   }));
   await expect(
     runPluginsWithBridge(broken, [], '.a{}', { from: 'input.css', map: false }),
-  ).rejects.toThrow(/Root or Document/);
+  ).rejects.toThrow(/live tree|AST DTO|Root or Document/);
 });
 
 test('previous map metadata is attached from annotation and opts.prev', async () => {
@@ -460,13 +468,6 @@ test('previous map metadata is attached from annotation and opts.prev', async ()
   const annotation = Buffer.from(previous, 'utf8').toString('base64');
   const css = `.a{}\n/*# sourceMappingURL=data:application/json;base64,${annotation} */`;
   const service = bridge();
-  service.parse = vi.fn(async () => ({
-    root: {
-      type: 'root',
-      source: { input: { file: 'input.css' }, start: { line: 1, column: 1, offset: 0 } },
-      nodes: [{ type: 'rule', selector: '.a', nodes: [] }],
-    } as unknown as RootNode,
-  }));
 
   const result = await runPluginsWithBridge(
     service,
@@ -634,13 +635,6 @@ test('callback errors include postcssNode metadata', async () => {
 
 test('hasPreviousMap treats map.prev false as absent', async () => {
   const service = bridge();
-  service.parse = vi.fn(async () => ({
-    root: {
-      type: 'root',
-      source: { start: { line: 1, column: 1, offset: 0 } },
-      nodes: [],
-    } as unknown as RootNode,
-  }));
 
   const result = await runPluginsWithBridge(
     service,

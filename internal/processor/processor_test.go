@@ -207,10 +207,12 @@ func TestProcessorComposesPreviousMapAndRemovesAnnotation(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Map), &sourceMap); err != nil {
 		t.Fatalf("invalid source map: %v", err)
 	}
-	if len(sourceMap.Sources) != 1 || sourceMap.Sources[0] != "original.css" {
+	// The rule's closing brace has no entry in the previous map, so it keeps
+	// pointing at the intermediate file the way upstream PostCSS does.
+	if len(sourceMap.Sources) != 2 || sourceMap.Sources[0] != "original.css" || sourceMap.Sources[1] != "generated.css" {
 		t.Fatalf("expected composed original source, got %#v", sourceMap.Sources)
 	}
-	if len(sourceMap.SourcesContent) != 1 || sourceMap.SourcesContent[0] == nil ||
+	if len(sourceMap.SourcesContent) != 2 || sourceMap.SourcesContent[0] == nil ||
 		!strings.Contains(*sourceMap.SourcesContent[0], "color: red") {
 		t.Fatalf("unexpected composed source content: %#v", sourceMap.SourcesContent)
 	}

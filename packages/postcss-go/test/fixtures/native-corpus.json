@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "1.4.1",
+  "owner": "postcss-go maintainers",
+  "denominator": "Every case has equal weight, including unsupported and map cases; no exclusions. Require ceil(0.95 * cases.length). Forced success is not proof of auto selection or no hydration.",
+  "plugins": {
+    "postcss-import": "16.1.1",
+    "postcss-nested": "8.0.1",
+    "postcss": "8.5.15",
+    "qualification-scalar": "1"
+  },
+  "cases": [
+    {
+      "id": "nested-default",
+      "plugin": "postcss-nested",
+      "options": {},
+      "css": ".card { color: red; &:hover { color: blue } }",
+      "map": false,
+      "expectedHandle": "supported"
+    },
+    {
+      "id": "nested-preserve",
+      "plugin": "postcss-nested",
+      "options": {
+        "preserveEmpty": true
+      },
+      "css": ".card { .title { color: red } }",
+      "map": false,
+      "expectedHandle": "supported"
+    },
+    {
+      "id": "nested-bubble",
+      "plugin": "postcss-nested",
+      "options": {
+        "bubble": ["phone"]
+      },
+      "css": ".card { @phone { color: red } }",
+      "map": false,
+      "expectedHandle": "supported"
+    },
+    {
+      "id": "import-default",
+      "plugin": "postcss-import",
+      "options": {},
+      "css": "@import \"data:text/css,.base%7Bcolor%3Ared%7D\"; .end { color: blue }",
+      "map": false,
+      "expectedHandle": "supported"
+    },
+    {
+      "id": "import-duplicates",
+      "plugin": "postcss-import",
+      "options": {
+        "skipDuplicates": false
+      },
+      "css": "@import \"data:text/css,.base%7Bcolor%3Ared%7D\"; @import \"data:text/css,.base%7Bcolor%3Ared%7D\";",
+      "map": false,
+      "expectedHandle": "supported"
+    },
+    {
+      "id": "nested-map",
+      "plugin": "postcss-nested",
+      "options": {},
+      "css": ".card { &:hover { color: blue } }",
+      "map": {
+        "inline": false,
+        "annotation": false
+      },
+      "expectedHandle": "supported"
+    },
+    {
+      "id": "scalar",
+      "plugin": "qualification-scalar",
+      "options": {},
+      "css": "a { color: red; margin: 0 }",
+      "map": false,
+      "expectedHandle": "supported"
+    }
+  ],
+  "compatibilityDifferences": [
+    {
+      "case": "nested-map",
+      "field": "map.mappings",
+      "upstream": "AAAQ,cAAU,YAAY",
+      "binary": "AAAQ,cAAU,OAAO,GAAG,EAAE",
+      "handle": "AAAQ,cAAU,OAAO,GAAG,EAAE",
+      "owner": "postcss-go maintainers",
+      "reason": "Bulk/handle native stringify (shared after handle Result serialization) emits additional nested-declaration segments versus upstream. CSS and non-mapping fields match."
+    }
+  ],
+  "handleContract": "Capability-complete native and main-thread WASM workloads use the mutable Go-backed handle facade. Map annotations/inline use the native stringify path."
+}

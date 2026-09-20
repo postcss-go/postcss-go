@@ -8,8 +8,15 @@ import {
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
-import { Node, asProcessRoot, fromAst, setSyncCssRuntime, type Builder, type Root } from './ast.js';
-import { decodeAst, encodeAst, hydrateAst, serializeAst } from './codec.js';
+import {
+  Node,
+  asProcessRoot,
+  fromAst,
+  setConstructedNodeIntern,
+  setSyncCssRuntime,
+  type Builder,
+  type Root,
+} from './ast.js';
 import {
   AsyncBackendUnavailableError,
   AsyncPluginError,
@@ -33,10 +40,17 @@ import type {
   ParseResult,
   ProcessOptions,
   ProcessResult,
-  ResultMessage,
 } from './types.js';
-import { prepareStringifyOptions } from './source-map-output.js';
-import { hasNativeHandleBridge, type NativeHandleAddon } from './handle-session.js';
+import { prepareStringifyOptions, finalizeMappedCSS } from './source-map-output.js';
+import { stringifyDocumentChildren } from './document-stringify.js';
+import { hasHandleBridge, type HandleBridge } from './handle-session.js';
+import { ownerOf } from './handle-facade.js';
+import {
+  internDetached,
+  isGoOwned,
+  parseRetained,
+  setDefaultHandleBridge,
+} from './retained-session.js';
 
 type NativeAddon = {
   parse(css: string, from?: string): Buffer;
@@ -48,12 +62,10 @@ type NativeAddon = {
   noWork(css: string, optionsJson?: string): string;
   noWorkAsync(css: string, optionsJson?: string): Promise<string>;
   stringifyBuilder(ast: Buffer, optionsJson?: string): string;
-} & Partial<NativeHandleAddon>;
+} & Partial<HandleBridge>;
 
 export type LiveParseResult = { root: Root };
 
-const PROCESS_FRAME_MAGIC = 'PCGP';
-const PROCESS_FRAME_HEADER_SIZE = 8;
 const CSS_SYNTAX_ERROR_PREFIX = 'postcss-go:css-syntax:';
 
 let cachedAddon: NativeAddon | null | undefined;
@@ -118,31 +130,6 @@ function loadAddon(): NativeAddon | null {
   }
 }
 
-function encodeBoundaryAst(ast: AstNode | Node): Buffer {
-  return ast instanceof Node ? serializeAst(ast) : encodeAst(ast);
-}
-
-function indexLiveNodes(node: Node): Node[] {
-  const nodes: Node[] = [];
-  const visit = (current: Node): void => {
-    nodes.push(current);
-    for (const child of (current as Node & { nodes?: Node[] }).nodes ?? []) visit(child);
-  };
-  visit(node);
-  return nodes;
-}
-
-/** Encode the node's root so Go can infer raws from siblings, plus a 1-based index. */
-function encodeStringifyTarget(node: Node): { buffer: Buffer; options?: string } {
-  const root = node.root();
-  if (root === node) return { buffer: serializeAst(node) };
-  const nodeIndex = indexLiveNodes(root).indexOf(node) + 1;
-  return {
-    buffer: serializeAst(root),
-    options: nodeIndex > 0 ? JSON.stringify({ nodeIndex }) : undefined,
-  };
-}
-
 /** True when the sync native addon is available for this platform. */
 export function isNativeBridgeAvailable(): boolean {
   return loadAddon() !== null;
@@ -184,14 +171,18 @@ export function createNativeService(): NativePostcssGoService {
 export function installNativeSyncCssRuntime(): void {
   if (!isNativeBridgeAvailable()) {
     setSyncCssRuntime(undefined);
+    setDefaultHandleBridge(null);
+    setConstructedNodeIntern(undefined);
     return;
   }
   const service = createNativeService();
+  setDefaultHandleBridge(service.handleBridge);
+  setConstructedNodeIntern(internDetached);
   setSyncCssRuntime({
     parse(css, options = {}) {
       const cssText = String(css);
       const root = service.parseSync(cssText, options).root;
-      attachInputMetadata(root, cssText, options);
+      if (!isGoOwned(root)) attachInputMetadata(root, cssText, options);
       return root;
     },
     stringify(node, builder) {
@@ -211,37 +202,80 @@ export function installNativeSyncCssRuntime(): void {
  */
 export class NativePostcssGoService implements SyncPostcssGoService {
   readonly capabilities = NATIVE_BACKEND_CAPABILITIES;
-  readonly handleAddon: NativeHandleAddon | null;
+  readonly handleBridge: HandleBridge | null;
 
   constructor(private readonly addon: NativeAddon) {
-    this.handleAddon = hasNativeHandleBridge(addon) ? addon : null;
+    this.handleBridge = hasHandleBridge(addon) ? addon : null;
+  }
+
+  private requireHandle(): HandleBridge {
+    if (!this.handleBridge) throw new Error('postcss-go handle bridge is unavailable');
+    return this.handleBridge;
+  }
+
+  private parseOwned(css: string, options: ProcessOptions): LiveParseResult {
+    return {
+      root: parseRetained(this.requireHandle(), css, {
+        from: options.from,
+        document: options.document == null ? undefined : String(options.document),
+        map: options.map,
+      }) as Root,
+    };
+  }
+
+  private stringifyOwned(ast: AstNode | Node, options: ProcessOptions): AstStringifyResult {
+    const live = ast instanceof Node ? ast : internDetached(fromAst(ast));
+    const owner = ownerOf(live);
+    const handle = owner?.handleId(live);
+    if (!owner || handle === undefined) {
+      if (live instanceof Node && live.type === 'document') {
+        const css = this.stringifyNodeSync(live);
+        if (!options.map) return { css };
+        const first = (live as { first?: Node }).first;
+        const firstOwner = first ? ownerOf(first) : undefined;
+        const firstHandle = first && firstOwner ? firstOwner.handleId(first) : undefined;
+        if (!first || !firstOwner || firstHandle === undefined) return { css };
+        firstOwner.flushPatches();
+        const mapOpts = options.map && typeof options.map === 'object' ? options.map : {};
+        const mapped = firstOwner.session.stringifyMap(firstHandle, {
+          from: options.from,
+          to: options.to,
+          absolute: Boolean((mapOpts as { absolute?: boolean }).absolute),
+          preserveAnnotation: (mapOpts as { annotation?: unknown }).annotation !== false,
+        });
+        return finalizeMappedCSS(css, mapped.map, options);
+      }
+      throw new Error('postcss-go stringify requires a Go-owned tree');
+    }
+    const wantsMap = Boolean(options.map);
+    if (!wantsMap) return { css: owner.session.stringify(handle) };
+    const mapOpts = options.map && typeof options.map === 'object' ? options.map : {};
+    const mapped = owner.session.stringifyMap(handle, {
+      from: options.from,
+      to: options.to,
+      absolute: Boolean((mapOpts as { absolute?: boolean }).absolute),
+      preserveAnnotation: (mapOpts as { annotation?: unknown }).annotation !== false,
+    });
+    return finalizeMappedCSS(mapped.css, mapped.map, options);
   }
 
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
     options = materializePreviousMap(options);
     try {
-      const buffer = await this.addon.parseAsync(css, options.from);
-      return { root: decodeAst(buffer) as ParseResult['root'] };
+      return this.parseOwned(css, options);
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
   }
 
-  /** Parse asynchronously into a live tree without an intermediate DTO. */
   async parseLive(css: string, options: ProcessOptions = {}): Promise<LiveParseResult> {
-    options = materializePreviousMap(options);
-    try {
-      return { root: hydrateAst(await this.addon.parseAsync(css, options.from)) };
-    } catch (nativeError) {
-      throwStructuredSyntaxError(css, options, nativeError);
-    }
+    return this.parse(css, options) as Promise<LiveParseResult>;
   }
 
   async process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
     options = materializePreviousMap(options);
-    if (hasAnnotationCallback(options)) {
-      const root = (await this.parseLive(css, { from: options.from })).root;
-      attachInputMetadata(root, css, options);
+    if (hasAnnotationCallback(options) || options.map) {
+      const root = (await this.parseLive(css, { from: options.from, map: options.map })).root;
       const effective = await this.resolveStringifyAnnotationLive(root, options);
       const stringified = await this.stringifyResultLive(root, effective);
       return { ...stringified, root, messages: [], backend: 'native' };
@@ -251,10 +285,11 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       joinMapAnnotationPath,
     ) as ProcessOptions;
     try {
-      return {
-        ...decodeProcessFrame(await this.addon.processAsync(css, JSON.stringify(normalized))),
-        backend: 'native',
-      };
+      const payload = JSON.parse(
+        await this.addon.noWorkAsync(css, JSON.stringify(normalized)),
+      ) as NoWorkResult;
+      const root = this.parseOwned(css, options).root;
+      return { ...payload, root, messages: [], backend: 'native' };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
@@ -262,9 +297,8 @@ export class NativePostcssGoService implements SyncPostcssGoService {
 
   processSync(css: string, options: ProcessOptions = {}): ProcessResult {
     options = materializePreviousMap(options);
-    if (hasAnnotationCallback(options)) {
-      const root = this.parseSync(css, { from: options.from }).root;
-      attachInputMetadata(root, css, options);
+    if (hasAnnotationCallback(options) || options.map) {
+      const root = this.parseSync(css, { from: options.from, map: options.map }).root;
       const effective = this.resolveStringifyAnnotationSync(root, options);
       const stringified = this.stringifyResultSync(root, effective);
       return { ...stringified, root, messages: [], backend: 'native' };
@@ -274,10 +308,11 @@ export class NativePostcssGoService implements SyncPostcssGoService {
       joinMapAnnotationPath,
     ) as ProcessOptions;
     try {
-      return {
-        ...decodeProcessFrame(this.addon.process(css, JSON.stringify(normalized))),
-        backend: 'native',
-      };
+      const payload = JSON.parse(
+        this.addon.noWork(css, JSON.stringify(normalized)),
+      ) as NoWorkResult;
+      const root = this.parseOwned(css, options).root;
+      return { ...payload, root, messages: [], backend: 'native' };
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
@@ -313,16 +348,9 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     options = materializePreviousMap(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = await this.resolveStringifyAnnotation(ast, prepared);
-    const normalized = normalizeProcessOptions(
-      effective as NormalizeProcessOptionsInput,
-      joinMapAnnotationPath,
-    ) as ProcessOptions;
-    return JSON.parse(
-      await this.addon.stringifyAsync(encodeAst(ast), JSON.stringify(normalized)),
-    ) as AstStringifyResult;
+    return this.stringifyOwned(ast, effective);
   }
 
-  /** Stringify a live tree asynchronously without converting it to a DTO. */
   async stringifyResultLive(
     ast: AstNode | Node,
     options: ProcessOptions = {},
@@ -330,73 +358,64 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     options = materializePreviousMap(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = await this.resolveStringifyAnnotationLive(ast, prepared);
-    const normalized = normalizeProcessOptions(
-      effective as NormalizeProcessOptionsInput,
-      joinMapAnnotationPath,
-    ) as ProcessOptions;
-    return JSON.parse(
-      await this.addon.stringifyAsync(encodeBoundaryAst(ast), JSON.stringify(normalized)),
-    ) as AstStringifyResult;
+    return this.stringifyOwned(ast, effective);
   }
 
-  async close(): Promise<void> {
-    // Native addon holds no external process.
-  }
-
-  /**
-   * Parse into a live TypeScript AST. Prefer this over `parse` + `fromAst` on
-   * the plugin hot path.
-   */
   parseSync(css: string, options: ProcessOptions = {}): LiveParseResult {
     options = materializePreviousMap(options);
     try {
-      return { root: hydrateAst(this.addon.parse(css, options.from)) };
+      return this.parseOwned(css, options);
     } catch (nativeError) {
       throwStructuredSyntaxError(css, options, nativeError);
     }
   }
 
-  /**
-   * Stringify a live TypeScript AST (or a plain DTO). Prefer passing a live
-   * node so `toAst` can be skipped.
-   */
   stringifyResultSync(ast: AstNode | Node, options: ProcessOptions = {}): AstStringifyResult {
     options = materializePreviousMap(options);
     const prepared = prepareStringifyOptions(ast, options);
     const effective = this.resolveStringifyAnnotationSync(ast, prepared);
-    const normalized = normalizeProcessOptions(
-      effective as NormalizeProcessOptionsInput,
-      joinMapAnnotationPath,
-    ) as ProcessOptions;
-    return JSON.parse(
-      this.addon.stringify(encodeBoundaryAst(ast), JSON.stringify(normalized)),
-    ) as AstStringifyResult;
+    return this.stringifyOwned(ast, effective);
   }
 
   stringifySync(ast: AstNode | Node, options: ProcessOptions = {}): string {
     return this.stringifyResultSync(ast, options).css;
   }
 
-  /** Stringify a live node without map options, for `Node#toString()`. */
   stringifyNodeSync(node: Node): string {
-    const target = encodeStringifyTarget(node);
-    return (JSON.parse(this.addon.stringify(target.buffer, target.options)) as AstStringifyResult)
-      .css;
+    const owner = ownerOf(node);
+    const handle = owner?.handleId(node);
+    if (owner && handle !== undefined) {
+      owner.flushPatches();
+      return owner.session.stringify(handle);
+    }
+    if (node.type === 'document') {
+      return stringifyDocumentChildren(node, (child) => this.stringifyNodeSync(child));
+    }
+    const interned = internDetached(node);
+    const internOwner = ownerOf(interned);
+    const internHandle = internOwner?.handleId(interned);
+    if (!internOwner || internHandle === undefined) {
+      throw new Error('postcss-go stringify requires a Go-owned tree');
+    }
+    internOwner.flushPatches();
+    return internOwner.session.stringify(internHandle);
   }
 
-  /** Replay Go builder chunks onto a PostCSS-shaped callback. */
   stringifyBuilderSync(node: Node, builder: Builder): void {
-    const target = encodeStringifyTarget(node);
-    const parts = JSON.parse(this.addon.stringifyBuilder(target.buffer, target.options)) as Array<{
-      css: string;
-      node?: number;
-      type?: string;
-    }>;
-    const indexed = indexLiveNodes(node);
-    for (const part of parts) {
-      const live = part.node && part.node > 0 ? indexed[part.node - 1] : undefined;
+    const interned = ownerOf(node) ? node : internDetached(node);
+    const owner = ownerOf(interned);
+    const handle = owner?.handleId(interned);
+    if (!owner || handle === undefined) {
+      throw new Error('postcss-go stringify requires a Go-owned tree');
+    }
+    for (const part of owner.session.stringifyBuilder(handle)) {
+      const live = part.node ? owner.node(part.node) : undefined;
       builder(part.css, live, part.type || undefined);
     }
+  }
+
+  async close(): Promise<void> {
+    // Native addon holds no external process.
   }
 
   private resolveNoWorkAnnotationSync(options: ProcessOptions): ProcessOptions {
@@ -423,7 +442,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     ) {
       return options;
     }
-    const live = asProcessRoot(root instanceof Node ? root : fromAst(root));
+    const live = asProcessRoot(root instanceof Node ? root : internDetached(fromAst(root)));
     const annotation = options.map.annotation(options.to, live as never);
     if (isThenable(annotation)) {
       observeThenable(annotation);
@@ -443,7 +462,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     ) {
       return options;
     }
-    const live = asProcessRoot(fromAst(root));
+    const live = asProcessRoot(internDetached(fromAst(root)));
     const annotation = await options.map.annotation(options.to, live as never);
     return { ...options, map: { ...options.map, annotation } };
   }
@@ -459,7 +478,7 @@ export class NativePostcssGoService implements SyncPostcssGoService {
     ) {
       return options;
     }
-    const live = asProcessRoot(root instanceof Node ? root : fromAst(root));
+    const live = asProcessRoot(root instanceof Node ? root : internDetached(fromAst(root)));
     const annotation = await options.map.annotation(options.to, live as never);
     return { ...options, map: { ...options.map, annotation } };
   }
@@ -478,35 +497,6 @@ function hasAnnotationCallback(options: ProcessOptions): boolean {
   return (
     !!options.map && typeof options.map === 'object' && typeof options.map.annotation === 'function'
   );
-}
-
-function decodeProcessFrame(frame: Buffer): ProcessResult {
-  if (
-    frame.length < PROCESS_FRAME_HEADER_SIZE ||
-    frame.subarray(0, 4).toString('ascii') !== PROCESS_FRAME_MAGIC
-  ) {
-    throw new Error('postcss-go native process response has an invalid frame');
-  }
-  const metadataLength = frame.readUInt32LE(4);
-  const rootOffset = PROCESS_FRAME_HEADER_SIZE + metadataLength;
-  if (rootOffset > frame.length) {
-    throw new Error('postcss-go native process response has invalid metadata length');
-  }
-  const metadata = JSON.parse(
-    frame.subarray(PROCESS_FRAME_HEADER_SIZE, rootOffset).toString('utf8'),
-  ) as {
-    css: string;
-    map?: string;
-    mapFile?: string;
-    messages?: ResultMessage[];
-  };
-  return {
-    css: metadata.css,
-    map: metadata.map,
-    mapFile: metadata.mapFile,
-    root: hydrateAst(frame.subarray(rootOffset)),
-    messages: metadata.messages ?? [],
-  };
 }
 
 function throwStructuredSyntaxError(

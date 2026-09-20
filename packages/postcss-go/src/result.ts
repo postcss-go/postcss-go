@@ -3,57 +3,106 @@ import type { ProcessFileOptions } from '@postcss-go/shared/map-options';
 import { Warning, type WarningOptions } from './warning.js';
 import type { ResultMessage, SourceMap } from './types.js';
 import type { BackendKind } from './service.js';
-import {
-  SourceMapConsumer,
-  SourceMapGenerator,
-  type Mapping,
-  type RawSourceMap,
-} from 'source-map-js';
 
 export interface ResultProcessor {
   plugins: unknown[];
   version?: string;
 }
 
+type RawMap = {
+  version: number;
+  file?: string;
+  sourceRoot?: string;
+  sources: string[];
+  sourcesContent?: (string | null)[];
+  names: string[];
+  mappings: string;
+};
+
+type Mapping = {
+  generated: { line: number; column: number };
+  original?: { line: number; column: number };
+  source?: string;
+  name?: string;
+};
+
 /** PostCSS-shaped wrapper around the source-map JSON emitted by Go. */
 export class ResultMap implements SourceMap {
-  private generator?: SourceMapGenerator;
+  private mutated?: RawMap;
 
   constructor(private readonly text: string) {}
 
   toJSON(): Record<string, unknown> {
-    if (this.generator) return this.generator.toJSON() as unknown as Record<string, unknown>;
+    return this.ensureJSON() as unknown as Record<string, unknown>;
+  }
+
+  toString(): string {
+    return this.mutated ? JSON.stringify(this.mutated) : this.text;
+  }
+
+  addMapping(mapping: Mapping): void {
+    const json = this.ensureJSON();
+    if (mapping.source && !json.sources.includes(mapping.source)) {
+      json.sources.push(mapping.source);
+      json.sourcesContent = alignContents(json);
+    }
+    if (mapping.name && !json.names.includes(mapping.name)) json.names.push(mapping.name);
+  }
+
+  setSourceContent(sourceFile: string, sourceContent: string | null | undefined): void {
+    const json = this.ensureJSON();
+    if (!json.sources.includes(sourceFile)) json.sources.push(sourceFile);
+    json.sourcesContent = alignContents(json);
+    json.sourcesContent[json.sources.indexOf(sourceFile)] = sourceContent ?? null;
+  }
+
+  applySourceMap(
+    consumer: { sources?: string[]; sourcesContent?: (string | null)[]; toJSON?(): unknown },
+    sourceFile?: string,
+  ): void {
+    const json = this.ensureJSON();
+    const incoming =
+      typeof consumer.toJSON === 'function'
+        ? (consumer.toJSON() as RawMap)
+        : (consumer as { sources?: string[]; sourcesContent?: (string | null)[] });
+    const incomingSources = incoming.sources ?? [];
+    for (const source of incomingSources) {
+      if (!json.sources.includes(source)) json.sources.push(source);
+    }
+    if (sourceFile && !json.sources.includes(sourceFile)) json.sources.push(sourceFile);
+    json.sourcesContent = alignContents(json);
+    const incomingContents = incoming.sourcesContent ?? [];
+    incomingSources.forEach((source, index) => {
+      const slot = json.sources.indexOf(source);
+      if (slot >= 0 && incomingContents[index] != null)
+        json.sourcesContent![slot] = incomingContents[index];
+    });
+  }
+
+  private ensureJSON(): RawMap {
+    if (this.mutated) return this.mutated;
     try {
-      return JSON.parse(this.text) as Record<string, unknown>;
+      const parsed = JSON.parse(this.text) as RawMap;
+      this.mutated = {
+        version: parsed.version ?? 3,
+        file: parsed.file,
+        sources: [...(parsed.sources ?? [])],
+        sourcesContent: parsed.sourcesContent ? [...parsed.sourcesContent] : undefined,
+        names: [...(parsed.names ?? [])],
+        mappings: parsed.mappings ?? '',
+      };
+      if (parsed.sourceRoot) this.mutated.sourceRoot = parsed.sourceRoot;
+      return this.mutated;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(`postcss-go result map is not valid JSON: ${detail}`, { cause: error });
     }
   }
+}
 
-  toString(): string {
-    return this.generator?.toString() ?? this.text;
-  }
-
-  addMapping(mapping: Mapping): void {
-    this.getGenerator().addMapping(mapping);
-  }
-
-  setSourceContent(sourceFile: string, sourceContent: string | null | undefined): void {
-    this.getGenerator().setSourceContent(sourceFile, sourceContent);
-  }
-
-  applySourceMap(consumer: SourceMapConsumer, sourceFile?: string, sourceMapPath?: string): void {
-    this.getGenerator().applySourceMap(consumer, sourceFile, sourceMapPath);
-  }
-
-  private getGenerator(): SourceMapGenerator {
-    if (!this.generator) {
-      const consumer = new SourceMapConsumer(this.toJSON() as unknown as RawSourceMap);
-      this.generator = SourceMapGenerator.fromSourceMap(consumer);
-    }
-    return this.generator;
-  }
+function alignContents(json: RawMap): (string | null)[] {
+  const contents = json.sourcesContent ?? [];
+  return json.sources.map((_, index) => contents[index] ?? null);
 }
 
 export function hydrateResultMap(value: string | undefined): ResultMap | undefined {

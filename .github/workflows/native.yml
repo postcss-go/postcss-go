@@ -110,7 +110,7 @@ jobs:
           }
 
       - name: Pack, install, and smoke native package
-        run: node ./scripts/pack-smoke-native.mjs
+        run: node ./scripts/smoke-native.mjs
 
       - name: Upload validated addon
         uses: actions/upload-artifact@v7

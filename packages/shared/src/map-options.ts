@@ -217,7 +217,8 @@ function assertSyncPreviousMap(prev: unknown): void {
   );
 }
 
-function serializePreviousMap(previous: unknown): string {
+/** Turn a consumer, generator, or map-like object into source-map JSON text. */
+export function serializePreviousMap(previous: unknown): string {
   if (!previous || typeof previous !== 'object') {
     throw new Error(`Unsupported previous source map format: ${String(previous)}`);
   }
@@ -244,12 +245,22 @@ function serializePreviousMap(previous: unknown): string {
 
   if (isSourceMapConsumerLike(previous)) {
     const consumer = previous as SourceMapConsumerLike;
+    const mappingsValue = (consumer as { mappings?: unknown }).mappings;
+    const mappings =
+      typeof consumer._mappings === 'string' && consumer._mappings
+        ? consumer._mappings
+        : typeof mappingsValue === 'string'
+          ? mappingsValue
+          : '';
+    if (!mappings) {
+      throw new Error('Unsupported previous source map format');
+    }
     return assertPreviousMapText(
       JSON.stringify({
         version: 3,
         sources: collectionToArray(consumer._sources) ?? [...consumer.sources],
         names: collectionToArray(consumer._names) ?? [],
-        mappings: consumer._mappings,
+        mappings,
         ...(consumer.file ? { file: consumer.file } : {}),
         ...(consumer.sourceRoot ? { sourceRoot: consumer.sourceRoot } : {}),
         ...(consumer.sourcesContent ? { sourcesContent: [...consumer.sourcesContent] } : {}),

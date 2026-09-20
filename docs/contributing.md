@@ -28,7 +28,10 @@ Use the narrowest command that covers your change:
 
 Filter to a single package when needed, for example `pnpm exec turbo run test --filter=@postcss-go/shared`.
 
-Run `pnpm check:all` before opening a pull request. It runs formatting, linting, TypeScript type checks, upstream sync verification, JS/Go/upstream tests (including `test:upstream:go`), and builds.
+Run `pnpm check:all` before opening a pull request. It regenerates the handle
+protocol, then runs formatting, linting, TypeScript type checks, upstream sync
+verification, JS/Go/upstream tests (including `test:upstream:go`), and builds.
+The WASM handle-bridge export check runs as part of `build:wasm`.
 
 Installing dependencies configures a pre-commit hook that runs `pnpm lint` and `pnpm format:check`. If formatting fails, run `pnpm format`, review the changes, and commit again. If lint fails, fix the reported issues before committing.
 
@@ -55,6 +58,8 @@ See [the Go compatibility overrides](../packages/postcss-compat/src/README.md) f
 ## Benchmarks
 
 See [benchmark.md](benchmark.md) for workloads and individual benchmark commands.
+Handle-path qualification uses `pnpm bench:handles` and
+`pnpm gates:browser-handles`.
 
 ## Pull requests
 
@@ -80,7 +85,7 @@ generated file under `.changeset/`. The release workflow creates a release PR
 that updates package versions and changelogs. After that PR is merged, it
 builds and publishes the public packages to npm and tags the matching Go
 module release (`v0.0.x`, aligned with `@postcss-go/core`; first Go release
-is `v0.0.5`). Merging Go API changes also triggers
+was `v0.0.5`). Merging Go API changes also triggers
 `.github/workflows/go-module-release.yml` to push the tag when npm has already
 shipped that version.
 
@@ -90,8 +95,6 @@ Useful local checks and commands:
 pnpm changeset:check
 pnpm changeset:version
 pnpm release
-node ./scripts/check-go-module-path.mjs
-node ./scripts/smoke-go-module.mjs
 ```
 
 `pnpm release` requires all eight validated native addons to be installed in

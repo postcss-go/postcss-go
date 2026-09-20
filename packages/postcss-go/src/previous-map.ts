@@ -1,8 +1,23 @@
 import type { PreviousSourceMap, ProcessOptions } from './types.js';
-import { SourceMapConsumer, SourceMapGenerator, type RawSourceMap } from 'source-map-js';
+import { serializePreviousMap } from '@postcss-go/shared/map-options';
 
 export interface PreviousMapOptions extends ProcessOptions {
   map?: ProcessOptions['map'];
+}
+
+export interface SourceMapPosition {
+  source: string | null;
+  line: number | null;
+  column: number | null;
+  name: string | null;
+}
+
+export interface SourceMapConsumerLike {
+  sources: string[];
+  sourcesContent?: (string | null)[];
+  sourceRoot?: string;
+  originalPositionFor(generated: { line: number; column: number }): SourceMapPosition;
+  sourceContentFor(source: string, nullOnMissing?: boolean): string | null;
 }
 
 type PreviousMapFileLoader = (file: string) => string | undefined;
@@ -12,6 +27,16 @@ let previousMapFileLoader: PreviousMapFileLoader | undefined;
 export function setPreviousMapFileLoader(loader: PreviousMapFileLoader): void {
   previousMapFileLoader = loader;
 }
+
+type RawMap = {
+  version?: number;
+  file?: string;
+  sourceRoot?: string;
+  sources?: string[];
+  sourcesContent?: (string | null)[];
+  names?: string[];
+  mappings?: string;
+};
 
 /**
  * Lightweight, postcss-go-owned representation of an input source map.
@@ -24,7 +49,7 @@ export class PreviousMap {
   root?: string;
   text?: string;
   inline = false;
-  private consumerCache?: SourceMapConsumer;
+  private consumerCache?: SourceMapConsumerLike;
 
   constructor(css: string, options: PreviousMapOptions = {}) {
     if (options.map === false) return;
@@ -46,9 +71,9 @@ export class PreviousMap {
     this.file = options.from;
   }
 
-  consumer(): SourceMapConsumer {
+  consumer(): SourceMapConsumerLike {
     if (!this.text) throw new Error('Previous source map is not available');
-    this.consumerCache ??= new SourceMapConsumer(this.toJSON() as unknown as RawSourceMap);
+    this.consumerCache ??= createConsumer(this.toJSON() as RawMap);
     return this.consumerCache;
   }
 
@@ -82,15 +107,15 @@ function previousMapText(
   const value = typeof previous === 'function' ? previous(file) : previous;
   if (!value) return undefined;
   if (typeof value === 'string') return value;
-  if (value instanceof SourceMapConsumer) {
-    return SourceMapGenerator.fromSourceMap(value).toString();
+  try {
+    return serializePreviousMap(value);
+  } catch {
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const text = String(value);
+      if (text !== '[object Object]') return text;
+    }
+    return JSON.stringify(value);
   }
-  if (value instanceof SourceMapGenerator) return value.toString();
-  if (typeof (value as { toString?: unknown }).toString === 'function') {
-    const text = String(value);
-    if (text !== '[object Object]') return text;
-  }
-  return JSON.stringify(value);
 }
 
 function decodeInlineMap(annotation: string): string | undefined {
@@ -148,4 +173,123 @@ function loadMapFile(file: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+const VLQ_SHIFT = 5;
+const VLQ_CONTINUATION = 1 << VLQ_SHIFT;
+const VLQ_MASK = VLQ_CONTINUATION - 1;
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+type Mapping = {
+  generatedLine: number;
+  generatedColumn: number;
+  sourceIndex?: number;
+  originalLine?: number;
+  originalColumn?: number;
+  nameIndex?: number;
+};
+
+function createConsumer(raw: RawMap): SourceMapConsumerLike {
+  const sources = raw.sources ?? [];
+  const sourcesContent = raw.sourcesContent;
+  const sourceRoot = raw.sourceRoot;
+  const names = raw.names ?? [];
+  const mappings = decodeMappings(raw.mappings ?? '');
+  return {
+    sources,
+    sourcesContent,
+    sourceRoot,
+    originalPositionFor({ line, column }) {
+      let match: Mapping | undefined;
+      for (const mapping of mappings) {
+        if (mapping.generatedLine > line) break;
+        if (mapping.generatedLine === line && mapping.generatedColumn > column) break;
+        if (mapping.sourceIndex !== undefined) match = mapping;
+      }
+      if (!match || match.sourceIndex === undefined) {
+        return { source: null, line: null, column: null, name: null };
+      }
+      return {
+        source: sources[match.sourceIndex] ?? null,
+        line: (match.originalLine ?? 0) + 1,
+        column: match.originalColumn ?? 0,
+        name: match.nameIndex === undefined ? null : (names[match.nameIndex] ?? null),
+      };
+    },
+    sourceContentFor(source, nullOnMissing = false) {
+      const index = sources.indexOf(source);
+      if (index < 0) {
+        if (nullOnMissing) return null;
+        throw new Error(`source ${source} is not in the source map`);
+      }
+      return sourcesContent?.[index] ?? null;
+    },
+  };
+}
+
+function decodeMappings(input: string): Mapping[] {
+  const mappings: Mapping[] = [];
+  let generatedLine = 1;
+  let generatedColumn = 0;
+  let sourceIndex = 0;
+  let originalLine = 0;
+  let originalColumn = 0;
+  let nameIndex = 0;
+  let offset = 0;
+  const next = (): number => {
+    const decoded = decodeVlq(input, offset);
+    offset = decoded.next;
+    return decoded.value;
+  };
+  const atSeparator = (): boolean => {
+    if (offset >= input.length) return true;
+    const ch = input.charCodeAt(offset);
+    return ch === 59 || ch === 44;
+  };
+  while (offset < input.length) {
+    const ch = input.charCodeAt(offset);
+    if (ch === 59 /* ; */) {
+      generatedLine += 1;
+      generatedColumn = 0;
+      offset += 1;
+      continue;
+    }
+    if (ch === 44 /* , */) {
+      offset += 1;
+      continue;
+    }
+    generatedColumn += next();
+    const mapping: Mapping = { generatedLine, generatedColumn };
+    if (!atSeparator()) {
+      sourceIndex += next();
+      originalLine += next();
+      originalColumn += next();
+      mapping.sourceIndex = sourceIndex;
+      mapping.originalLine = originalLine;
+      mapping.originalColumn = originalColumn;
+      if (!atSeparator()) {
+        nameIndex += next();
+        mapping.nameIndex = nameIndex;
+      }
+    }
+    mappings.push(mapping);
+  }
+  return mappings;
+}
+
+function decodeVlq(input: string, start: number): { value: number; next: number } {
+  let result = 0;
+  let shift = 0;
+  let offset = start;
+  while (offset < input.length) {
+    const digit = BASE64.indexOf(input[offset] ?? '');
+    offset += 1;
+    if (digit < 0) break;
+    result += (digit & VLQ_MASK) << shift;
+    if ((digit & VLQ_CONTINUATION) === 0) {
+      return { value: result & 1 ? -(result >> 1) : result >> 1, next: offset };
+    }
+    shift += VLQ_SHIFT;
+  }
+  return { value: result & 1 ? -(result >> 1) : result >> 1, next: offset };
 }

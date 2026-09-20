@@ -6,6 +6,6 @@
     "node_api.h": "c"
   },
   "gopls": {
-    "build.buildFlags": ["-tags=boundary_napi,nativeaddon,wasip1"]
+    "build.buildFlags": ["-tags=nativeaddon,wasip1"]
   }
 }

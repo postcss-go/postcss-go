@@ -14,7 +14,7 @@ Go-native plugins.
 ## Install
 
 ```bash
-go get github.com/postcss-go/postcss-go/pkg/api@v0.0.5
+go get github.com/postcss-go/postcss-go/pkg/api@v0.0.6
 ```
 
 ## Quick start
@@ -86,7 +86,7 @@ result, err := processor.Process(".btn { color: red; }")
 ## Releases
 
 Go module versions use standard semver Git tags (`v0.0.x`) aligned with
-`@postcss-go/core` npm releases. The first public Go release is `v0.0.5`.
+`@postcss-go/core` npm releases. The first public Go release was `v0.0.5`.
 After a release PR is merged, the release workflow publishes npm packages and
 pushes the matching Go tag. If npm has already shipped the version, merging
 Go API changes to `main` still pushes the missing Go tag via the Go module

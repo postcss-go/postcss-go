@@ -7,15 +7,14 @@ import {
   Declaration,
   Document,
   asProcessRoot,
-  fromAst,
   fromJSON,
+  fromJSONLocal,
   Node,
   parseCssSync,
   Root,
   Rule,
   runWithWasmSyncCssHelpersBlocked,
   stringifyCssSync,
-  toAst,
   type Parser,
   type ProcessRoot,
 } from './ast.js';
@@ -26,7 +25,8 @@ import {
   isThenable,
   observeThenable,
 } from './errors.js';
-import { attachInputMetadata, Input } from './input.js';
+import { attachInputMetadata, annotateOwnedInput, hasPreviousMap, Input } from './input.js';
+import { isGoOwned, releaseRetained, retainOwned } from './retained-session.js';
 import { list } from './list.js';
 import { throwInvalidPlugin } from './plugin-normalize.js';
 import type { PostcssGoService } from './service.js';
@@ -35,12 +35,11 @@ import type { AcceptedPlugin, Plugin, Transformer } from './plugin-types.js';
 import { fillDependencyParents, hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
-import { prepareStringifyOptions } from './source-map-output.js';
-import {
-  isHandleDeclarationPluginRun,
-  runHandleDeclarationPlugins,
-} from './handle-plugin-runtime.js';
-import { HandleDeclarationUnsupportedError, type NativeHandleAddon } from './handle-session.js';
+import { prepareStringifyOptions, finalizeMappedCSS } from './source-map-output.js';
+import { HANDLE_STATUS_PARSE } from './generated/handle-protocol.js';
+import { SessionOwner } from './handle-facade.js';
+import { planHandleExecution } from './handle-plan.js';
+import { HandleDeclarationUnsupportedError, type HandleBridge } from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -54,7 +53,7 @@ type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> &
     ast: AstDTO | ProcessRoot,
     options?: ProcessOptions,
   ): { css: string; map?: string; mapFile?: string };
-  handleAddon?: NativeHandleAddon | null;
+  handleBridge?: HandleBridge | null;
 };
 
 type LiveAsyncPluginBridgeService = PluginBridgeService &
@@ -222,15 +221,16 @@ async function runPluginsWithBridgeBody(
   options = materializePreviousMap(options);
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
-  if (liveService) {
-    const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
-    if (handled) return handled;
-  }
+  // Any transport with a handle bridge keeps its AST in-process, so the
+  // planner alone decides; the browser no longer needs a backend exception.
+  const handled = await tryHandleResultAsync(service, normalized, css, options, processor);
+  if (handled) return handled;
   const parsed = liveService
     ? await liveService.parseLive(css, { from: options.from })
     : await service.parse(css, { from: options.from });
-  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
-  attachInputMetadata(hydrated, css, options as ProcessOptions);
+  const hydrated = liveProcessRoot(parsed.root);
+  if (isGoOwned(hydrated)) annotateOwnedInput(hydrated, css, options as ProcessOptions);
+  else attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
   result.backend = service.capabilities?.backend;
@@ -274,7 +274,7 @@ async function runPluginsWithBridgeBody(
   );
   const stringified = liveService
     ? await liveService.stringifyResultLive(outputRoot, stringifyOptions as ProcessOptions)
-    : await service.stringifyResult(toAst(outputRoot), stringifyOptions as ProcessOptions);
+    : await service.stringifyResult(outputRoot, stringifyOptions as ProcessOptions);
   result.css = stringified.css;
   result.map = hydrateResultMap(stringified.map);
   result.mapFile = stringified.mapFile;
@@ -292,47 +292,417 @@ function hasLiveAsyncPluginBridge(
 }
 
 /**
- * Fast path for declaration-only plugins that only rewrite prop/value.
- * Returns undefined when the run needs the live AST (source maps, cloneAfter,
- * parent, async visitors, helpers, …).
+ * Handle execution picks its stringify entry point at runtime, so each variant
+ * stays optional: the sync bridge has no async counterpart and vice versa.
  */
-function tryHandleDeclarationResult(
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon'> & {
-    parseSync?: PluginBridgeService['parseSync'];
-  },
+type HandleExecutionService = Pick<
+  PluginBridgeService,
+  'capabilities' | 'handleBridge' | 'parseSync'
+> &
+  Partial<
+    Pick<PluginBridgeService, 'stringifyResult' | 'stringifyResultSync' | 'stringifyResultLive'>
+  >;
+
+/** Handle execution; callbacks stay on the Go-owned live tree. */
+function tryHandleResult(
+  service: HandleExecutionService,
   plugins: ActivePlugin[],
   css: string,
   options: ProcessFileOptions,
   processor?: ResultProcessorFacade,
 ): PluginResult | undefined {
-  if (
-    !service.handleAddon ||
-    typeof service.parseSync !== 'function' ||
-    !isHandleDeclarationPluginRun(plugins as AcceptedPlugin[]) ||
-    options.map
-  ) {
-    return undefined;
-  }
+  const opened = openHandleSession(service, plugins, css, options);
+  if (!opened) return undefined;
+  const { owner, plan } = opened;
   try {
-    const outputCss = runHandleDeclarationPlugins(
-      service.handleAddon,
-      css,
-      plugins as AcceptedPlugin[],
-    );
-    const result = createResult(
-      () => hydrateHandleOutputRoot(service, outputCss, css, options),
-      options,
-      plugins,
-      processor,
-    );
-    result.backend = service.capabilities?.backend;
-    result.css = outputCss;
-    fillDependencyParents(result);
-    return result;
+    return executeHandleSync(owner, plan, plugins, css, options, processor, service);
   } catch (error) {
-    if (error instanceof HandleDeclarationUnsupportedError) return undefined;
+    releaseRetained(owner.root);
     throw error;
   }
+}
+
+async function tryHandleResultAsync(
+  service: HandleExecutionService,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor?: ResultProcessorFacade,
+): Promise<PluginResult | undefined> {
+  const opened = openHandleSession(service, plugins, css, options);
+  if (!opened) return undefined;
+  const { owner, plan } = opened;
+  try {
+    return await executeHandleAsync(owner, plan, plugins, css, options, processor, service);
+  } catch (error) {
+    releaseRetained(owner.root);
+    throw error;
+  }
+}
+
+function openHandleSession(
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleBridge' | 'parseSync'>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+): { owner: SessionOwner; plan: ReturnType<typeof planHandleExecution> } | undefined {
+  const previousMaps = hasPreviousMap(css, options as ProcessOptions);
+  const plan = planHandleExecution(
+    service.handleBridge,
+    Boolean(options.map) || previousMaps,
+    plugins,
+    previousMaps,
+  );
+  if (plan.runtime === 'unsupported') return undefined;
+  const mutableStructure = plan.runtime === 'handle-full';
+  const mutableScalars = plan.runtime === 'handle-scalar' || mutableStructure;
+  try {
+    const owner = new SessionOwner(service.handleBridge!, css, {
+      from: options.from,
+      document: options.document == null ? undefined : String(options.document),
+      map: (options as ProcessOptions).map,
+      mutableScalars,
+      mutableStructure,
+    });
+    owner.diagnostics.planReason = plan.reason;
+    owner.diagnostics.hydration = false;
+    owner.diagnostics.runtime = plan.runtime;
+    retainOwned(owner.root, owner);
+    return { owner, plan };
+  } catch (error) {
+    if ((error as { status?: number })?.status === HANDLE_STATUS_PARSE && service.parseSync) {
+      service.parseSync(css, { from: options.from });
+    }
+    throw error;
+  }
+}
+
+function attachHandleDiagnostics(
+  result: PluginResult,
+  plan: ReturnType<typeof planHandleExecution>,
+  owner: SessionOwner,
+): void {
+  Object.defineProperty(result, 'nativePlan', {
+    enumerable: false,
+    configurable: true,
+    value: {
+      runtime: plan.runtime,
+      reason: owner.diagnostics.planReason,
+      hydration: owner.diagnostics.hydration,
+      visits: owner.diagnostics.visits,
+    },
+  });
+}
+
+/**
+ * Only the in-process native transport can stringify a Go-backed root through
+ * the service. Every other transport stringifies from the session that already
+ * owns the AST, so no tree crosses a thread or process boundary.
+ */
+function serviceStringify(
+  service: HandleExecutionService,
+): Partial<
+  Pick<PluginBridgeService, 'stringifyResultSync' | 'stringifyResultLive' | 'stringifyResult'>
+> {
+  return service.capabilities?.backend === 'native' ? service : {};
+}
+
+function stringifyHandleResult(
+  owner: SessionOwner,
+  root: ProcessRoot,
+  css: string,
+  options: ProcessFileOptions,
+  result: PluginResult,
+  service: Partial<
+    Pick<PluginBridgeService, 'stringifyResultSync' | 'stringifyResultLive' | 'stringifyResult'>
+  >,
+  allowAsync: boolean,
+): void | Promise<void> {
+  fillDependencyParents(result);
+  const wantsMap = Boolean(options.map) || hasPreviousMap(css, options as ProcessOptions);
+  const prepared = prepareStringifyOptions(root, options as ProcessOptions);
+
+  const apply = (stringified: { css: string; map?: string; mapFile?: string }): void => {
+    result.css = stringified.css;
+    result.map = hydrateResultMap(stringified.map);
+    result.mapFile = stringified.mapFile;
+  };
+
+  // Prefer the full native stringify path so annotations, previous-map composition,
+  // and inline maps match the binary backend.
+  if (!allowAsync && typeof service.stringifyResultSync === 'function') {
+    apply(service.stringifyResultSync(root, prepared as ProcessOptions));
+    return;
+  }
+  if (allowAsync && typeof service.stringifyResultLive === 'function') {
+    return service.stringifyResultLive(root, prepared as ProcessOptions).then(apply);
+  }
+  if (allowAsync && typeof service.stringifyResult === 'function') {
+    return service.stringifyResult(root, prepared as ProcessOptions).then(apply);
+  }
+  if (typeof service.stringifyResultSync === 'function') {
+    apply(service.stringifyResultSync(root, prepared as ProcessOptions));
+    return;
+  }
+
+  if (wantsMap) {
+    const mapOpts =
+      prepared.map && typeof prepared.map === 'object' ? prepared.map : { inline: false };
+    const mapped = owner.session.stringifyMap(owner.session.rootHandle, {
+      from: options.from,
+      to: options.to,
+      absolute: Boolean(mapOpts.absolute),
+      preserveAnnotation: mapOpts.annotation !== false,
+    });
+    const finalized = finalizeMappedCSS(mapped.css, mapped.map, prepared as ProcessOptions);
+    result.css = finalized.css;
+    result.map = hydrateResultMap(finalized.map);
+    result.mapFile = finalized.mapFile;
+  } else {
+    result.css = owner.session.stringify();
+  }
+}
+
+function executeHandleSync(
+  owner: SessionOwner,
+  plan: ReturnType<typeof planHandleExecution>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor: ResultProcessorFacade | undefined,
+  service: HandleExecutionService,
+): PluginResult {
+  const root = owner.root;
+  const result = createResult(root, options, plugins, processor);
+  Object.defineProperty(result, 'root', {
+    enumerable: true,
+    configurable: false,
+    get: () => root,
+    set: () => {
+      throw new HandleDeclarationUnsupportedError('result.root');
+    },
+  });
+  result.backend = service.capabilities?.backend;
+  const active = plugins.map((plugin) => {
+    if (typeof plugin === 'function') return plugin;
+    const prepared = preparePluginSync(plugin, result);
+    return prepared ? { ...plugin, ...prepared } : plugin;
+  });
+  const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
+  const listeners = prepareVisitors(active);
+  const runWithFlush = (
+    plugin: RuntimePlugin,
+    listener: Listener | undefined,
+    node: Node,
+    extensionPoint: string,
+    proxy = true,
+  ): void => {
+    if (!listener) return;
+    helpers.result.lastPlugin = plugin;
+    owner.diagnostics.visits += 1;
+    try {
+      const returned = listener(proxy ? node.toProxy() : node, helpers);
+      assertSynchronous(returned, extensionPoint, plugin);
+      owner.flushPatches();
+    } catch (error) {
+      try {
+        owner.flushPatches();
+      } catch {
+        // Prefer the original callback error.
+      }
+      if (error && typeof error === 'object') {
+        node.addToError(error as Error);
+        attachPluginToError(error, plugin, helpers.result.processor);
+      }
+      throw error;
+    }
+  };
+  for (const plugin of active) {
+    result.lastPlugin = plugin;
+    try {
+      if (typeof plugin === 'function') {
+        const returned = plugin(asProcessRoot(result.root), result);
+        assertSynchronous(returned, 'plugin', plugin);
+        owner.flushPatches();
+        continue;
+      }
+      if (root instanceof Document) {
+        for (const child of root.nodes ?? [])
+          runWithFlush(plugin, plugin.Once, child, 'Once', false);
+      } else {
+        runWithFlush(plugin, plugin.Once, root, 'Once', false);
+      }
+    } catch (error) {
+      attachPluginToError(error, plugin, result.processor);
+      throw error;
+    }
+  }
+  const visit = (node: Node): void => {
+    if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+    owner.markClean(node);
+    for (const event of getEvents(node)) {
+      if (event === CHILDREN) {
+        if (node instanceof Container && node.nodes?.length) {
+          node.markClean();
+          let index = 0;
+          while (index < node.nodes.length) {
+            const child = node.nodes[index];
+            if (!child.isClean) {
+              child.markClean();
+              visit(child);
+            }
+            const currentIndex = node.nodes.indexOf(child);
+            index = currentIndex === -1 ? index : currentIndex + 1;
+          }
+        }
+        continue;
+      }
+      for (const [plugin, listener] of listeners[event] ?? []) {
+        runWithFlush(plugin, listener, node, event);
+        if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+      }
+    }
+  };
+  let current = root;
+  while (!current.isClean) {
+    visit(current);
+    current = owner.root;
+  }
+  for (const plugin of active) {
+    if (typeof plugin === 'function') continue;
+    if (root instanceof Document) {
+      for (const child of root.nodes ?? [])
+        runWithFlush(plugin, plugin.OnceExit, child, 'OnceExit', false);
+    } else {
+      runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
+    }
+  }
+  stringifyHandleResult(owner, root, css, options, result, serviceStringify(service), false);
+  attachHandleDiagnostics(result, plan, owner);
+  return result;
+}
+
+async function executeHandleAsync(
+  owner: SessionOwner,
+  plan: ReturnType<typeof planHandleExecution>,
+  plugins: ActivePlugin[],
+  css: string,
+  options: ProcessFileOptions,
+  processor: ResultProcessorFacade | undefined,
+  service: HandleExecutionService,
+): Promise<PluginResult> {
+  const root = owner.root;
+  const result = createResult(root, options, plugins, processor);
+  Object.defineProperty(result, 'root', {
+    enumerable: true,
+    configurable: false,
+    get: () => root,
+    set: () => {
+      throw new HandleDeclarationUnsupportedError('result.root');
+    },
+  });
+  result.backend = service.capabilities?.backend;
+  const active: ActivePlugin[] = [];
+  for (const plugin of plugins) {
+    if (typeof plugin === 'function') {
+      active.push(plugin);
+      continue;
+    }
+    const prepared = await preparePlugin(plugin, result);
+    active.push(prepared ? { ...plugin, ...prepared } : plugin);
+  }
+  const helpers = { ...postcssApi, result, postcss: postcssApi } as PluginHelpers;
+  const listeners = prepareVisitors(active);
+  const runWithFlush = async (
+    plugin: RuntimePlugin,
+    listener: Listener | undefined,
+    node: Node,
+    _extensionPoint: string,
+    proxy = true,
+  ): Promise<void> => {
+    if (!listener) return;
+    helpers.result.lastPlugin = plugin;
+    owner.diagnostics.visits += 1;
+    try {
+      const returned = listener(proxy ? node.toProxy() : node, helpers);
+      if (isThenable(returned)) await returned;
+      owner.flushPatches();
+    } catch (error) {
+      try {
+        owner.flushPatches();
+      } catch {
+        // Prefer the original callback error.
+      }
+      if (error && typeof error === 'object') {
+        node.addToError(error as Error);
+        attachPluginToError(error, plugin, helpers.result.processor);
+      }
+      throw error;
+    }
+  };
+  for (const plugin of active) {
+    result.lastPlugin = plugin;
+    try {
+      if (typeof plugin === 'function') {
+        const returned = plugin(asProcessRoot(result.root), result);
+        if (isThenable(returned)) await returned;
+        owner.flushPatches();
+        continue;
+      }
+      if (root instanceof Document) {
+        for (const child of root.nodes ?? [])
+          await runWithFlush(plugin, plugin.Once, child, 'Once', false);
+      } else {
+        await runWithFlush(plugin, plugin.Once, root, 'Once', false);
+      }
+    } catch (error) {
+      attachPluginToError(error, plugin, result.processor);
+      throw error;
+    }
+  }
+  const visit = async (node: Node): Promise<void> => {
+    if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+    owner.markClean(node);
+    for (const event of getEvents(node)) {
+      if (event === CHILDREN) {
+        if (node instanceof Container && node.nodes?.length) {
+          node.markClean();
+          let index = 0;
+          while (index < node.nodes.length) {
+            const child = node.nodes[index];
+            if (!child.isClean) {
+              child.markClean();
+              await visit(child);
+            }
+            const currentIndex = node.nodes.indexOf(child);
+            index = currentIndex === -1 ? index : currentIndex + 1;
+          }
+        }
+        continue;
+      }
+      for (const [plugin, listener] of listeners[event] ?? []) {
+        await runWithFlush(plugin, listener, node, event);
+        if (node.type !== 'root' && node.type !== 'document' && !node.parent) return;
+      }
+    }
+  };
+  let current = root;
+  while (!current.isClean) {
+    await visit(current);
+    current = owner.root;
+  }
+  for (const plugin of active) {
+    if (typeof plugin === 'function') continue;
+    if (root instanceof Document) {
+      for (const child of root.nodes ?? [])
+        await runWithFlush(plugin, plugin.OnceExit, child, 'OnceExit', false);
+    } else {
+      await runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
+    }
+  }
+  await stringifyHandleResult(owner, root, css, options, result, serviceStringify(service), true);
+  attachHandleDiagnostics(result, plan, owner);
+  return result;
 }
 
 /**
@@ -342,7 +712,7 @@ function tryHandleDeclarationResult(
  */
 export function runPluginsWithBridgeSync(
   service: Required<Pick<PluginBridgeService, 'parseSync' | 'stringifyResultSync'>> &
-    Pick<PluginBridgeService, 'capabilities' | 'handleAddon'>,
+    Pick<PluginBridgeService, 'capabilities' | 'handleBridge'>,
   plugins: AcceptedPlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -350,11 +720,12 @@ export function runPluginsWithBridgeSync(
 ): PluginResult {
   options = materializePreviousMap(options);
   const normalized = normalizePluginsSync(plugins);
-  const handled = tryHandleDeclarationResult(service, normalized, css, options, processor);
+  const handled = tryHandleResult(service, normalized, css, options, processor);
   if (handled) return handled;
   const parsed = service.parseSync(css, { from: options.from });
-  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
-  attachInputMetadata(hydrated, css, options as ProcessOptions);
+  const hydrated = liveProcessRoot(parsed.root);
+  if (isGoOwned(hydrated)) annotateOwnedInput(hydrated, css, options as ProcessOptions);
+  else attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
   result.backend = service.capabilities?.backend;
@@ -397,6 +768,17 @@ export function runPluginsWithBridgeSync(
   return result;
 }
 
+function liveProcessRoot(root: unknown): ProcessRoot {
+  if (root instanceof Node) return asProcessRoot(root);
+  if (root && typeof root === 'object') {
+    // Worker string-in/out still returns a JSON tree. Keep it on the public
+    // identity skeleton so the JavaScript visitor loop can run; intern happens
+    // at stringify if a Go arena is available.
+    return asProcessRoot(fromJSONLocal(root as object) as Node);
+  }
+  throw new Error('postcss-go parse must return a live tree; AST DTO transport is removed');
+}
+
 function createResult(
   root: ProcessRoot | (() => ProcessRoot),
   opts: ProcessFileOptions,
@@ -404,21 +786,6 @@ function createResult(
   processor?: ResultProcessorFacade,
 ): PluginResult {
   return new Result<RuntimePlugin | Transformer>(processor ?? { plugins }, root, opts);
-}
-
-function hydrateHandleOutputRoot(
-  service: Pick<PluginBridgeService, 'parseSync'>,
-  outputCss: string,
-  css: string,
-  options: ProcessFileOptions,
-): ProcessRoot {
-  if (typeof service.parseSync !== 'function') {
-    throw new Error('postcss-go: handle plugin path requires parseSync to hydrate Result.root');
-  }
-  const parsed = service.parseSync(outputCss, { from: options.from });
-  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
-  attachInputMetadata(hydrated, css, options as ProcessOptions);
-  return hydrated;
 }
 
 async function preparePlugin(

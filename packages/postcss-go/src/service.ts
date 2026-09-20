@@ -48,16 +48,15 @@ export const WASM_WORKER_BACKEND_CAPABILITIES = Object.freeze({
 export interface PostcssGoService {
   /** Stable execution capabilities for this transport. */
   readonly capabilities: BackendCapabilities;
-  /** Parse CSS into a serializable Go AST. */
   parse(css: string, options?: ProcessOptions): Promise<ParseResult>;
   /** Process CSS through the Go parser/stringifier pipeline. */
   process(css: string, options?: ProcessOptions): Promise<ProcessResult>;
   /** Apply no-plugin source-map behavior without parsing or stringifying CSS. */
   noWork(css: string, options?: ProcessOptions): Promise<NoWorkResult>;
   /** Stringify a serializable AST with the Go stringifier. */
-  stringify(ast: AstNode): Promise<string>;
-  /** Stringify an AST and optionally generate a source map entirely in Go. */
-  stringifyResult(ast: AstNode, options?: ProcessOptions): Promise<AstStringifyResult>;
+  stringify(ast: AstNode | Node): Promise<string>;
+  /** Stringify a live or DTO tree; Go-owned trees stay in the handle session. */
+  stringifyResult(ast: AstNode | Node, options?: ProcessOptions): Promise<AstStringifyResult>;
   /** Release resources owned by the backend. */
   close(): Promise<void>;
 }

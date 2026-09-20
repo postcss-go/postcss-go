@@ -25,8 +25,6 @@ on:
       - 'packages/rspack-loader/**'
       - 'npm/postcss-go/**'
       - scripts/build-wasm.mjs
-      - scripts/check-go-coverage.mjs
-      - scripts/prepare-js-lcov-for-codecov.mjs
       - .github/codecov.yml
       - .github/workflows/codecov.yml
   pull_request:
@@ -50,8 +48,6 @@ on:
       - 'packages/rspack-loader/**'
       - 'npm/postcss-go/**'
       - scripts/build-wasm.mjs
-      - scripts/check-go-coverage.mjs
-      - scripts/prepare-js-lcov-for-codecov.mjs
       - .github/codecov.yml
       - .github/workflows/codecov.yml
 
@@ -99,9 +95,6 @@ jobs:
 
       - name: Generate JS coverage
         run: pnpm test:coverage:js
-
-      - name: Prepare JS lcov for Codecov
-        run: node ./scripts/prepare-js-lcov-for-codecov.mjs
 
       - name: Upload Go coverage artifacts
         uses: actions/upload-artifact@v7

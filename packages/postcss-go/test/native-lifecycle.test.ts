@@ -11,6 +11,47 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const entryUrl = pathToFileURL(resolve(packageRoot, 'dist/index.js')).href;
 
 test.runIf(isNativeBridgeAvailable())(
+  'parallel workers isolate native handle sessions',
+  async () => {
+    await Promise.all(
+      Array.from(
+        { length: 4 },
+        (_, id) =>
+          new Promise<void>((done, reject) => {
+            const worker = new Worker(
+              `
+      const {workerData} = require('node:worker_threads');
+      (async () => {
+        const {Processor} = await import(workerData.entryUrl);
+        const retained = [];
+        const processor = new Processor([{postcssPlugin: 'worker', Declaration(decl) {
+          if (decl.value !== String(workerData.id)) throw new Error('cross-worker value');
+          if (decl.parent.first !== decl.parent.nodes[0]) throw new Error('identity');
+        }}]);
+        for (let i = 0; i < 30; i++) {
+          const result = processor.processSync('a{x:' + workerData.id + ';y:' + workerData.id + '}', {map:false});
+          retained.push(result.root.first.first);
+          const css = result.css;
+          if (css !== 'a{x:' + workerData.id + ';y:' + workerData.id + '}') throw new Error(css);
+          await new Promise(setImmediate);
+          if (retained[0].value !== String(workerData.id)) throw new Error('retained session changed');
+          if (i && retained[i] === retained[i-1]) throw new Error('cross-session identity');
+        }
+      })().catch(error => {throw error;});
+    `,
+              { eval: true, workerData: { entryUrl, id } },
+            );
+            worker.once('error', reject);
+            worker.once('exit', (code) =>
+              code === 0 ? done() : reject(new Error('worker exit ' + code)),
+            );
+          }),
+      ),
+    );
+  },
+);
+
+test.runIf(isNativeBridgeAvailable())(
   'native addon is owned independently by a Worker Thread',
   async () => {
     const result = await new Promise<string>((resolveMessage, reject) => {

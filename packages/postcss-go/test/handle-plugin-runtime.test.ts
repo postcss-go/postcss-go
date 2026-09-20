@@ -1,10 +1,6 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { Processor } from '../src/processor.ts';
-import {
-  isHandleDeclarationPluginRun,
-  runHandleDeclarationPlugins,
-} from '../src/handle-plugin-runtime.ts';
 import { hasNativeHandleBridge } from '../src/handle-session.ts';
 import { createNativeService, isNativeBridgeAvailable } from '../src/native.ts';
 import { runPluginsWithBridge, runPluginsWithBridgeSync } from '../src/plugin-runtime.ts';
@@ -20,79 +16,63 @@ const colorPlugin: AcceptedPlugin = {
 const displayPlugin: AcceptedPlugin = {
   postcssPlugin: 'display-prefix',
   Declaration(decl) {
-    if (decl.prop === 'display') decl.value = `prefixed-${decl.value}`;
+    if (decl.prop === 'display' && !decl.value.startsWith('prefixed-'))
+      decl.value = `prefixed-${decl.value}`;
   },
 };
 
-test('isHandleDeclarationPluginRun accepts declaration-only plugins', () => {
-  expect(isHandleDeclarationPluginRun([])).toBe(false);
-  expect(isHandleDeclarationPluginRun([colorPlugin])).toBe(true);
-  expect(isHandleDeclarationPluginRun([colorPlugin, displayPlugin])).toBe(true);
-  expect(isHandleDeclarationPluginRun([((root) => root) as AcceptedPlugin])).toBe(false);
-  expect(
-    isHandleDeclarationPluginRun([
-      {
-        postcssPlugin: 'rule-plugin',
-        Rule(rule) {
-          rule.selector = `${rule.selector}:hover`;
-        },
+test.skipIf(!isNativeBridgeAvailable())(
+  'handle results preserve original sources without hydrating a TypeScript AST',
+  async () => {
+    const service = createNativeService();
+    const parse = vi.spyOn(service, 'parseSync');
+    const css = 'a{color:red;\nheight:1px}';
+    const plugin: AcceptedPlugin = {
+      postcssPlugin: 'expanded-value',
+      Declaration(decl) {
+        if (decl.prop === 'color') {
+          expect(decl.value).toBe('red');
+        }
       },
-    ]),
-  ).toBe(false);
-  expect(
-    isHandleDeclarationPluginRun([
-      {
-        postcssPlugin: 'async-decl',
-        async Declaration(decl) {
-          decl.value = 'navy';
-        },
-      },
-    ]),
-  ).toBe(false);
-  expect(
-    isHandleDeclarationPluginRun([
-      {
-        postcssPlugin: 'with-exit',
-        Declaration(decl) {
-          decl.value = 'navy';
-        },
-        DeclarationExit() {},
-      },
-    ]),
-  ).toBe(false);
-  expect(
-    isHandleDeclarationPluginRun([
-      {
-        postcssPlugin: 'with-prepare',
-        prepare() {
-          return {};
-        },
-        Declaration(decl) {
-          decl.value = 'navy';
-        },
-      },
-    ]),
-  ).toBe(false);
-});
+    };
+    try {
+      const result = await runPluginsWithBridge(service, [plugin], css, {
+        from: 'source.css',
+        map: false,
+      });
+      expect(parse).not.toHaveBeenCalled();
+      const firstRoot = result.root;
+      expect(firstRoot).toBe(result.root);
+      expect(parse).not.toHaveBeenCalled();
+      const rule = firstRoot.first!;
+      expect(rule.nodes).toHaveLength(2);
+      expect(rule.first).toMatchObject({ prop: 'color', value: 'red' });
+      expect(rule.last).toMatchObject({
+        prop: 'height',
+        source: { start: { line: 2, column: 1, offset: css.indexOf('height') } },
+      });
+      expect(rule.first!.source!.input).toBe(rule.last!.source!.input);
+      expect(rule.last!.source!.input.css).toBe(css);
+      expect(firstRoot.toString()).toBe(result.css);
+    } finally {
+      service.close();
+    }
+  },
+);
 
 test.skipIf(!isNativeBridgeAvailable())(
   'native handle bridge runs declaration-only plugins end-to-end',
   async () => {
     const service = createNativeService();
-    expect(service.handleAddon).not.toBeNull();
-    expect(hasNativeHandleBridge(service.handleAddon)).toBe(true);
+    expect(service.handleBridge).not.toBeNull();
+    expect(hasNativeHandleBridge(service.handleBridge)).toBe(true);
 
     const css = '.a { color: red; display: block; } .b { color: green; }';
     const viaRuntime = await runPluginsWithBridge(service, [colorPlugin, displayPlugin], css, {
       from: 'input.css',
       map: false,
     });
-    const viaHandle = runHandleDeclarationPlugins(service.handleAddon!, css, [
-      colorPlugin,
-      displayPlugin,
-    ]);
 
-    expect(viaRuntime.css).toBe(viaHandle);
     expect(viaRuntime.css).toContain('color: navy');
     expect(viaRuntime.css).toContain('display: prefixed-block');
     expect(viaRuntime.root.first?.first).toMatchObject({ prop: 'color', value: 'navy' });
@@ -101,15 +81,27 @@ test.skipIf(!isNativeBridgeAvailable())(
 );
 
 test.skipIf(!isNativeBridgeAvailable())(
-  'sync plugin bridge uses the handle path for declaration-only plugins',
+  'sync plugin bridge uses the handle facade for read-only declaration plugins',
   () => {
     const service = createNativeService();
     const css = '.card { color: black; }';
-    const result = runPluginsWithBridgeSync(service, [colorPlugin], css, {
-      from: 'input.css',
-      map: false,
-    });
-    expect(result.css).toContain('color: navy');
+    const result = runPluginsWithBridgeSync(
+      service,
+      [
+        {
+          postcssPlugin: 'read',
+          Declaration(decl) {
+            expect(decl.value).toBe('black');
+          },
+        },
+      ],
+      css,
+      {
+        from: 'input.css',
+        map: false,
+      },
+    );
+    expect(result.css).toBe(css);
   },
 );
 
@@ -120,6 +112,39 @@ test('Processor uses the handle path for declaration-only native plugins', async
   expect(result.css).toContain('color: navy');
   expect(result.backend).toBe('native');
 });
+
+test.skipIf(!isNativeBridgeAvailable())(
+  'planner never replays callbacks after unsupported access',
+  async () => {
+    const service = createNativeService();
+    let calls = 0;
+    const plugin: AcceptedPlugin = {
+      postcssPlugin: 'side-effect',
+      Declaration(decl) {
+        calls++;
+        decl.remove();
+      },
+    };
+    try {
+      await runPluginsWithBridge(service, [plugin], 'a{x:y}', {});
+      expect(calls).toBe(1);
+      calls = 0;
+      const removed = runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {});
+      expect(calls).toBe(1);
+      expect(removed.css).toBe('a{}');
+      calls = 0;
+      const mapped = runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {
+        from: 'map.css',
+        map: { inline: false, annotation: false },
+      });
+      expect(calls).toBe(1);
+      expect(mapped.map).toBeTruthy();
+      expect((mapped as { nativePlan?: { hydration: boolean } }).nativePlan?.hydration).toBe(false);
+    } finally {
+      service.close();
+    }
+  },
+);
 
 test('Processor falls back from the handle path for structural declaration mutations', async () => {
   if (!isNativeBridgeAvailable()) return;
@@ -155,54 +180,9 @@ test('Processor falls back from the handle path for async declaration visitors',
 });
 
 test.skipIf(!isNativeBridgeAvailable())(
-  'handle declaration runtime covers empty trees, prop writes, and skipped visitors',
+  'handle path runs structural helpers and source maps; parse errors surface from the session',
   () => {
     const service = createNativeService();
-    const addon = service.handleAddon!;
-    expect(runHandleDeclarationPlugins(addon, '/* comment only */', [colorPlugin])).toContain(
-      'comment only',
-    );
-
-    const rename: AcceptedPlugin = {
-      postcssPlugin: 'rename-color',
-      Declaration(decl) {
-        if (decl.prop === 'color') decl.prop = 'background-color';
-      },
-    };
-    const transformer = ((root) => root) as AcceptedPlugin;
-    const asyncVisitor: AcceptedPlugin = {
-      postcssPlugin: 'skip-async',
-      async Declaration(decl) {
-        decl.value = 'ignored';
-      },
-    };
-    const css = runHandleDeclarationPlugins(addon, 'a { color: red; }', [
-      transformer,
-      asyncVisitor,
-      rename,
-    ]);
-    expect(css).toContain('background-color');
-    service.close();
-  },
-);
-
-test.skipIf(!isNativeBridgeAvailable())(
-  'handle path falls back for thenable visitors, helpers, and source maps',
-  () => {
-    const service = createNativeService();
-    const thenable: AcceptedPlugin = {
-      postcssPlugin: 'thenable-decl',
-      Declaration(decl) {
-        decl.value = 'navy';
-        return Promise.resolve();
-      },
-    };
-    const helpers: AcceptedPlugin = {
-      postcssPlugin: 'helpers-decl',
-      Declaration(_decl, pluginHelpers: { result?: unknown }) {
-        return pluginHelpers.result;
-      },
-    };
     const cloneAfter: AcceptedPlugin = {
       postcssPlugin: 'clone-border',
       Declaration(decl) {
@@ -212,12 +192,6 @@ test.skipIf(!isNativeBridgeAvailable())(
       },
     };
 
-    expect(() =>
-      runHandleDeclarationPlugins(service.handleAddon!, 'a { color: red; }', [thenable]),
-    ).toThrow(/async/);
-    expect(() =>
-      runHandleDeclarationPlugins(service.handleAddon!, 'a { color: red; }', [helpers]),
-    ).toThrow(/helpers/);
     expect(
       runPluginsWithBridgeSync(service, [cloneAfter], 'a { color: red; }', { map: false }).css,
     ).toContain('border-color: black');
@@ -229,25 +203,15 @@ test.skipIf(!isNativeBridgeAvailable())(
       capabilities: service.capabilities,
       parseSync: service.parseSync.bind(service),
       stringifyResultSync: service.stringifyResultSync.bind(service),
-      handleAddon: {
-        handleParse() {
-          throw new Error('boom');
+      handleBridge: new Proxy(service.handleBridge!, {
+        get(target, key, receiver) {
+          if (key === 'handleParse')
+            return () => {
+              throw new Error('boom');
+            };
+          return Reflect.get(target, key, receiver);
         },
-        handleClose() {},
-        handleType: () => 0,
-        handleGetField: () => '',
-        handleSetField() {},
-        handleWalkDecls: () => 0,
-        handleOpenCursor: () => 0,
-        handleCursorNext: () => 0,
-        handleCloseCursor() {},
-        handleReadFields: () => [],
-        handleSetFields() {},
-        handleStringify: () => '',
-        handleNewDecl: () => 1,
-        handleAppend() {},
-        handleDispose() {},
-      },
+      }),
     };
     expect(() =>
       runPluginsWithBridgeSync(exploding, [colorPlugin], 'a { color: red; }', {}),

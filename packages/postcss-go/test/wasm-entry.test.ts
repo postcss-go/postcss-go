@@ -35,7 +35,7 @@ test('@postcss-go/core/wasm exports createBrowserProcessor and stable error type
 
 test('browser service dispatches parse requests and resolves matching responses', async () => {
   const worker = new FakeWorker();
-  const service = new BrowserPostcssGoService({ worker });
+  const service = new BrowserPostcssGoService({ worker, mainThreadAst: false });
 
   const pending = service.parse('.a {}');
   expect(worker.sent).toEqual([{ id: 1, method: 'parse', params: { css: '.a {}', options: {} } }]);
@@ -125,6 +125,7 @@ test('browser service dispatches parse requests and resolves matching responses'
     result: {
       root: {
         type: 'root',
+        source: { input: { file: '/src/d.css', from: '/src/d.css' } },
         nodes: [
           { type: 'rule', selector: '.d', nodes: [{ type: 'decl', prop: 'color', value: 'red' }] },
         ],

@@ -1,0 +1,392 @@
+{
+  "major": 2,
+  "minor": 4,
+  "maxBatchSize": 4096,
+  "capabilities": [
+    {
+      "name": "ScalarSessions",
+      "bit": 0,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "StructuredErrors",
+      "bit": 1,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "ParseOptions",
+      "bit": 2,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "BoundedIds",
+      "bit": 3,
+      "implemented": true,
+      "required": true
+    },
+    {
+      "name": "ReadOnlyFacade",
+      "bit": 4,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "AtomicPatches",
+      "bit": 5,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "MutationTraversal",
+      "bit": 6,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "SourceMaps",
+      "bit": 7,
+      "implemented": true,
+      "required": false
+    },
+    {
+      "name": "AsyncLifetime",
+      "bit": 8,
+      "implemented": true,
+      "required": false
+    }
+  ],
+  "fields": [
+    {
+      "name": "Prop",
+      "id": 0
+    },
+    {
+      "name": "Value",
+      "id": 1
+    },
+    {
+      "name": "Selector",
+      "id": 2
+    },
+    {
+      "name": "Name",
+      "id": 3
+    },
+    {
+      "name": "Params",
+      "id": 4
+    },
+    {
+      "name": "Text",
+      "id": 5
+    },
+    {
+      "name": "Important",
+      "id": 6
+    }
+  ],
+  "operations": [
+    {
+      "name": "ProtocolInfo",
+      "id": 0,
+      "bridge": "handleProtocolInfo"
+    },
+    {
+      "name": "SessionCount",
+      "id": 1
+    },
+    {
+      "name": "Parse",
+      "id": 2,
+      "bridge": "handleParse"
+    },
+    {
+      "name": "Close",
+      "id": 3,
+      "bridge": "handleClose"
+    },
+    {
+      "name": "Type",
+      "id": 4,
+      "bridge": "handleType"
+    },
+    {
+      "name": "GetField",
+      "id": 5,
+      "bridge": "handleGetField"
+    },
+    {
+      "name": "SetField",
+      "id": 6,
+      "bridge": "handleSetField"
+    },
+    {
+      "name": "WalkDecls",
+      "id": 7,
+      "bridge": "handleWalkDecls"
+    },
+    {
+      "name": "OpenCursor",
+      "id": 8,
+      "bridge": "handleOpenCursor"
+    },
+    {
+      "name": "CursorNext",
+      "id": 9,
+      "bridge": "handleCursorNext"
+    },
+    {
+      "name": "CloseCursor",
+      "id": 10,
+      "bridge": "handleCloseCursor"
+    },
+    {
+      "name": "ReadFields",
+      "id": 11,
+      "bridge": "handleReadFields"
+    },
+    {
+      "name": "SetFields",
+      "id": 12,
+      "bridge": "handleSetFields"
+    },
+    {
+      "name": "Stringify",
+      "id": 13,
+      "bridge": "handleStringify"
+    },
+    {
+      "name": "NewDecl",
+      "id": 14,
+      "bridge": "handleNewDecl"
+    },
+    {
+      "name": "Append",
+      "id": 15,
+      "bridge": "handleAppend"
+    },
+    {
+      "name": "Dispose",
+      "id": 16,
+      "bridge": "handleDispose"
+    },
+    {
+      "name": "ReadSnapshots",
+      "id": 17,
+      "bridge": "handleReadSnapshots"
+    },
+    {
+      "name": "ApplyPatches",
+      "id": 18,
+      "bridge": "handleApplyPatches"
+    },
+    {
+      "name": "InsertBefore",
+      "id": 19,
+      "bridge": "handleInsertBefore"
+    },
+    {
+      "name": "Remove",
+      "id": 20,
+      "bridge": "handleRemove"
+    },
+    {
+      "name": "Clone",
+      "id": 21,
+      "bridge": "handleClone"
+    },
+    {
+      "name": "Prepend",
+      "id": 22,
+      "bridge": "handlePrepend"
+    },
+    {
+      "name": "InsertAfter",
+      "id": 23,
+      "bridge": "handleInsertAfter"
+    },
+    {
+      "name": "ReplaceWith",
+      "id": 24,
+      "bridge": "handleReplaceWith"
+    },
+    {
+      "name": "NewRule",
+      "id": 25,
+      "bridge": "handleNewRule"
+    },
+    {
+      "name": "NewAtRule",
+      "id": 26,
+      "bridge": "handleNewAtRule"
+    },
+    {
+      "name": "NewComment",
+      "id": 27,
+      "bridge": "handleNewComment"
+    },
+    {
+      "name": "SetRaw",
+      "id": 28,
+      "bridge": "handleSetRaw"
+    },
+    {
+      "name": "GetRaw",
+      "id": 29,
+      "bridge": "handleGetRaws"
+    },
+    {
+      "name": "StringifyMap",
+      "id": 30,
+      "bridge": "handleStringifyMap"
+    },
+    {
+      "name": "Parent",
+      "id": 31,
+      "bridge": "handleParent"
+    },
+    {
+      "name": "ChildCount",
+      "id": 32,
+      "bridge": "handleChildCount"
+    },
+    {
+      "name": "ChildAt",
+      "id": 33,
+      "bridge": "handleChildAt"
+    },
+    {
+      "name": "RefreshSnapshot",
+      "id": 34
+    },
+    {
+      "name": "StringifyBuilder",
+      "id": 35,
+      "bridge": "handleStringifyBuilder"
+    },
+    {
+      "name": "Query",
+      "id": 36,
+      "bridge": "handleQuery"
+    }
+  ],
+  "nodeKinds": [
+    {
+      "name": "None",
+      "id": 0
+    },
+    {
+      "name": "Root",
+      "id": 1
+    },
+    {
+      "name": "Document",
+      "id": 2
+    },
+    {
+      "name": "Rule",
+      "id": 3
+    },
+    {
+      "name": "AtRule",
+      "id": 4
+    },
+    {
+      "name": "Decl",
+      "id": 5
+    },
+    {
+      "name": "Comment",
+      "id": 6
+    }
+  ],
+  "patchKinds": [
+    {
+      "name": "SetField",
+      "id": 0
+    },
+    {
+      "name": "Append",
+      "id": 1
+    },
+    {
+      "name": "InsertBefore",
+      "id": 2
+    },
+    {
+      "name": "Remove",
+      "id": 3
+    },
+    {
+      "name": "Dispose",
+      "id": 4
+    },
+    {
+      "name": "Clone",
+      "id": 5
+    }
+  ],
+  "eventKinds": [
+    {
+      "name": "Enter",
+      "id": 0
+    },
+    {
+      "name": "Exit",
+      "id": 1
+    }
+  ],
+  "statuses": [
+    {
+      "name": "OK",
+      "id": 0
+    },
+    {
+      "name": "InvalidHandle",
+      "id": 1
+    },
+    {
+      "name": "StaleHandle",
+      "id": 2
+    },
+    {
+      "name": "Closed",
+      "id": 3
+    },
+    {
+      "name": "NotContainer",
+      "id": 4
+    },
+    {
+      "name": "BadField",
+      "id": 5
+    },
+    {
+      "name": "Cursor",
+      "id": 6
+    },
+    {
+      "name": "Parse",
+      "id": 7
+    },
+    {
+      "name": "Cycle",
+      "id": 8
+    },
+    {
+      "name": "Exhausted",
+      "id": 9
+    },
+    {
+      "name": "InvalidArgument",
+      "id": 10
+    },
+    {
+      "name": "Internal",
+      "id": 11
+    }
+  ]
+}

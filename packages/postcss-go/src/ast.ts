@@ -83,6 +83,8 @@ export interface SyncCssRuntime {
 }
 
 let syncCssRuntime: SyncCssRuntime | undefined;
+let internConstructed: (<T extends Node>(node: T) => T) | undefined;
+let internSuppressed = 0;
 let wasmSyncCssHelpersBlocked = 0;
 
 /** PostCSS stores the clean flag on a symbol so Object.keys skips it. */
@@ -103,6 +105,18 @@ const syncCssUnavailable =
 /** Install the Node N-API parse/stringify helpers, or clear them when missing. */
 export function setSyncCssRuntime(runtime: SyncCssRuntime | undefined): void {
   syncCssRuntime = runtime;
+}
+
+/** Install constructor intern so `new Rule()` lands in a Go arena. */
+export function setConstructedNodeIntern(
+  intern: (<T extends Node>(node: T) => T) | undefined,
+): void {
+  internConstructed = intern;
+}
+
+function maybeIntern<T extends Node>(node: T): T {
+  if (internSuppressed > 0 || !internConstructed) return node;
+  return internConstructed(node);
 }
 
 /**
@@ -663,9 +677,9 @@ export class Node {
   ): Record<string, unknown> {
     const excluded = new Set(['type', 'source', 'raws', 'nodes', ...known]);
     const extras: Record<string, unknown> = {};
-    for (const [name, value] of Object.entries(this)) {
+    for (const name of Object.getOwnPropertyNames(this)) {
       if (excluded.has(name) || INTERNAL_NODE_PROPERTIES.has(name)) continue;
-      extras[name] = serializeJSONValue(value, inputs);
+      extras[name] = serializeJSONValue(Reflect.get(this, name), inputs);
     }
     return extras;
   }
@@ -1111,6 +1125,7 @@ export class Root extends Container<ChildNode> {
   declare nodes: ChildNode[];
   constructor(init: RootInit = {}) {
     super('root', init);
+    return maybeIntern(this);
   }
 
   /**
@@ -1175,6 +1190,7 @@ export class Document extends Container<Root> {
   declare nodes: Root[];
   constructor(init: DocumentInit = {}) {
     super('document', init);
+    return maybeIntern(this);
   }
 
   async toResult(options: ProcessOptions = {}, service?: PostcssGoService) {
@@ -1204,6 +1220,7 @@ export class Rule extends Container<ChildNode> {
     super('rule', init);
     this.selector = String(init.selector ?? '');
     if (init.selectors) this.selectors = [...init.selectors];
+    return maybeIntern(this);
   }
   get selectors(): string[] {
     return list.comma(this.selector);
@@ -1245,6 +1262,7 @@ export class AtRule extends Container<ChildNode> {
     this.params = String(dto.params ?? '');
     this.block = explicitBlock;
     if (!explicitBlock) this.nodes = undefined;
+    return maybeIntern(this);
   }
 
   get hasBlock(): boolean {
@@ -1289,6 +1307,7 @@ export class Declaration extends Node {
     this.prop = String(init.prop ?? '');
     this.value = String(init.value ?? '');
     this.important = Boolean(init.important);
+    return maybeIntern(this);
   }
   get variable(): boolean {
     return this.prop.startsWith('--') || this.prop.startsWith('$');
@@ -1316,6 +1335,7 @@ export class Comment extends Node {
   constructor(init: CommentInit = {}) {
     super('comment', init);
     this.text = String(init.text ?? '');
+    return maybeIntern(this);
   }
   toJSON(_key?: unknown, inputs?: Map<unknown, number>): CommentDTO {
     const sharedInputs = inputs ?? new Map<unknown, number>();
@@ -1368,6 +1388,14 @@ export function fromJSON<T extends AstDTO | readonly AstDTO[]>(value: T): NodeFr
 export function fromJSON(value: readonly object[]): Node[];
 export function fromJSON(value: object): Node;
 export function fromJSON(value: object | readonly object[]): Node | Node[] {
+  const hydrated = hydrateJSON(value);
+  if (!internConstructed) return hydrated;
+  if (Array.isArray(hydrated)) return hydrated.map((node) => internConstructed!(node));
+  return internConstructed(hydrated);
+}
+
+/** Hydrate a JSON tree without placing it in a Go arena. Worker DTO fallback. */
+export function fromJSONLocal(value: object | readonly object[]): Node | Node[] {
   return hydrateJSON(value);
 }
 
@@ -1383,8 +1411,22 @@ function hydrateJSON(
   value: object | readonly object[],
   inheritedInputs?: readonly unknown[],
 ): Node | Node[] {
+  internSuppressed += 1;
+  try {
+    return hydrateJSONBody(value, inheritedInputs);
+  } finally {
+    internSuppressed -= 1;
+  }
+}
+
+function hydrateJSONBody(
+  value: object | readonly object[],
+  inheritedInputs?: readonly unknown[],
+): Node | Node[] {
   if (Array.isArray(value)) {
-    return (value as readonly object[]).map((node) => hydrateJSON(node, inheritedInputs) as Node);
+    return (value as readonly object[]).map(
+      (node) => hydrateJSONBody(node, inheritedInputs) as Node,
+    );
   }
   const json = value as NodeInit & {
     inputs?: readonly unknown[];
@@ -1393,7 +1435,8 @@ function hydrateJSON(
   };
   const inputs = json.inputs ? json.inputs.map(hydrateInput) : inheritedInputs;
   const { inputs: _ownInputs, ...defaults } = json;
-  if (json.nodes) defaults.nodes = json.nodes.map((child) => hydrateJSON(child, inputs) as Node);
+  if (json.nodes)
+    defaults.nodes = json.nodes.map((child) => hydrateJSONBody(child, inputs) as Node);
   if (json.source) {
     const { inputId, ...source } = json.source;
     defaults.source =

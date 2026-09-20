@@ -4,8 +4,7 @@ import {
   type ProcessFileOptions,
 } from '@postcss-go/shared/map-options';
 import { createDefaultAsyncService } from './native.js';
-import { asProcessRoot, fromAst, type Node } from './ast.js';
-import { attachInputMetadata } from './input.js';
+import { asProcessRoot, fromAst, Node } from './ast.js';
 import type { PluginResult } from './plugin-runtime.js';
 import type { AcceptedPlugin } from './plugin-types.js';
 import { dispatchProcess, prepareDispatchOptions } from './dispatch.js';
@@ -127,8 +126,9 @@ export async function processWithGoEngine(
         throw new Error('Go engine parse() is required for map.annotation callbacks');
       }
       const parsed = await engine.service.parse(inputCss, { from: options.from });
-      annotationRoot = asProcessRoot(fromAst(parsed.root));
-      attachInputMetadata(annotationRoot, inputCss, options as ProcessOptions);
+      annotationRoot = asProcessRoot(
+        parsed.root instanceof Node ? parsed.root : fromAst(parsed.root),
+      );
     }
     const optionsForService = await applyMapAnnotationAsync(options, annotationRoot);
     const publicOptions: ProcessOptions = { from: options.from };

@@ -1,7 +1,9 @@
 import { materializePreviousMap, type ProcessFileOptions } from '@postcss-go/shared/map-options';
 
-import { asProcessRoot, fromAst, Node, Root, toAst, type ProcessRoot } from './ast.js';
+import { asProcessRoot, fromAst, Node, Root, type ProcessRoot } from './ast.js';
 import { attachInputMetadata } from './input.js';
+import type { HandleBridge } from './handle-session.js';
+import { isGoOwned } from './retained-session.js';
 import {
   runPluginsWithBridge,
   runPluginsWithBridgeSync,
@@ -29,6 +31,7 @@ export type DispatchAsyncService = Pick<
   'parse' | 'process' | 'stringify' | 'stringifyResult' | 'close'
 > & {
   capabilities?: PostcssGoService['capabilities'];
+  handleBridge?: HandleBridge | null;
   noWork?(css: string, options?: ProcessOptions): Promise<NoWorkResult>;
   parseLive?(css: string, options?: ProcessOptions): Promise<{ root: ProcessRoot }>;
   stringifyResultLive?(
@@ -108,9 +111,9 @@ export async function dispatchParse(
 ): Promise<Root> {
   options = prepareDispatchOptions(options);
   const parsed = await service.parse(css, options);
-  const root = asProcessRoot(fromAst(parsed.root));
+  const root = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
   if (!(root instanceof Root)) throw new Error('postcss-go parse response is not a root');
-  attachInputMetadata(root, css, options);
+  if (!isGoOwned(root)) attachInputMetadata(root, css, options);
   return root;
 }
 
@@ -122,7 +125,7 @@ export function dispatchParseSync(
   options = prepareDispatchOptions(options);
   const root = asProcessRoot(service.parseSync(css, options).root);
   if (!(root instanceof Root)) throw new Error('postcss-go parseSync response is not a root');
-  attachInputMetadata(root, css, options);
+  if (!isGoOwned(root)) attachInputMetadata(root, css, options);
   return root;
 }
 
@@ -132,7 +135,9 @@ export async function dispatchParseAst(
   options: ProcessOptions = {},
 ): Promise<RootNode> {
   options = prepareDispatchOptions(options);
-  return (await service.parse(css, options)).root;
+  const parsed = await service.parse(css, options);
+  const root = parsed.root instanceof Node ? parsed.root : fromAst(parsed.root);
+  return root.toJSON() as RootNode;
 }
 
 export async function dispatchStringify(
@@ -142,7 +147,7 @@ export async function dispatchStringify(
 ): Promise<string> {
   options = prepareDispatchOptions(options);
   const effectiveOptions = prepareStringifyOptions(node, options);
-  return (await service.stringifyResult(toAst(node), effectiveOptions)).css;
+  return (await service.stringifyResult(node, effectiveOptions)).css;
 }
 
 export function dispatchStringifySync(
@@ -162,7 +167,7 @@ export async function dispatchStringifyResult(
 ): Promise<AstStringifyResult> {
   options = prepareDispatchOptions(options);
   const effectiveOptions = prepareStringifyOptions(node, options);
-  return service.stringifyResult(toAst(node), effectiveOptions);
+  return service.stringifyResult(node, effectiveOptions);
 }
 
 export async function dispatchNoWork(
@@ -196,7 +201,7 @@ export async function dispatchProcessDto(
       ? processed.root
       : fromAst(processed.root as RootNode | DocumentNode),
   );
-  attachInputMetadata(root, css, options);
+  if (!isGoOwned(root)) attachInputMetadata(root, css, options);
   return {
     ...processed,
     backend: processed.backend ?? service.capabilities?.backend,
@@ -217,7 +222,7 @@ function hydrateProcessResult(
       ? processed.root
       : fromAst(processed.root as RootNode | DocumentNode),
   );
-  attachInputMetadata(root, css, options as ProcessOptions);
+  if (!isGoOwned(root)) attachInputMetadata(root, css, options as ProcessOptions);
   const result = new Result<RuntimePlugin>(processor, root, options);
   result.css = processed.css;
   result.map = hydrateResultMap(processed.map);

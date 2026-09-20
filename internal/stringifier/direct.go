@@ -117,7 +117,7 @@ func directStringify(node ast.Node, stripSourceMapAnnotations bool) string {
 	if rng := node.Range(); rng.End > rng.Start {
 		builder.Grow(rng.End - rng.Start + 64)
 	}
-	directWriteNode(builderWriter{Builder: &builder, cache: nil}, node, 0, stripSourceMapAnnotations)
+	directWriteNode(builderWriter{Builder: &builder, cache: &renderCache{}}, node, 0, stripSourceMapAnnotations)
 	return builder.String()
 }
 
@@ -170,7 +170,7 @@ func directWriteNode(writer cssWriter, node ast.Node, depth int, stripSourceMapA
 		writer.writeString(atRuleHeader(current))
 		if !current.Block {
 			writer.writeString(rawString(current, "between", ""))
-			if atRuleHasSemicolon(current) {
+			if writer.renderCache().atRuleHasSemicolon(current) {
 				writer.writeByte(';')
 			}
 			return
@@ -181,7 +181,7 @@ func directWriteNode(writer cssWriter, node ast.Node, depth int, stripSourceMapA
 		directWriteBlockClose(writer, current, childCount)
 	case *ast.Declaration:
 		directWriteDeclaration(writer, current)
-		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+		if parent := current.Parent(); parent != nil && writer.renderCache().needsSemicolon(parent, current) {
 			writer.writeByte(';')
 		}
 	case *ast.Comment:

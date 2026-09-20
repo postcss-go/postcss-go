@@ -15,7 +15,7 @@ overrides while still using vendored PostCSS node classes.
 ## Regenerate
 
 ```bash
-node ./scripts/generate-owned-ast-contract.mjs
+node ./scripts/upstream.mjs generate-ast-contract
 ```
 
 `helpers.ts`, `document.test.ts`, and `fromJSON.test.ts` are maintained by hand

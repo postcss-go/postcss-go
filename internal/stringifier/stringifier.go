@@ -122,7 +122,7 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int,
 	case *ast.AtRule:
 		if !current.Block {
 			text := atRuleHeader(current) + rawString(current, "between", "")
-			if atRuleHasSemicolon(current) {
+			if cache.atRuleHasSemicolon(current) {
 				text += ";"
 			}
 			appendBuilderPart(parts, text, id, "")
@@ -137,7 +137,7 @@ func writeBuilderNode(parts *[]BuilderPart, node ast.Node, depth int, next *int,
 		appendBuilderPart(parts, close, id, "end")
 	case *ast.Declaration:
 		text := declarationText(cache, current)
-		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+		if parent := current.Parent(); parent != nil && cache.needsSemicolon(parent, current) {
 			text += ";"
 		}
 		appendBuilderPart(parts, text, id, "")
@@ -179,7 +179,7 @@ func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotat
 		writer.writeString(atRuleHeader(current))
 		if !current.Block {
 			writer.writeString(rawString(current, "between", ""))
-			if atRuleHasSemicolon(current) {
+			if writer.renderCache().atRuleHasSemicolon(current) {
 				writer.writeByte(';')
 			}
 			return
@@ -190,7 +190,7 @@ func writeNode(writer cssWriter, node ast.Node, depth int, stripSourceMapAnnotat
 		writeBlockClose(writer, current, childCount, depth)
 	case *ast.Declaration:
 		writer.writeString(declarationText(writer.renderCache(), current))
-		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+		if parent := current.Parent(); parent != nil && writer.renderCache().needsSemicolon(parent, current) {
 			writer.writeByte(';')
 		}
 	case *ast.Comment:
@@ -221,7 +221,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.writeString(atRuleHeader(current))
 		if !current.Block {
 			writer.writeString(rawString(current, "between", ""))
-			if atRuleHasSemicolon(current) {
+			if writer.renderCache().atRuleHasSemicolon(current) {
 				writer.writeByte(';')
 			}
 			writer.AddEndMapping(current)
@@ -238,7 +238,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 		writer.writeString(declarationPrefix(writer.renderCache(), current))
 		writer.AddMappingAt(current, declarationValuePosition(current))
 		writer.writeString(declarationValueText(current))
-		if parent := current.Parent(); parent != nil && needsSemicolon(parent, current) {
+		if parent := current.Parent(); parent != nil && writer.renderCache().needsSemicolon(parent, current) {
 			writer.writeByte(';')
 		}
 		writer.AddEndMapping(current)
@@ -255,7 +255,7 @@ func writeMappedNode(writer *sourceMapWriter, node ast.Node, depth int) bool {
 	return true
 }
 
-func atRuleHasSemicolon(node *ast.AtRule) bool {
+func (cache *renderCache) atRuleHasSemicolon(node *ast.AtRule) bool {
 	if rawBool(node, "semicolon", false) {
 		return true
 	}
@@ -263,12 +263,9 @@ func atRuleHasSemicolon(node *ast.AtRule) bool {
 		if rawBool(parent, "semicolon", false) {
 			return true
 		}
-		children := parent.Children()
-		for index, child := range children {
-			if child == node {
-				return index < len(children)-1
-			}
-		}
+		layout := cache.childLayout(parent)
+		index, exists := layout.indexes[node]
+		return exists && index < layout.count-1
 	}
 	return false
 }
@@ -296,12 +293,40 @@ func blockClosePrefix(cache *renderCache, node ast.Node, childCount, depth int) 
 // whole document, which makes stringifying quadratic in the node count. Raws
 // never change during a pass, so every sample below is stable once computed.
 type renderCache struct {
+	children        map[ast.Container]childLayout
 	blockAfter      map[blockAfterKey]blockAfterRaw
 	containerIndent map[ast.Container]string
 	rootIndent      map[ast.Node]string
 	descendantRaw   map[descendantRawKey]string
 	siblingRaw      map[descendantRawKey]blockAfterRaw
 	beforeRaw       map[ast.Container]bool
+}
+
+type childLayout struct {
+	indexes         map[ast.Node]int
+	lastSignificant int
+	count           int
+}
+
+// Rendering does not mutate the tree. Index each container once per render,
+// rather than scanning all siblings again for every declaration/at-rule.
+func (cache *renderCache) childLayout(parent ast.Container) childLayout {
+	if layout, ok := cache.children[parent]; ok {
+		return layout
+	}
+	children := parent.Children()
+	layout := childLayout{indexes: make(map[ast.Node]int, len(children)), lastSignificant: -1, count: len(children)}
+	for index, child := range children {
+		layout.indexes[child] = index
+		if child.Type() != ast.NodeComment {
+			layout.lastSignificant = index
+		}
+	}
+	if cache.children == nil {
+		cache.children = make(map[ast.Container]childLayout)
+	}
+	cache.children[parent] = layout
+	return layout
 }
 
 type blockAfterKey struct {
@@ -941,30 +966,21 @@ func inferredIndent(node ast.Node) string {
 	return ""
 }
 
-func needsSemicolon(parent ast.Container, node ast.Node) bool {
-	children := parent.Children()
-	lastSignificant := -1
-	nodeIndex := -1
-	for index, child := range children {
-		if child == node {
-			nodeIndex = index
-		}
-		if child.Type() != ast.NodeComment {
-			lastSignificant = index
-		}
-	}
-	if nodeIndex < 0 {
+func (cache *renderCache) needsSemicolon(parent ast.Container, node ast.Node) bool {
+	layout := cache.childLayout(parent)
+	nodeIndex, exists := layout.indexes[node]
+	if !exists {
 		return false
 	}
 	// Parsed containers record their semicolon style explicitly. For manually
 	// constructed containers, match PostCSS's default and omit the final one.
-	if nodeIndex < lastSignificant || rawBool(parent, "semicolon", false) {
+	if nodeIndex < layout.lastSignificant || rawBool(parent, "semicolon", false) {
 		return true
 	}
 	// Custom properties and childless at-rules must still terminate when more
 	// siblings follow (typically comments); otherwise re-parsing folds those
 	// siblings into the value/prelude.
-	if nodeIndex >= len(children)-1 {
+	if nodeIndex >= layout.count-1 {
 		return false
 	}
 	switch current := node.(type) {
