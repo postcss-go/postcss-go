@@ -48,6 +48,15 @@ const wasmTestEnv = withGoCache({
 for (const name of ['GOMODCACHE', 'GOPATH', 'SystemRoot', 'LOCALAPPDATA', 'LocalAppData']) {
   if (process.env[name]) wasmTestEnv[name] = process.env[name];
 }
-go(['test', '-mod=mod', '-run', 'Handle', './cmd/wasm'], wasmTestEnv);
+// `go test` for js/wasm needs GOROOT/lib/wasm/go_js_wasm_exec, a Unix host
+// script. Windows tries to run the compiled wasm.test as a PE binary and
+// fails with "%1 is not a valid Win32 application". Linux/macOS CI still
+// gates the handle-bridge exports here; Windows native jobs only need the
+// wasm artifact from `go build` above.
+if (process.platform === 'win32') {
+  console.log('Skipping js/wasm go test on Windows (no go_js_wasm_exec host)');
+} else {
+  go(['test', '-mod=mod', '-run', 'Handle', './cmd/wasm'], wasmTestEnv);
+}
 
 console.log(`Wrote WASM assets to ${distDir}`);

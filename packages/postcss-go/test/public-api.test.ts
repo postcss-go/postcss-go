@@ -864,6 +864,30 @@ test('ResultMap.toJSON wraps invalid JSON with a stable error', () => {
   expect(() => map.toJSON()).toThrow(/not valid JSON/);
 });
 
+test('ResultMap.toJSON omits empty sourceRoot and keeps a real one', () => {
+  const withoutRoot = new ResultMap(
+    JSON.stringify({ version: 3, file: 'out.css', sources: ['a.css'], names: [], mappings: '' }),
+  );
+  expect(withoutRoot.toJSON()).toEqual({
+    version: 3,
+    file: 'out.css',
+    sources: ['a.css'],
+    names: [],
+    mappings: '',
+  });
+
+  const withRoot = new ResultMap(
+    JSON.stringify({
+      version: 3,
+      sourceRoot: '/src',
+      sources: ['a.css'],
+      names: [],
+      mappings: '',
+    }),
+  );
+  expect(withRoot.toJSON().sourceRoot).toBe('/src');
+});
+
 test('ResultMap exposes SourceMapGenerator mutation methods', () => {
   const map = new ResultMap(JSON.stringify({ version: 3, sources: [], names: [], mappings: '' }));
   map.addMapping({

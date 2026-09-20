@@ -86,12 +86,12 @@ export class ResultMap implements SourceMap {
       this.mutated = {
         version: parsed.version ?? 3,
         file: parsed.file,
-        sourceRoot: parsed.sourceRoot,
         sources: [...(parsed.sources ?? [])],
         sourcesContent: parsed.sourcesContent ? [...parsed.sourcesContent] : undefined,
         names: [...(parsed.names ?? [])],
         mappings: parsed.mappings ?? '',
       };
+      if (parsed.sourceRoot) this.mutated.sourceRoot = parsed.sourceRoot;
       return this.mutated;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);

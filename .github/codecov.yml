@@ -61,6 +61,8 @@ ignore:
   - 'packages/postcss-go/bin/**'
   - 'packages/postcss-go/native/**'
   - 'internal/nativeaddon/cabi/**'
+  - 'internal/asthandle/protocol_gen.go'
+  - 'internal/asthandle/cmd/genprotocol/**'
   - 'packages/postcss-go/src/cli.ts'
   - 'packages/postcss-go/src/wasm/browser.ts'
   - 'packages/postcss-go/src/config.ts'
