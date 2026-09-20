@@ -53,8 +53,10 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           pattern: native-*
-          path: .
-          merge-multiple: true
+          path: native-artifacts
+
+      - name: Install native addons into platform packages
+        run: node ./scripts/native-artifacts.mjs install
 
       - name: Typecheck packages
         run: pnpm --filter @postcss-go/shared build && pnpm check
