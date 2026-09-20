@@ -63,35 +63,32 @@ if (process.argv[2] === '--sample') {
       warmups: 10,
       iterations: 30,
       rssUnit: 'KiB',
-      scope:
-        'Phase 2 read-only facade; not comparable to historical scalar writes; no rollout claim',
+      scope: 'Production native handle facade; isolated-process samples; no rollout claim',
     }),
   );
   let passed = true;
   for (const size of sizes) {
-    const results = { binary: [], handle: [] };
+    const results = { samples: [] };
     for (let i = 0; i < samples; i++) {
-      for (const mode of i % 2 ? ['handle', 'binary'] : ['binary', 'handle']) {
-        const child = spawnSync(
-          process.execPath,
-          [fileURLToPath(import.meta.url), '--sample', String(size)],
-          {
-            encoding: 'utf8',
-            timeout: 120000,
-            env: { ...process.env, POSTCSS_GO_NATIVE_AST: mode },
-          },
-        );
-        assert.equal(child.status, 0, child.stderr);
-        const measured = JSON.parse(child.stdout);
-        const reference = results.binary[0] ?? results.handle[0];
-        if (reference) {
-          assert.equal(measured.readCount, reference.readCount, 'visitor count differs');
-          assert.equal(measured.checksum, reference.checksum, 'scalar reads differ');
-        }
-        results[mode].push(measured);
+      const child = spawnSync(
+        process.execPath,
+        [fileURLToPath(import.meta.url), '--sample', String(size)],
+        {
+          encoding: 'utf8',
+          timeout: 120000,
+          env: process.env,
+        },
+      );
+      assert.equal(child.status, 0, child.stderr);
+      const measured = JSON.parse(child.stdout);
+      const reference = results.samples[0];
+      if (reference) {
+        assert.equal(measured.readCount, reference.readCount, 'visitor count differs');
+        assert.equal(measured.checksum, reference.checksum, 'scalar reads differ');
       }
+      results.samples.push(measured);
     }
-    const { timeRatio, rssRatio, spread, stable, pass } = summarize(results);
+    const { medianMs, peakRss, spread, stable, pass } = summarize(results);
     passed &&= pass;
     console.log(
       JSON.stringify({
@@ -99,8 +96,8 @@ if (process.argv[2] === '--sample') {
         fixtureBytes: Buffer.byteLength(fixture(size)),
         fixtureSha256: createHash('sha256').update(fixture(size)).digest('hex'),
         samples,
-        timeRatio,
-        rssRatio,
+        medianMs,
+        peakRss,
         stable,
         spread,
         pass,

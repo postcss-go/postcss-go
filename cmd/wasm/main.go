@@ -24,6 +24,19 @@ func main() {
 	defer request.Release()
 
 	js.Global().Set("postcssGoWasmRequest", request)
+
+	// Main-thread instances additionally own handle sessions so browser plugin
+	// callbacks read and mutate the Go AST without serializing it.
+	handles, err := registerHandleExports()
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		for _, fn := range handles {
+			fn.Release()
+		}
+	}()
+
 	select {}
 }
 

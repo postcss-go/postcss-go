@@ -126,7 +126,9 @@ func (w *sourceMapWriter) AddEndMapping(node ast.Node) {
 		return
 	}
 	position := location.End
-	if node.Type() == ast.NodeDecl && position.Offset > 0 && position.Offset <= len(location.Input.CSS) && location.Input.CSS[position.Offset-1] == ';' {
+	if position.Offset > location.Start.Offset && position.Offset <= len(location.Input.CSS) {
+		// Node ends are recorded one past their last character, so step back to
+		// land on the terminator itself (`;`, `}` or the final value byte).
 		position = location.Input.FromOffset(position.Offset - 1)
 	}
 	w.addLocationMapping(location, position, w.line, max(w.column-1, 0))

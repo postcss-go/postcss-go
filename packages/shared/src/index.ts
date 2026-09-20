@@ -6,6 +6,7 @@ export {
   mapDefersInlineMode,
   materializePreviousMap,
   normalizeProcessOptions,
+  serializePreviousMap,
   type MapOptions,
   type NormalizeProcessOptionsInput,
   type ProcessFileOptions,

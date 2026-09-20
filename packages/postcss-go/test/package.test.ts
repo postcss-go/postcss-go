@@ -133,8 +133,9 @@ test('release builds JavaScript and WASM without rebuilding validated native add
   const workflow = readFileSync(resolve(repoRoot, '.github/workflows/release.yml'), 'utf8');
   expect(workflow).toContain('uses: actions/setup-go@');
   expect(workflow).toContain('pnpm build:release');
-  expect(workflow).toContain('check-native-artifacts.mjs snapshot');
-  expect(workflow).toContain('check-native-artifacts.mjs verify');
+  expect(workflow).toContain('native-artifacts.mjs install');
+  expect(workflow).toContain('native-artifacts.mjs snapshot');
+  expect(workflow).toContain('native-artifacts.mjs verify');
   expect(workflow).toContain('publish: pnpm changeset:publish');
   expect(workflow).not.toContain('publish: pnpm release');
 });
@@ -212,23 +213,23 @@ test('companion-library packages keep their runtime library beside the addon', (
   const addon = readFileSync(resolve(packageRoot, 'native/addon.c'), 'utf8');
   expect(addon).toContain('require_go_symbol("pcgoCall")');
   for (const symbol of [
-    'pcgoHandleParseV2_1',
-    'pcgoHandleFreeErrorV2_1',
-    'pcgoHandleSessionCountV2',
-    'pcgoHandleCloseV2',
-    'pcgoHandleTypeV2_1',
-    'pcgoHandleGetFieldV2_1',
-    'pcgoHandleSetFieldV2_1',
-    'pcgoHandleWalkDeclsV2_1',
-    'pcgoHandleOpenCursorV2_1',
-    'pcgoHandleCursorNextV2_1',
-    'pcgoHandleCloseCursorV2_1',
-    'pcgoHandleReadFieldsV2_1',
-    'pcgoHandleSetFieldsV2_1',
-    'pcgoHandleNewDeclV2_1',
-    'pcgoHandleAppendV2_1',
-    'pcgoHandleDisposeV2_1',
-    'pcgoHandleStringifyV2_1',
+    'pcgoHandleParse',
+    'pcgoHandleFreeError',
+    'pcgoHandleSessionCount',
+    'pcgoHandleClose',
+    'pcgoHandleType',
+    'pcgoHandleGetField',
+    'pcgoHandleSetField',
+    'pcgoHandleWalkDecls',
+    'pcgoHandleOpenCursor',
+    'pcgoHandleCursorNext',
+    'pcgoHandleCloseCursor',
+    'pcgoHandleReadFields',
+    'pcgoHandleSetFields',
+    'pcgoHandleNewDecl',
+    'pcgoHandleAppend',
+    'pcgoHandleDispose',
+    'pcgoHandleStringify',
   ]) {
     expect(addon).toContain(`require_go_symbol("${symbol}")`);
   }
@@ -338,28 +339,22 @@ test('postcss-go browser entry exports BrowserPostcssGoService and createBrowser
   expect(browserApi).not.toHaveProperty('PostcssGoService');
 });
 
-test('built wasm entry does not pull the native binary codec', () => {
+test('built wasm and native entries do not include the deleted binary codec', () => {
   const wasmJs = resolve(packageRoot, 'dist/wasm.js');
   const wasmBrowser = resolve(packageRoot, 'dist/wasm/browser.js');
+  const nativeJs = resolve(packageRoot, 'dist/native.js');
   expect(existsSync(wasmJs)).toBe(true);
   expect(existsSync(wasmBrowser)).toBe(true);
-  for (const file of [wasmJs, wasmBrowser]) {
+  expect(existsSync(nativeJs)).toBe(true);
+  expect(existsSync(resolve(packageRoot, 'dist/native-codec.js'))).toBe(false);
+  expect(existsSync(resolve(packageRoot, 'dist/codec.js'))).toBe(false);
+  for (const file of [wasmJs, wasmBrowser, nativeJs]) {
     const source = readFileSync(file, 'utf8');
     expect(source).not.toMatch(/native-codec/);
     expect(source).not.toMatch(/from ["']\.\/codec\.js["']/);
     expect(source).not.toMatch(/hydrateAst/);
+    expect(source).not.toMatch(/hydrateRootAst/);
   }
-});
-
-test('native binary codec is soft-gated behind native-codec.js', () => {
-  const nativeJs = resolve(packageRoot, 'dist/native.js');
-  const codecBridge = resolve(packageRoot, 'dist/native-codec.js');
-  expect(existsSync(nativeJs)).toBe(true);
-  expect(existsSync(codecBridge)).toBe(true);
-  const nativeSource = readFileSync(nativeJs, 'utf8');
-  expect(nativeSource).toMatch(/native-codec\.js/);
-  expect(nativeSource).not.toMatch(/from ["']\.\/codec\.js["']/);
-  expect(readFileSync(codecBridge, 'utf8')).toMatch(/from ["']\.\/codec\.js["']/);
 });
 
 test('postcss-go wasm entry re-exports the browser API and declares asset subpaths', async () => {

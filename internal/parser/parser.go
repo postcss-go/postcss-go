@@ -19,6 +19,9 @@ type Parser struct {
 	trackSource   bool
 	pendingBefore string
 	blockStart    int
+	// blockClose holds the offset of the `}` that terminated the statement most
+	// recently returned by collectStatement with endBlock set.
+	blockClose int
 }
 
 func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
@@ -66,10 +69,12 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 		if err != nil {
 			return err
 		}
+		closeOffset := p.blockClose
 		if len(tokens) == 0 && !endBlock {
 			continue
 		}
 		if len(tokens) == 0 && endBlock {
+			p.closeBlockSource(container, closeOffset)
 			if len(container.Children()) > 0 {
 				if !ast.HasRaw(container, "semicolon") {
 					ast.SetRawBool(container, "semicolon", false)
@@ -124,6 +129,7 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 					ast.SetRawBool(container, "semicolon", false)
 				}
 			}
+			p.closeBlockSource(container, closeOffset)
 			return nil
 		}
 	}
@@ -195,6 +201,7 @@ func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, er
 			if depth == 0 {
 				if stopOnBrace {
 					p.stmtBuf = tokens
+					p.blockClose = token.Start
 					return tokens, true, nil
 				}
 				return nil, false, p.syntaxError("Unexpected }: unexpected closing brace", token.Start)
@@ -1116,6 +1123,17 @@ func (p *Parser) attachSource(node ast.Node, start, end int) {
 	var loc sourcemap.Location
 	p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(end), &loc)
 	node.SetSource(&loc)
+}
+
+// closeBlockSource records a container's end one past its closing brace, the
+// same convention declarations use for their terminating semicolon. Consumers
+// that need the brace position itself walk the offset back by one.
+func (p *Parser) closeBlockSource(container ast.Container, closeOffset int) {
+	node, ok := container.(ast.Node)
+	if !ok || closeOffset < 0 || closeOffset >= len(p.input) {
+		return
+	}
+	p.extendSourceTo(node, closeOffset+1)
 }
 
 func (p *Parser) extendSourceTo(node ast.Node, end int) {

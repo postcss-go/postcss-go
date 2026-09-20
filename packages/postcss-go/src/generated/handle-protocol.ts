@@ -55,6 +55,8 @@ export const HANDLE_OPERATION_PARENT = 31;
 export const HANDLE_OPERATION_CHILDCOUNT = 32;
 export const HANDLE_OPERATION_CHILDAT = 33;
 export const HANDLE_OPERATION_REFRESHSNAPSHOT = 34;
+export const HANDLE_OPERATION_STRINGIFYBUILDER = 35;
+export const HANDLE_OPERATION_QUERY = 36;
 export const HANDLE_NODE_NONE = 0;
 export const HANDLE_NODE_ROOT = 1;
 export const HANDLE_NODE_DOCUMENT = 2;
@@ -82,3 +84,40 @@ export const HANDLE_STATUS_CYCLE = 8;
 export const HANDLE_STATUS_EXHAUSTED = 9;
 export const HANDLE_STATUS_INVALIDARGUMENT = 10;
 export const HANDLE_STATUS_INTERNAL = 11;
+export const HANDLE_BRIDGE_METHODS = [
+  'handleProtocolInfo',
+  'handleParse',
+  'handleClose',
+  'handleType',
+  'handleGetField',
+  'handleSetField',
+  'handleWalkDecls',
+  'handleOpenCursor',
+  'handleCursorNext',
+  'handleCloseCursor',
+  'handleReadFields',
+  'handleSetFields',
+  'handleStringify',
+  'handleNewDecl',
+  'handleAppend',
+  'handleDispose',
+  'handleReadSnapshots',
+  'handleApplyPatches',
+  'handleInsertBefore',
+  'handleRemove',
+  'handleClone',
+  'handlePrepend',
+  'handleInsertAfter',
+  'handleReplaceWith',
+  'handleNewRule',
+  'handleNewAtRule',
+  'handleNewComment',
+  'handleSetRaw',
+  'handleGetRaws',
+  'handleStringifyMap',
+  'handleParent',
+  'handleChildCount',
+  'handleChildAt',
+  'handleStringifyBuilder',
+  'handleQuery',
+] as const;

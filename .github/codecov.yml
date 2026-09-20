@@ -10,8 +10,7 @@ coverage:
   status:
     project:
       default:
-        target: 90%
-        informational: false
+        informational: true
       go:
         target: 90%
         flags:
@@ -23,26 +22,25 @@ coverage:
           - 'cmd/'
         informational: false
       js:
-        target: 90%
+        # Vitest already gates JS line coverage at 90%. Codecov treats lcov
+        # BRDA records as partials, which under-counts versus Vitest lines.
         flags:
           - js
         paths:
           - 'packages/'
-        informational: false
+        informational: true
     patch:
       default:
-        target: 90%
-        informational: false
+        informational: true
       go:
         target: 90%
         flags:
           - go
         informational: false
       js:
-        target: 90%
         flags:
           - js
-        informational: false
+        informational: true
 
 flags:
   go:

@@ -30,7 +30,7 @@ jobs:
           cache: pnpm
 
       - name: Sync upstream tests
-        run: node ./scripts/sync-upstream-postcss-tests.mjs
+        run: node ./scripts/upstream.mjs sync
 
       - name: Install synchronized dependencies
         run: pnpm install --no-frozen-lockfile

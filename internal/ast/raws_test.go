@@ -85,8 +85,8 @@ func TestPrepareNodesPreservesExplicitEmptyBefore(t *testing.T) {
 	root.Append(block)
 	added := NewRule(".c")
 	root.Append(added)
-	if before, _ := added.RawFormattingReadOnly()["before"].(string); before != "\n" {
-		t.Fatalf("expected multiline after to become before, got %q", before)
+	if _, ok := added.RawFormattingReadOnly()["before"]; ok {
+		t.Fatal("appending after the first root child must not copy before")
 	}
 
 	empty := NewRule(".d")

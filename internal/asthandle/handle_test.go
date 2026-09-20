@@ -718,3 +718,118 @@ func TestDisposeRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestInsertAfterMovingExistingSibling(t *testing.T) {
+	session, root, err := Parse(".a { color: red; top: 0; left: 0 }")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	defer session.Close()
+	rule, err := session.ChildAt(root, 0)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	first, err := session.ChildAt(rule, 0)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	last, err := session.ChildAt(rule, 2)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	// Move the last declaration to sit right after the first one.
+	if err := session.InsertAfter(last, first); err != nil {
+		t.Fatalf("insert after failed: %v", err)
+	}
+	css, err := session.Stringify(root)
+	if err != nil {
+		t.Fatalf("stringify failed: %v", err)
+	}
+	if css != ".a { top: 0; left: 0; color: red }" {
+		t.Fatalf("unexpected css: %q", css)
+	}
+}
+
+func TestInsertBeforeMovingExistingSibling(t *testing.T) {
+	session, root, err := Parse(".a { color: red; top: 0; left: 0 }")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	defer session.Close()
+	rule, err := session.ChildAt(root, 0)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	first, err := session.ChildAt(rule, 0)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	last, err := session.ChildAt(rule, 2)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	if err := session.InsertBefore(first, last); err != nil {
+		t.Fatalf("insert before failed: %v", err)
+	}
+	css, err := session.Stringify(root)
+	if err != nil {
+		t.Fatalf("stringify failed: %v", err)
+	}
+	if css != ".a { left: 0; color: red; top: 0 }" {
+		t.Fatalf("unexpected css: %q", css)
+	}
+}
+
+func TestQuerySetBlock(t *testing.T) {
+	session, root, err := Parse("a{}")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	defer session.Close()
+	at, err := session.NewAtRule("page", "1")
+	if err != nil {
+		t.Fatalf("new at-rule failed: %v", err)
+	}
+	if err := session.Append(root, at); err != nil {
+		t.Fatalf("append failed: %v", err)
+	}
+	if _, err := session.Query(at, "setBlock", ""); err != nil {
+		t.Fatalf("setBlock failed: %v", err)
+	}
+	css, err := session.Stringify(at)
+	if err != nil {
+		t.Fatalf("stringify failed: %v", err)
+	}
+	if !strings.Contains(css, "{") {
+		t.Fatalf("expected empty block, got %q", css)
+	}
+}
+
+func TestQueryRangeByAndCleanRaws(t *testing.T) {
+	session, root, err := Parse(".a { color: red }")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	defer session.Close()
+	rule, err := session.ChildAt(root, 0)
+	if err != nil {
+		t.Fatalf("child lookup failed: %v", err)
+	}
+	encoded, err := session.Query(rule, "rangeBy", `{"word":"color"}`)
+	if err != nil {
+		t.Fatalf("rangeBy failed: %v", err)
+	}
+	if !strings.Contains(encoded, `"line"`) {
+		t.Fatalf("unexpected rangeBy: %s", encoded)
+	}
+	if _, err := session.Query(rule, "cleanRaws", `{"keepBetween":false}`); err != nil {
+		t.Fatalf("cleanRaws failed: %v", err)
+	}
+	raw, err := session.Query(rule, "raw", `{"prop":"beforeOpen"}`)
+	if err != nil {
+		t.Fatalf("raw failed: %v", err)
+	}
+	if raw == "" {
+		t.Fatal("expected inferred raw")
+	}
+}

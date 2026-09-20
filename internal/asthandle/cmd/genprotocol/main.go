@@ -17,6 +17,9 @@ import (
 type enumValue struct {
 	Name string
 	ID   uint32
+	// Bridge names the JavaScript-facing method for operations that both the
+	// Node addon and the WASM export table must implement.
+	Bridge string
 }
 type capability struct {
 	Name                  string
@@ -30,6 +33,7 @@ type protocol struct {
 }
 
 var identifier = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
+var bridgeMethod = regexp.MustCompile(`^handle[A-Z][A-Za-z0-9]*$`)
 
 func generate(data []byte) (map[string][]byte, error) {
 	var p protocol
@@ -69,6 +73,8 @@ func generate(data []byte) (map[string][]byte, error) {
 		c += fmt.Sprintf("#define HANDLE_CAPABILITY_%s %du\n", strings.ToUpper(cap.Name), value)
 		g += fmt.Sprintf("Capability%s uint32 = %d\n", cap.Name, value)
 	}
+	var bridgeNames []string
+	seenBridge := map[string]bool{}
 	for _, group := range []struct {
 		prefix, goPrefix, goType string
 		values                   []enumValue
@@ -87,6 +93,13 @@ func generate(data []byte) (map[string][]byte, error) {
 			}
 			seenNames[name] = true
 			seenIDs[value.ID] = true
+			if value.Bridge != "" {
+				if group.prefix != "OPERATION" || !bridgeMethod.MatchString(value.Bridge) || seenBridge[value.Bridge] {
+					return nil, fmt.Errorf("invalid bridge method %q", value.Bridge)
+				}
+				seenBridge[value.Bridge] = true
+				bridgeNames = append(bridgeNames, value.Bridge)
+			}
 			ts += fmt.Sprintf("export const HANDLE_%s_%s = %d;\n", group.prefix, name, value.ID)
 			c += fmt.Sprintf("#define HANDLE_%s_%s %d\n", group.prefix, name, value.ID)
 			g += fmt.Sprintf("%s%s %s = %d\n", group.goPrefix, value.Name, group.goType, value.ID)
@@ -94,6 +107,19 @@ func generate(data []byte) (map[string][]byte, error) {
 	}
 	g += ")\n"
 	c += "#endif\n"
+	if len(bridgeNames) == 0 {
+		return nil, fmt.Errorf("no bridge methods declared")
+	}
+	// Every runtime bridge (Node addon and WASM export table) must implement
+	// exactly this set, so drift in one transport fails generation checks.
+	g += "\n// BridgeMethods lists the JavaScript-facing handle methods.\nvar BridgeMethods = []string{\n"
+	ts += "export const HANDLE_BRIDGE_METHODS = [\n"
+	for _, name := range bridgeNames {
+		g += fmt.Sprintf("%q,\n", name)
+		ts += fmt.Sprintf("  '%s',\n", name)
+	}
+	g += "}\n"
+	ts += "] as const;\n"
 	goSource, err := format.Source([]byte(g))
 	if err != nil {
 		return nil, err

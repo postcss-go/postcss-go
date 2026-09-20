@@ -87,5 +87,5 @@
       "reason": "Bulk/handle native stringify (shared after handle Result serialization) emits additional nested-declaration segments versus upstream. CSS and non-mapping fields match."
     }
   ],
-  "handleContract": "Phase 4\u20137 forced handle mode uses the mutable Go-backed facade; auto selects handle-full for capability-complete workloads except previous-map composition, which stays on binary parse. Map annotations/inline use the full native stringify path."
+  "handleContract": "Capability-complete native and main-thread WASM workloads use the mutable Go-backed handle facade. Map annotations/inline use the native stringify path."
 }

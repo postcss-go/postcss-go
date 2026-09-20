@@ -1,13 +1,10 @@
-import { HANDLE_REQUIRED_CAPABILITIES } from '../src/generated/handle-protocol.ts';
-import { afterEach, expect, test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { Processor } from '../src/processor.ts';
 import { hasNativeHandleBridge } from '../src/handle-session.ts';
 import { createNativeService, isNativeBridgeAvailable } from '../src/native.ts';
 import { runPluginsWithBridge, runPluginsWithBridgeSync } from '../src/plugin-runtime.ts';
 import type { AcceptedPlugin } from '../src/plugin-types.ts';
-
-afterEach(() => vi.unstubAllEnvs());
 
 const colorPlugin: AcceptedPlugin = {
   postcssPlugin: 'color-to-navy',
@@ -27,7 +24,6 @@ const displayPlugin: AcceptedPlugin = {
 test.skipIf(!isNativeBridgeAvailable())(
   'handle results preserve original sources without hydrating a TypeScript AST',
   async () => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
     const service = createNativeService();
     const parse = vi.spyOn(service, 'parseSync');
     const css = 'a{color:red;\nheight:1px}';
@@ -68,8 +64,8 @@ test.skipIf(!isNativeBridgeAvailable())(
   'native handle bridge runs declaration-only plugins end-to-end',
   async () => {
     const service = createNativeService();
-    expect(service.handleAddon).not.toBeNull();
-    expect(hasNativeHandleBridge(service.handleAddon)).toBe(true);
+    expect(service.handleBridge).not.toBeNull();
+    expect(hasNativeHandleBridge(service.handleBridge)).toBe(true);
 
     const css = '.a { color: red; display: block; } .b { color: green; }';
     const viaRuntime = await runPluginsWithBridge(service, [colorPlugin, displayPlugin], css, {
@@ -87,7 +83,6 @@ test.skipIf(!isNativeBridgeAvailable())(
 test.skipIf(!isNativeBridgeAvailable())(
   'sync plugin bridge uses the handle facade for read-only declaration plugins',
   () => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
     const service = createNativeService();
     const css = '.card { color: black; }';
     const result = runPluginsWithBridgeSync(
@@ -134,7 +129,6 @@ test.skipIf(!isNativeBridgeAvailable())(
       await runPluginsWithBridge(service, [plugin], 'a{x:y}', {});
       expect(calls).toBe(1);
       calls = 0;
-      vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
       const removed = runPluginsWithBridgeSync(service, [plugin], 'a{x:y}', {});
       expect(calls).toBe(1);
       expect(removed.css).toBe('a{}');
@@ -146,8 +140,6 @@ test.skipIf(!isNativeBridgeAvailable())(
       expect(calls).toBe(1);
       expect(mapped.map).toBeTruthy();
       expect((mapped as { nativePlan?: { hydration: boolean } }).nativePlan?.hydration).toBe(false);
-      vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'invalid');
-      expect(() => runPluginsWithBridgeSync(service, [plugin], '', {})).toThrow(/mode/);
     } finally {
       service.close();
     }
@@ -188,7 +180,7 @@ test('Processor falls back from the handle path for async declaration visitors',
 });
 
 test.skipIf(!isNativeBridgeAvailable())(
-  'handle path falls back for helpers and source maps; forced handle surfaces session errors',
+  'handle path runs structural helpers and source maps; parse errors surface from the session',
   () => {
     const service = createNativeService();
     const cloneAfter: AcceptedPlugin = {
@@ -211,34 +203,16 @@ test.skipIf(!isNativeBridgeAvailable())(
       capabilities: service.capabilities,
       parseSync: service.parseSync.bind(service),
       stringifyResultSync: service.stringifyResultSync.bind(service),
-      handleAddon: {
-        handleProtocolInfo: () => ({
-          major: 2,
-          minor: 0,
-          maxBatchSize: 4096,
-          capabilities: new Uint32Array([HANDLE_REQUIRED_CAPABILITIES[0] | 16]),
-        }),
-        handleParseV2() {
-          throw new Error('boom');
+      handleBridge: new Proxy(service.handleBridge!, {
+        get(target, key, receiver) {
+          if (key === 'handleParse')
+            return () => {
+              throw new Error('boom');
+            };
+          return Reflect.get(target, key, receiver);
         },
-        handleCloseV2() {},
-        handleTypeV2: () => 0,
-        handleGetFieldV2: () => '',
-        handleSetFieldV2() {},
-        handleWalkDeclsV2: () => 0,
-        handleOpenCursorV2: () => 0,
-        handleCursorNextV2: () => 0,
-        handleCloseCursorV2() {},
-        handleReadFieldsV2: () => [],
-        handleReadSnapshotsV2: () => '[]',
-        handleSetFieldsV2() {},
-        handleStringifyV2: () => '',
-        handleNewDeclV2: () => 1,
-        handleAppendV2() {},
-        handleDisposeV2() {},
-      },
+      }),
     };
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
     expect(() =>
       runPluginsWithBridgeSync(exploding, [colorPlugin], 'a { color: red; }', {}),
     ).toThrow(/boom/);

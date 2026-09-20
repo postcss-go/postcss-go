@@ -58,14 +58,16 @@
     "bin/postcss-go.js"
   ],
   "scripts": {
-    "build": "pnpm run build:js && pnpm run build:native && pnpm run build:wasm",
-    "build:js": "pnpm --filter @postcss-go/shared build && vite build",
+    "build": "pnpm run generate:handles && pnpm run build:js && pnpm run build:native && pnpm run build:wasm",
+    "generate:handles": "go generate -C ../.. ./internal/asthandle",
+    "build:js": "pnpm --filter @postcss-go/shared build && pnpm run generate:handles && vite build",
     "build:native": "node ./native/build.mjs",
     "build:wasm": "node ../../scripts/build-wasm.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.types.json",
     "test": "vitest run",
     "test:core-css-contract": "pnpm run build && vitest run test/core-css-contract.test.ts test/wasm-backend-contract.test.ts test/plugin-contract.test.ts test/cli.test.ts",
-    "test:browser-wasm": "pnpm run build:js && pnpm run build:wasm && node ../../scripts/browser-wasm-smoke.mjs",
+    "test:browser-wasm": "pnpm run build:js && pnpm run build:wasm && vitest run --config vitest.e2e.config.ts",
+    "gates:browser-handles": "pnpm run build:js && pnpm run build:wasm && node ../../scripts/measure-browser-handle-gates.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -75,7 +77,6 @@
     "pretty-hrtime": "^1.0.3",
     "read-cache": "^1.0.0",
     "slash": "^5.1.0",
-    "source-map-js": "^1.2.1",
     "tinyglobby": "^0.2.15"
   },
   "optionalDependencies": {
@@ -93,6 +94,7 @@
     "postcss": "^8.5.15",
     "postcss-import": "16.1.1",
     "postcss-nested": "8.0.1",
+    "source-map-js": "^1.2.1",
     "unplugin-dts": "^1.0.3",
     "vite": "^8.1.5",
     "vitest": "^3.2.4"

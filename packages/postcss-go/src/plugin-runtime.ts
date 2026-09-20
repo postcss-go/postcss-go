@@ -7,15 +7,14 @@ import {
   Declaration,
   Document,
   asProcessRoot,
-  fromAst,
   fromJSON,
+  fromJSONLocal,
   Node,
   parseCssSync,
   Root,
   Rule,
   runWithWasmSyncCssHelpersBlocked,
   stringifyCssSync,
-  toAst,
   type Parser,
   type ProcessRoot,
 } from './ast.js';
@@ -26,7 +25,8 @@ import {
   isThenable,
   observeThenable,
 } from './errors.js';
-import { attachInputMetadata, hasPreviousMap, Input } from './input.js';
+import { attachInputMetadata, annotateOwnedInput, hasPreviousMap, Input } from './input.js';
+import { isGoOwned, releaseRetained, retainOwned } from './retained-session.js';
 import { list } from './list.js';
 import { throwInvalidPlugin } from './plugin-normalize.js';
 import type { PostcssGoService } from './service.js';
@@ -35,11 +35,11 @@ import type { AcceptedPlugin, Plugin, Transformer } from './plugin-types.js';
 import { fillDependencyParents, hydrateResultMap, Result } from './result.js';
 import { Warning } from './warning.js';
 import type { Processor } from './processor.js';
-import { prepareStringifyOptions } from './source-map-output.js';
+import { prepareStringifyOptions, finalizeMappedCSS } from './source-map-output.js';
 import { HANDLE_STATUS_PARSE } from './generated/handle-protocol.js';
 import { SessionOwner } from './handle-facade.js';
 import { planHandleExecution } from './handle-plan.js';
-import { HandleDeclarationUnsupportedError, type NativeHandleAddon } from './handle-session.js';
+import { HandleDeclarationUnsupportedError, type HandleBridge } from './handle-session.js';
 
 type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> & {
   capabilities?: PostcssGoService['capabilities'];
@@ -53,7 +53,7 @@ type PluginBridgeService = Pick<PostcssGoService, 'parse' | 'stringifyResult'> &
     ast: AstDTO | ProcessRoot,
     options?: ProcessOptions,
   ): { css: string; map?: string; mapFile?: string };
-  handleAddon?: NativeHandleAddon | null;
+  handleBridge?: HandleBridge | null;
 };
 
 type LiveAsyncPluginBridgeService = PluginBridgeService &
@@ -221,15 +221,16 @@ async function runPluginsWithBridgeBody(
   options = materializePreviousMap(options);
   const normalized = await normalizePlugins(plugins);
   const liveService = hasLiveAsyncPluginBridge(service) ? service : undefined;
-  if (service.capabilities?.backend !== 'wasm-worker') {
-    const handled = await tryHandleResultAsync(service, normalized, css, options, processor);
-    if (handled) return handled;
-  }
+  // Any transport with a handle bridge keeps its AST in-process, so the
+  // planner alone decides; the browser no longer needs a backend exception.
+  const handled = await tryHandleResultAsync(service, normalized, css, options, processor);
+  if (handled) return handled;
   const parsed = liveService
     ? await liveService.parseLive(css, { from: options.from })
     : await service.parse(css, { from: options.from });
-  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
-  attachInputMetadata(hydrated, css, options as ProcessOptions);
+  const hydrated = liveProcessRoot(parsed.root);
+  if (isGoOwned(hydrated)) annotateOwnedInput(hydrated, css, options as ProcessOptions);
+  else attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
   result.backend = service.capabilities?.backend;
@@ -273,7 +274,7 @@ async function runPluginsWithBridgeBody(
   );
   const stringified = liveService
     ? await liveService.stringifyResultLive(outputRoot, stringifyOptions as ProcessOptions)
-    : await service.stringifyResult(toAst(outputRoot), stringifyOptions as ProcessOptions);
+    : await service.stringifyResult(outputRoot, stringifyOptions as ProcessOptions);
   result.css = stringified.css;
   result.map = hydrateResultMap(stringified.map);
   result.mapFile = stringified.mapFile;
@@ -290,9 +291,21 @@ function hasLiveAsyncPluginBridge(
   );
 }
 
-/** Forced/auto handle execution; callbacks are never replayed onto the binary AST. */
+/**
+ * Handle execution picks its stringify entry point at runtime, so each variant
+ * stays optional: the sync bridge has no async counterpart and vice versa.
+ */
+type HandleExecutionService = Pick<
+  PluginBridgeService,
+  'capabilities' | 'handleBridge' | 'parseSync'
+> &
+  Partial<
+    Pick<PluginBridgeService, 'stringifyResult' | 'stringifyResultSync' | 'stringifyResultLive'>
+  >;
+
+/** Handle execution; callbacks stay on the Go-owned live tree. */
 function tryHandleResult(
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  service: HandleExecutionService,
   plugins: ActivePlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -304,13 +317,13 @@ function tryHandleResult(
   try {
     return executeHandleSync(owner, plan, plugins, css, options, processor, service);
   } catch (error) {
-    owner.session.close();
+    releaseRetained(owner.root);
     throw error;
   }
 }
 
 async function tryHandleResultAsync(
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  service: HandleExecutionService,
   plugins: ActivePlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -322,33 +335,29 @@ async function tryHandleResultAsync(
   try {
     return await executeHandleAsync(owner, plan, plugins, css, options, processor, service);
   } catch (error) {
-    owner.session.close();
+    releaseRetained(owner.root);
     throw error;
   }
 }
 
 function openHandleSession(
-  service: Pick<PluginBridgeService, 'capabilities' | 'handleAddon' | 'parseSync'>,
+  service: Pick<PluginBridgeService, 'capabilities' | 'handleBridge' | 'parseSync'>,
   plugins: ActivePlugin[],
   css: string,
   options: ProcessFileOptions,
 ): { owner: SessionOwner; plan: ReturnType<typeof planHandleExecution> } | undefined {
-  const mode =
-    typeof process === 'undefined' ? 'auto' : (process.env.POSTCSS_GO_NATIVE_AST ?? 'auto');
   const previousMaps = hasPreviousMap(css, options as ProcessOptions);
   const plan = planHandleExecution(
-    mode,
-    service.handleAddon,
+    service.handleBridge,
     Boolean(options.map) || previousMaps,
     plugins,
     previousMaps,
   );
-  if (plan.runtime === 'binary') return undefined;
-  if (plan.runtime === 'unsupported') throw new HandleDeclarationUnsupportedError(plan.reason);
+  if (plan.runtime === 'unsupported') return undefined;
   const mutableStructure = plan.runtime === 'handle-full';
   const mutableScalars = plan.runtime === 'handle-scalar' || mutableStructure;
   try {
-    const owner = new SessionOwner(service.handleAddon!, css, {
+    const owner = new SessionOwner(service.handleBridge!, css, {
       from: options.from,
       document: options.document == null ? undefined : String(options.document),
       map: (options as ProcessOptions).map,
@@ -358,6 +367,7 @@ function openHandleSession(
     owner.diagnostics.planReason = plan.reason;
     owner.diagnostics.hydration = false;
     owner.diagnostics.runtime = plan.runtime;
+    retainOwned(owner.root, owner);
     return { owner, plan };
   } catch (error) {
     if ((error as { status?: number })?.status === HANDLE_STATUS_PARSE && service.parseSync) {
@@ -384,15 +394,27 @@ function attachHandleDiagnostics(
   });
 }
 
+/**
+ * Only the in-process native transport can stringify a Go-backed root through
+ * the service. Every other transport stringifies from the session that already
+ * owns the AST, so no tree crosses a thread or process boundary.
+ */
+function serviceStringify(
+  service: HandleExecutionService,
+): Partial<
+  Pick<PluginBridgeService, 'stringifyResultSync' | 'stringifyResultLive' | 'stringifyResult'>
+> {
+  return service.capabilities?.backend === 'native' ? service : {};
+}
+
 function stringifyHandleResult(
   owner: SessionOwner,
   root: ProcessRoot,
   css: string,
   options: ProcessFileOptions,
   result: PluginResult,
-  service: Pick<
-    PluginBridgeService,
-    'stringifyResultSync' | 'stringifyResultLive' | 'stringifyResult'
+  service: Partial<
+    Pick<PluginBridgeService, 'stringifyResultSync' | 'stringifyResultLive' | 'stringifyResult'>
   >,
   allowAsync: boolean,
 ): void | Promise<void> {
@@ -416,7 +438,7 @@ function stringifyHandleResult(
     return service.stringifyResultLive(root, prepared as ProcessOptions).then(apply);
   }
   if (allowAsync && typeof service.stringifyResult === 'function') {
-    return service.stringifyResult(toAst(root), prepared as ProcessOptions).then(apply);
+    return service.stringifyResult(root, prepared as ProcessOptions).then(apply);
   }
   if (typeof service.stringifyResultSync === 'function') {
     apply(service.stringifyResultSync(root, prepared as ProcessOptions));
@@ -432,8 +454,10 @@ function stringifyHandleResult(
       absolute: Boolean(mapOpts.absolute),
       preserveAnnotation: mapOpts.annotation !== false,
     });
-    result.css = mapped.css;
-    result.map = hydrateResultMap(mapped.map || undefined);
+    const finalized = finalizeMappedCSS(mapped.css, mapped.map, prepared as ProcessOptions);
+    result.css = finalized.css;
+    result.map = hydrateResultMap(finalized.map);
+    result.mapFile = finalized.mapFile;
   } else {
     result.css = owner.session.stringify();
   }
@@ -446,15 +470,7 @@ function executeHandleSync(
   css: string,
   options: ProcessFileOptions,
   processor: ResultProcessorFacade | undefined,
-  service: Pick<
-    PluginBridgeService,
-    | 'capabilities'
-    | 'handleAddon'
-    | 'parseSync'
-    | 'stringifyResultSync'
-    | 'stringifyResultLive'
-    | 'stringifyResult'
-  >,
+  service: HandleExecutionService,
 ): PluginResult {
   const root = owner.root;
   const result = createResult(root, options, plugins, processor);
@@ -561,7 +577,7 @@ function executeHandleSync(
       runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
     }
   }
-  stringifyHandleResult(owner, root, css, options, result, service, false);
+  stringifyHandleResult(owner, root, css, options, result, serviceStringify(service), false);
   attachHandleDiagnostics(result, plan, owner);
   return result;
 }
@@ -573,15 +589,7 @@ async function executeHandleAsync(
   css: string,
   options: ProcessFileOptions,
   processor: ResultProcessorFacade | undefined,
-  service: Pick<
-    PluginBridgeService,
-    | 'capabilities'
-    | 'handleAddon'
-    | 'parseSync'
-    | 'stringifyResultSync'
-    | 'stringifyResultLive'
-    | 'stringifyResult'
-  >,
+  service: HandleExecutionService,
 ): Promise<PluginResult> {
   const root = owner.root;
   const result = createResult(root, options, plugins, processor);
@@ -692,7 +700,7 @@ async function executeHandleAsync(
       await runWithFlush(plugin, plugin.OnceExit, root, 'OnceExit', false);
     }
   }
-  await stringifyHandleResult(owner, root, css, options, result, service, true);
+  await stringifyHandleResult(owner, root, css, options, result, serviceStringify(service), true);
   attachHandleDiagnostics(result, plan, owner);
   return result;
 }
@@ -704,7 +712,7 @@ async function executeHandleAsync(
  */
 export function runPluginsWithBridgeSync(
   service: Required<Pick<PluginBridgeService, 'parseSync' | 'stringifyResultSync'>> &
-    Pick<PluginBridgeService, 'capabilities' | 'handleAddon'>,
+    Pick<PluginBridgeService, 'capabilities' | 'handleBridge'>,
   plugins: AcceptedPlugin[],
   css: string,
   options: ProcessFileOptions,
@@ -715,8 +723,9 @@ export function runPluginsWithBridgeSync(
   const handled = tryHandleResult(service, normalized, css, options, processor);
   if (handled) return handled;
   const parsed = service.parseSync(css, { from: options.from });
-  const hydrated = asProcessRoot(parsed.root instanceof Node ? parsed.root : fromAst(parsed.root));
-  attachInputMetadata(hydrated, css, options as ProcessOptions);
+  const hydrated = liveProcessRoot(parsed.root);
+  if (isGoOwned(hydrated)) annotateOwnedInput(hydrated, css, options as ProcessOptions);
+  else attachInputMetadata(hydrated, css, options as ProcessOptions);
 
   const result = createResult(hydrated, options, normalized, processor);
   result.backend = service.capabilities?.backend;
@@ -757,6 +766,17 @@ export function runPluginsWithBridgeSync(
   result.map = hydrateResultMap(stringified.map);
   result.mapFile = stringified.mapFile;
   return result;
+}
+
+function liveProcessRoot(root: unknown): ProcessRoot {
+  if (root instanceof Node) return asProcessRoot(root);
+  if (root && typeof root === 'object') {
+    // Worker string-in/out still returns a JSON tree. Keep it on the public
+    // identity skeleton so the JavaScript visitor loop can run; intern happens
+    // at stringify if a Go arena is available.
+    return asProcessRoot(fromJSONLocal(root as object) as Node);
+  }
+  throw new Error('postcss-go parse must return a live tree; AST DTO transport is removed');
 }
 
 function createResult(

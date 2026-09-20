@@ -58,6 +58,8 @@ const (
 	OperationChildCount         uint32 = 32
 	OperationChildAt            uint32 = 33
 	OperationRefreshSnapshot    uint32 = 34
+	OperationStringifyBuilder   uint32 = 35
+	OperationQuery              uint32 = 36
 	TypeNone                    int32  = 0
 	TypeRoot                    int32  = 1
 	TypeDocument                int32  = 2
@@ -86,3 +88,42 @@ const (
 	StatusInvalidArgument       uint32 = 10
 	StatusInternal              uint32 = 11
 )
+
+// BridgeMethods lists the JavaScript-facing handle methods.
+var BridgeMethods = []string{
+	"handleProtocolInfo",
+	"handleParse",
+	"handleClose",
+	"handleType",
+	"handleGetField",
+	"handleSetField",
+	"handleWalkDecls",
+	"handleOpenCursor",
+	"handleCursorNext",
+	"handleCloseCursor",
+	"handleReadFields",
+	"handleSetFields",
+	"handleStringify",
+	"handleNewDecl",
+	"handleAppend",
+	"handleDispose",
+	"handleReadSnapshots",
+	"handleApplyPatches",
+	"handleInsertBefore",
+	"handleRemove",
+	"handleClone",
+	"handlePrepend",
+	"handleInsertAfter",
+	"handleReplaceWith",
+	"handleNewRule",
+	"handleNewAtRule",
+	"handleNewComment",
+	"handleSetRaw",
+	"handleGetRaws",
+	"handleStringifyMap",
+	"handleParent",
+	"handleChildCount",
+	"handleChildAt",
+	"handleStringifyBuilder",
+	"handleQuery",
+}

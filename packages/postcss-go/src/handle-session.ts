@@ -9,7 +9,9 @@ import {
   HANDLE_FIELD_PARAMS,
   HANDLE_FIELD_TEXT,
   HANDLE_FIELD_IMPORTANT,
+  HANDLE_STATUS_PARSE,
 } from './generated/handle-protocol.js';
+import { CssSyntaxError, cssSyntaxErrorFromDto, type CssSyntaxErrorDTO } from './errors.js';
 export {
   HANDLE_FIELD_PROP,
   HANDLE_FIELD_VALUE,
@@ -29,82 +31,100 @@ export type HandleField =
   | typeof HANDLE_FIELD_TEXT
   | typeof HANDLE_FIELD_IMPORTANT;
 
-export type NativeHandleParseOptions = { from?: string; document?: string; trackSource?: boolean };
+export type HandleParseOptions = {
+  from?: string;
+  document?: string;
+  trackSource?: boolean;
+  /** Resolved previous map text, so Go owns origin lookups for composition. */
+  sourceMap?: string;
+  sourceMapUrl?: string;
+};
 
-/** Native failures carry a generated HANDLE_STATUS_* value and a Go-owned message. */
-export type NativeHandleError = Error & { status: number };
+/** Bridge failures carry a generated HANDLE_STATUS_* value and a Go-owned message. */
+export type HandleBridgeError = Error & { status: number };
 
-export type NativeHandleAddon = {
+/**
+ * Runtime-neutral handle transport. Implemented by the Node-API addon and by
+ * the browser main-thread WASM exports; the AST never leaves the Go arena.
+ */
+export type HandleBridge = {
   handleProtocolInfo(): {
     major: number;
     minor: number;
     maxBatchSize: number;
     capabilities: Uint32Array;
   };
-  handleParseV2(css: string, optionsJSON?: string): { sessionId: number; rootId: number };
-  handleReadSnapshotsV2?(sessionId: number, handles: Uint32Array): string;
-  handleCloseV2(sessionId: number): void;
-  handleTypeV2(sessionId: number, handle: number): number;
-  handleGetFieldV2(sessionId: number, handle: number, field: HandleField): string;
-  handleSetFieldV2(sessionId: number, handle: number, field: HandleField, value: string): void;
-  handleWalkDeclsV2(sessionId: number, root: number, buffer: Uint32Array): number;
-  handleOpenCursorV2(sessionId: number, root: number, declsOnly?: boolean): number;
-  handleCursorNextV2(sessionId: number, cursor: number, buffer: Uint32Array): number;
-  handleCloseCursorV2(sessionId: number, cursor: number): void;
-  handleReadFieldsV2(sessionId: number, handles: Uint32Array, field: HandleField): string[];
-  handleSetFieldsV2(
+  handleParse(css: string, optionsJSON?: string): { sessionId: number; rootId: number };
+  handleReadSnapshots?(sessionId: number, handles: Uint32Array): string;
+  handleClose(sessionId: number): void;
+  handleType(sessionId: number, handle: number): number;
+  handleGetField(sessionId: number, handle: number, field: HandleField): string;
+  handleSetField(sessionId: number, handle: number, field: HandleField, value: string): void;
+  handleWalkDecls(sessionId: number, root: number, buffer: Uint32Array): number;
+  handleOpenCursor(sessionId: number, root: number, declsOnly?: boolean): number;
+  handleCursorNext(sessionId: number, cursor: number, buffer: Uint32Array): number;
+  handleCloseCursor(sessionId: number, cursor: number): void;
+  handleReadFields(sessionId: number, handles: Uint32Array, field: HandleField): string[];
+  handleSetFields(
     sessionId: number,
     handles: Uint32Array,
     field: HandleField,
     values: string[],
   ): void;
-  handleApplyPatchesV2?(
+  handleApplyPatches?(
     sessionId: number,
     handles: Uint32Array,
     fields: Int32Array,
     values: string[],
   ): void;
-  handleStringifyV2(sessionId: number, handle: number): string;
-  handleNewDeclV2(sessionId: number, prop: string, value: string): number;
-  handleAppendV2(sessionId: number, parent: number, child: number): void;
-  handleDisposeV2(sessionId: number, handle: number): void;
-  handleInsertBeforeV2?(sessionId: number, target: number, child: number): void;
-  handleRemoveV2?(sessionId: number, handle: number): void;
-  handleCloneV2?(sessionId: number, handle: number): number;
-  handlePrependV2?(sessionId: number, parent: number, child: number): void;
-  handleInsertAfterV2?(sessionId: number, target: number, child: number): void;
-  handleReplaceWithV2?(sessionId: number, target: number, handles: Uint32Array): void;
-  handleNewRuleV2?(sessionId: number, selector: string): number;
-  handleNewAtRuleV2?(sessionId: number, name: string, params: string): number;
-  handleNewCommentV2?(sessionId: number, text: string): number;
-  handleSetRawV2?(sessionId: number, handle: number, patchJSON: string): void;
-  handleGetRawsV2?(sessionId: number, handle: number): string;
-  handleStringifyMapV2?(sessionId: number, handle: number, optionsJSON?: string): string;
-  handleParentV2?(sessionId: number, handle: number): number;
-  handleChildCountV2?(sessionId: number, handle: number): number;
-  handleChildAtV2?(sessionId: number, handle: number, index: number): number;
+  handleStringify(sessionId: number, handle: number): string;
+  handleNewDecl(sessionId: number, prop: string, value: string): number;
+  handleAppend(sessionId: number, parent: number, child: number): void;
+  handleDispose(sessionId: number, handle: number): void;
+  handleInsertBefore?(sessionId: number, target: number, child: number): void;
+  handleRemove?(sessionId: number, handle: number): void;
+  handleClone?(sessionId: number, handle: number): number;
+  handlePrepend?(sessionId: number, parent: number, child: number): void;
+  handleInsertAfter?(sessionId: number, target: number, child: number): void;
+  handleReplaceWith?(sessionId: number, target: number, handles: Uint32Array): void;
+  handleNewRule?(sessionId: number, selector: string): number;
+  handleNewAtRule?(sessionId: number, name: string, params: string): number;
+  handleNewComment?(sessionId: number, text: string): number;
+  handleSetRaw?(sessionId: number, handle: number, patchJSON: string): void;
+  handleGetRaws?(sessionId: number, handle: number): string;
+  handleStringifyMap?(sessionId: number, handle: number, optionsJSON?: string): string;
+  handleParent?(sessionId: number, handle: number): number;
+  handleChildCount?(sessionId: number, handle: number): number;
+  handleChildAt?(sessionId: number, handle: number, index: number): number;
+  handleStringifyBuilder?(sessionId: number, handle: number): string;
+  handleQuery?(sessionId: number, handle: number, kind: string, optionsJSON?: string): string;
 };
 
-function negotiateNativeHandleBridge(addon: unknown): number | undefined {
-  if (!addon || typeof addon !== 'object') return undefined;
-  const candidate = addon as NativeHandleAddon;
+/** Deprecated runtime-specific aliases kept for the migration window. */
+export type NativeHandleParseOptions = HandleParseOptions;
+export type NativeHandleError = HandleBridgeError;
+export type NativeHandleAddon = HandleBridge;
+
+function negotiateHandleBridge(bridge: unknown): number | undefined {
+  if (!bridge || typeof bridge !== 'object') return undefined;
+  const candidate = bridge as HandleBridge;
   const methods = [
     'handleProtocolInfo',
-    'handleParseV2',
-    'handleCloseV2',
-    'handleTypeV2',
-    'handleGetFieldV2',
-    'handleSetFieldV2',
-    'handleWalkDeclsV2',
-    'handleOpenCursorV2',
-    'handleCursorNextV2',
-    'handleCloseCursorV2',
-    'handleReadFieldsV2',
-    'handleSetFieldsV2',
-    'handleStringifyV2',
-    'handleNewDeclV2',
-    'handleAppendV2',
-    'handleDisposeV2',
+    'handleParse',
+    'handleClose',
+    'handleType',
+    'handleGetField',
+    'handleSetField',
+    'handleWalkDecls',
+    'handleOpenCursor',
+    'handleCursorNext',
+    'handleCloseCursor',
+    'handleReadFields',
+    'handleSetFields',
+    'handleStringify',
+    'handleNewDecl',
+    'handleAppend',
+    'handleDispose',
   ] as const;
   try {
     if (!methods.every((name) => typeof candidate[name] === 'function')) return undefined;
@@ -125,43 +145,51 @@ function negotiateNativeHandleBridge(addon: unknown): number | undefined {
       return undefined;
     return Math.min(info.maxBatchSize, HANDLE_MAX_BATCH_SIZE);
   } catch {
-    // Version-skewed addons must leave the existing binary bridge usable.
+    // A version-skewed bridge must fail negotiation rather than be used.
     return undefined;
   }
 }
 
-export function hasNativeHandleBridge(addon: unknown): addon is NativeHandleAddon {
-  return negotiateNativeHandleBridge(addon) !== undefined;
+export function hasHandleBridge(bridge: unknown): bridge is HandleBridge {
+  return negotiateHandleBridge(bridge) !== undefined;
 }
 
+/** Deprecated runtime-specific alias kept for the migration window. */
+export const hasNativeHandleBridge = hasHandleBridge;
+
 /** Opaque Go AST session backed by stable numeric handles. */
-export class NativeHandleSession {
+export class HandleSession {
   walkBuffer: Uint32Array;
   private root = 0;
   private readonly maxBatchSize: number;
   private owner?: { sessionId: number; rootId: number };
 
   constructor(
-    private readonly addon: NativeHandleAddon,
+    private readonly bridge: HandleBridge,
     walkCapacity = HANDLE_MAX_BATCH_SIZE,
   ) {
     if (!Number.isSafeInteger(walkCapacity) || walkCapacity < 1)
       throw new RangeError('walk capacity must be positive');
-    const maxBatchSize = negotiateNativeHandleBridge(addon);
+    const maxBatchSize = negotiateHandleBridge(bridge);
     if (maxBatchSize === undefined) throw new Error('incompatible native handle protocol');
     this.maxBatchSize = maxBatchSize;
     this.walkBuffer = new Uint32Array(walkCapacity);
   }
 
-  parse(css: string, options?: NativeHandleParseOptions): number {
+  parse(css: string, options?: HandleParseOptions): number {
     this.close();
-    const created =
-      options === undefined
-        ? this.addon.handleParseV2(css)
-        : this.addon.handleParseV2(css, JSON.stringify(options));
+    let created: { sessionId: number; rootId: number };
+    try {
+      created =
+        options === undefined
+          ? this.bridge.handleParse(css)
+          : this.bridge.handleParse(css, JSON.stringify(options));
+    } catch (error) {
+      throw wrapHandleParseError(error, css, options?.from);
+    }
     const validId = (id: number) => Number.isInteger(id) && id > 0 && id <= 0xffffffff;
     if (!created || !validId(created.sessionId) || !validId(created.rootId)) {
-      if (created && validId(created.sessionId)) this.addon.handleCloseV2(created.sessionId);
+      if (created && validId(created.sessionId)) this.bridge.handleClose(created.sessionId);
       throw new Error('postcss-go handle parse failed');
     }
     this.owner = created;
@@ -173,12 +201,21 @@ export class NativeHandleSession {
     return this.root;
   }
 
+  /** Arena id, for lifetime owners that must close without holding the session. */
+  get sessionId(): number | undefined {
+    return this.owner?.sessionId;
+  }
+
+  get handleBridge(): HandleBridge {
+    return this.bridge;
+  }
+
   getField(handle: number, field: HandleField): string {
-    return this.addon.handleGetFieldV2(this.requireSession(), handle, field);
+    return this.bridge.handleGetField(this.requireSession(), handle, field);
   }
 
   setField(handle: number, field: HandleField, value: string): void {
-    this.addon.handleSetFieldV2(this.requireSession(), handle, field, value);
+    this.bridge.handleSetField(this.requireSession(), handle, field, value);
   }
 
   walkDecls(root = this.root): number {
@@ -186,12 +223,12 @@ export class NativeHandleSession {
   }
 
   cursorWalkDecls(root = this.root): number {
-    const cursor = this.addon.handleOpenCursorV2(this.requireSession(), root, true);
+    const cursor = this.bridge.handleOpenCursor(this.requireSession(), root, true);
     try {
       let count = 0;
       for (;;) {
         const target = this.walkBuffer.subarray(count, count + this.maxBatchSize);
-        const read = this.addon.handleCursorNextV2(this.requireSession(), cursor, target);
+        const read = this.bridge.handleCursorNext(this.requireSession(), cursor, target);
         if (!Number.isInteger(read) || read < 0 || read > target.length)
           throw new Error('invalid handle cursor page');
         count += read;
@@ -203,13 +240,13 @@ export class NativeHandleSession {
         }
       }
     } finally {
-      this.addon.handleCloseCursorV2(this.requireSession(), cursor);
+      this.bridge.handleCloseCursor(this.requireSession(), cursor);
     }
   }
 
   readFields(handles: Uint32Array, field: HandleField): string[] {
     this.validateBatchSize(handles);
-    return this.addon.handleReadFieldsV2(this.requireSession(), handles, field);
+    return this.bridge.handleReadFields(this.requireSession(), handles, field);
   }
 
   /** Compatibility entry point for the isolated scalar prototype. */
@@ -220,31 +257,31 @@ export class NativeHandleSession {
   /** Bounded snapshot pages; mutation-aware traversal is a later capability. */
   *nodeBatches(declsOnly = false): Generator<Uint32Array> {
     const id = this.requireSession();
-    const cursor = this.addon.handleOpenCursorV2(id, this.root, declsOnly);
+    const cursor = this.bridge.handleOpenCursor(id, this.root, declsOnly);
     const buffer = new Uint32Array(this.maxBatchSize);
     try {
       for (;;) {
-        const count = this.addon.handleCursorNextV2(id, cursor, buffer);
+        const count = this.bridge.handleCursorNext(id, cursor, buffer);
         if (!Number.isInteger(count) || count < 0 || count > buffer.length)
           throw new Error('invalid handle cursor page');
         if (count === 0) return;
         yield buffer.subarray(0, count);
       }
     } finally {
-      this.addon.handleCloseCursorV2(id, cursor);
+      this.bridge.handleCloseCursor(id, cursor);
     }
   }
 
   readSnapshots(handles: Uint32Array): string {
     this.validateBatchSize(handles);
-    if (!this.addon.handleReadSnapshotsV2)
+    if (!this.bridge.handleReadSnapshots)
       throw new HandleDeclarationUnsupportedError('snapshot capability');
-    return this.addon.handleReadSnapshotsV2(this.requireSession(), handles);
+    return this.bridge.handleReadSnapshots(this.requireSession(), handles);
   }
 
   setFields(handles: Uint32Array, field: HandleField, values: string[]): void {
     this.validateBatchSize(handles);
-    this.addon.handleSetFieldsV2(this.requireSession(), handles, field, values);
+    this.bridge.handleSetFields(this.requireSession(), handles, field, values);
   }
 
   /** Ordered mixed-field scalar writes; Go validates the whole batch before commit. */
@@ -252,98 +289,111 @@ export class NativeHandleSession {
     this.validateBatchSize(handles);
     if (handles.length !== fields.length || handles.length !== values.length)
       throw new RangeError('handle mutation batch length mismatch');
-    if (!this.addon.handleApplyPatchesV2)
+    if (!this.bridge.handleApplyPatches)
       throw new HandleDeclarationUnsupportedError('atomic patches capability');
-    this.addon.handleApplyPatchesV2(this.requireSession(), handles, fields, values);
+    this.bridge.handleApplyPatches(this.requireSession(), handles, fields, values);
   }
 
   stringify(handle = this.root): string {
-    return this.addon.handleStringifyV2(this.requireSession(), handle);
+    return this.bridge.handleStringify(this.requireSession(), handle);
   }
 
   stringifyMap(
     handle = this.root,
     options: Record<string, unknown> = {},
   ): { css: string; map: string } {
-    if (!this.addon.handleStringifyMapV2)
+    if (!this.bridge.handleStringifyMap)
       throw new HandleDeclarationUnsupportedError('source maps capability');
     const payload = JSON.parse(
-      this.addon.handleStringifyMapV2(this.requireSession(), handle, JSON.stringify(options)),
+      this.bridge.handleStringifyMap(this.requireSession(), handle, JSON.stringify(options)),
     ) as { css: string; map: string };
     return payload;
   }
 
   insertBefore(target: number, child: number): void {
-    this.requireMutation('handleInsertBeforeV2')(this.requireSession(), target, child);
+    this.requireMutation('handleInsertBefore')(this.requireSession(), target, child);
   }
 
   remove(handle: number): void {
-    this.requireMutation('handleRemoveV2')(this.requireSession(), handle);
+    this.requireMutation('handleRemove')(this.requireSession(), handle);
   }
 
   clone(handle: number): number {
-    return this.requireMutation('handleCloneV2')(this.requireSession(), handle);
+    return this.requireMutation('handleClone')(this.requireSession(), handle);
   }
 
   prepend(parent: number, child: number): void {
-    this.requireMutation('handlePrependV2')(this.requireSession(), parent, child);
+    this.requireMutation('handlePrepend')(this.requireSession(), parent, child);
   }
 
   insertAfter(target: number, child: number): void {
-    this.requireMutation('handleInsertAfterV2')(this.requireSession(), target, child);
+    this.requireMutation('handleInsertAfter')(this.requireSession(), target, child);
   }
 
   replaceWith(target: number, handles: Uint32Array): void {
-    this.requireMutation('handleReplaceWithV2')(this.requireSession(), target, handles);
+    this.requireMutation('handleReplaceWith')(this.requireSession(), target, handles);
   }
 
   append(parent: number, child: number): void {
-    this.addon.handleAppendV2(this.requireSession(), parent, child);
+    this.bridge.handleAppend(this.requireSession(), parent, child);
   }
 
   newDecl(prop: string, value: string): number {
-    return this.addon.handleNewDeclV2(this.requireSession(), prop, value);
+    return this.bridge.handleNewDecl(this.requireSession(), prop, value);
   }
 
   newRule(selector: string): number {
-    return this.requireMutation('handleNewRuleV2')(this.requireSession(), selector);
+    return this.requireMutation('handleNewRule')(this.requireSession(), selector);
   }
 
   newAtRule(name: string, params: string): number {
-    return this.requireMutation('handleNewAtRuleV2')(this.requireSession(), name, params);
+    return this.requireMutation('handleNewAtRule')(this.requireSession(), name, params);
   }
 
   newComment(text: string): number {
-    return this.requireMutation('handleNewCommentV2')(this.requireSession(), text);
+    return this.requireMutation('handleNewComment')(this.requireSession(), text);
   }
 
   setRaw(handle: number, patch: { key: string; kind: string; value?: unknown }): void {
-    this.requireMutation('handleSetRawV2')(this.requireSession(), handle, JSON.stringify(patch));
+    this.requireMutation('handleSetRaw')(this.requireSession(), handle, JSON.stringify(patch));
   }
 
   getRaws(handle: number): Record<string, unknown> {
-    const json = this.requireMutation('handleGetRawsV2')(this.requireSession(), handle);
+    const json = this.requireMutation('handleGetRaws')(this.requireSession(), handle);
     return JSON.parse(json) as Record<string, unknown>;
   }
 
   parent(handle: number): number {
-    return this.requireMutation('handleParentV2')(this.requireSession(), handle);
+    return this.requireMutation('handleParent')(this.requireSession(), handle);
   }
 
   childCount(handle: number): number {
-    return this.requireMutation('handleChildCountV2')(this.requireSession(), handle);
+    return this.requireMutation('handleChildCount')(this.requireSession(), handle);
   }
 
   childAt(handle: number, index: number): number {
-    return this.requireMutation('handleChildAtV2')(this.requireSession(), handle, index);
+    return this.requireMutation('handleChildAt')(this.requireSession(), handle, index);
   }
 
-  private requireMutation<K extends keyof NativeHandleAddon>(
-    name: K,
-  ): NonNullable<NativeHandleAddon[K]> {
-    const method = this.addon[name];
+  stringifyBuilder(handle: number): Array<{ css: string; node?: number; type?: string }> {
+    const json = this.requireMutation('handleStringifyBuilder')(this.requireSession(), handle);
+    return JSON.parse(json) as Array<{ css: string; node?: number; type?: string }>;
+  }
+
+  query<T>(handle: number, kind: string, options: Record<string, unknown> = {}): T {
+    const json = this.requireMutation('handleQuery')(
+      this.requireSession(),
+      handle,
+      kind,
+      JSON.stringify(options),
+    );
+    return JSON.parse(json) as T;
+  }
+
+  private requireMutation<K extends keyof HandleBridge>(name: K): NonNullable<HandleBridge[K]> {
+    const method = this.bridge[name];
     if (typeof method !== 'function') throw new HandleDeclarationUnsupportedError(String(name));
-    return method.bind(this.addon) as NonNullable<NativeHandleAddon[K]>;
+    return method.bind(this.bridge) as NonNullable<HandleBridge[K]>;
   }
 
   private validateBatchSize(handles: Uint32Array): void {
@@ -362,9 +412,49 @@ export class NativeHandleSession {
     const id = this.owner.sessionId;
     this.owner = undefined;
     this.root = 0;
-    this.addon.handleCloseV2(id);
+    this.bridge.handleClose(id);
   }
 }
+
+function wrapHandleParseError(error: unknown, css: string, file?: string): never {
+  const status =
+    error && typeof error === 'object' ? Number((error as { status?: number }).status) : NaN;
+  const message = error instanceof Error ? error.message : String(error);
+  const prefix = 'postcss-go:css-syntax:';
+  const prefixedAt = message.indexOf(prefix);
+  if (prefixedAt >= 0) {
+    const payload = message.slice(prefixedAt + prefix.length).trim();
+    const fallback = { source: css, file };
+    if (payload.startsWith('{')) {
+      try {
+        throw cssSyntaxErrorFromDto(JSON.parse(payload) as CssSyntaxErrorDTO, fallback);
+      } catch (cause) {
+        if (cause instanceof CssSyntaxError) throw cause;
+        throw new CssSyntaxError(payload, fallback);
+      }
+    }
+    throw new CssSyntaxError(payload, fallback);
+  }
+  if (status !== HANDLE_STATUS_PARSE) throw error;
+  const stripped = message
+    .replace(/^asthandle:\s*parse failed:\s*/i, '')
+    .replace(/^CssSyntaxError:\s*/i, '');
+  const located = stripped.match(/^(.*):(\d+):(\d+):\s*(.*)$/s);
+  if (located) {
+    const locatedFile = located[1] && located[1] !== '<css input>' ? located[1] : file;
+    const reason = located[4]?.trim() || stripped;
+    throw new CssSyntaxError(reason, {
+      source: css,
+      file: locatedFile,
+      line: Number(located[2]),
+      column: Number(located[3]),
+    });
+  }
+  throw new CssSyntaxError(stripped || message, { source: css, file });
+}
+
+/** Deprecated runtime-specific alias kept for the migration window. */
+export const NativeHandleSession = HandleSession;
 
 export type HandleDeclarationStub = {
   prop: string;

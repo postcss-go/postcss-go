@@ -19,27 +19,27 @@ function mockAddon(overrides: Partial<NativeHandleAddon> = {}): NativeHandleAddo
       maxBatchSize: 4096,
       capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
     }),
-    handleParseV2: () => ({ sessionId: 1, rootId: 1 }),
-    handleCloseV2: () => {},
-    handleTypeV2: () => 1,
-    handleGetFieldV2: () => 'color',
-    handleSetFieldV2: () => {},
-    handleWalkDeclsV2: (_session, _root, buffer) => {
+    handleParse: () => ({ sessionId: 1, rootId: 1 }),
+    handleClose: () => {},
+    handleType: () => 1,
+    handleGetField: () => 'color',
+    handleSetField: () => {},
+    handleWalkDecls: (_session, _root, buffer) => {
       buffer[0] = 2;
       return 1;
     },
-    handleOpenCursorV2: () => 1,
-    handleCursorNextV2: (_session, _cursor, buffer) => {
+    handleOpenCursor: () => 1,
+    handleCursorNext: (_session, _cursor, buffer) => {
       buffer[0] = 2;
       return 1;
     },
-    handleCloseCursorV2: () => {},
-    handleReadFieldsV2: () => ['color'],
-    handleSetFieldsV2: () => {},
-    handleStringifyV2: () => 'a { color: red; }',
-    handleNewDeclV2: () => 3,
-    handleAppendV2: () => {},
-    handleDisposeV2: () => {},
+    handleCloseCursor: () => {},
+    handleReadFields: () => ['color'],
+    handleSetFields: () => {},
+    handleStringify: () => 'a { color: red; }',
+    handleNewDecl: () => 3,
+    handleAppend: () => {},
+    handleDispose: () => {},
     ...overrides,
   };
 }
@@ -51,8 +51,8 @@ test('hasNativeHandleBridge rejects incomplete addons', () => {
   expect(hasNativeHandleBridge({})).toBe(false);
   expect(
     hasNativeHandleBridge({
-      handleParseV2: () => 1,
-      handleStringifyV2: () => '',
+      handleParse: () => 1,
+      handleStringify: () => '',
     }),
   ).toBe(false);
   expect(hasNativeHandleBridge(mockAddon())).toBe(true);
@@ -78,8 +78,8 @@ test('createHandleDeclarationStub allows prop, value, and important', () => {
 test('NativeHandleSession parses, reads, writes, walks, and closes', () => {
   const closed: number[] = [];
   const addon = mockAddon({
-    handleParseV2: (css) => ({ sessionId: css === 'fail' ? 0 : 1, rootId: 7 }),
-    handleCloseV2: () => {
+    handleParse: (css) => ({ sessionId: css === 'fail' ? 0 : 1, rootId: 7 }),
+    handleClose: () => {
       closed.push(1);
     },
   });
@@ -104,8 +104,8 @@ test('NativeHandleSession parses, reads, writes, walks, and closes', () => {
 
 test.skipIf(!isNativeBridgeAvailable())('native handle session round-trips a stylesheet', () => {
   const service = createNativeService();
-  expect(hasNativeHandleBridge(service.handleAddon)).toBe(true);
-  const session = new NativeHandleSession(service.handleAddon!);
+  expect(hasNativeHandleBridge(service.handleBridge)).toBe(true);
+  const session = new NativeHandleSession(service.handleBridge!);
   const root = session.parse('.card { color: red; display: block; }');
   expect(session.rootHandle).toBe(root);
   const count = session.walkDecls(root);
@@ -120,7 +120,7 @@ test.skipIf(!isNativeBridgeAvailable())('native handle session round-trips a sty
 
 test('sessions close exactly once per successful parse and reject use after close', () => {
   const close = vi.fn();
-  const s = new NativeHandleSession(mockAddon({ handleCloseV2: close }));
+  const s = new NativeHandleSession(mockAddon({ handleClose: close }));
   s.close();
   expect(close).not.toHaveBeenCalled();
   s.parse('');
@@ -149,8 +149,8 @@ test('cursor drains exact-sized pages and closes on invalid pages', () => {
   let offset = 0;
   const close = vi.fn();
   const addon = mockAddon({
-    handleCloseCursorV2: close,
-    handleCursorNextV2(_session, _cursor, buffer) {
+    handleCloseCursor: close,
+    handleCursorNext(_session, _cursor, buffer) {
       const ids = new Uint32Array([1, 2, 3, 4]);
       const chunk = ids.subarray(offset, offset + buffer.length);
       buffer.set(chunk);
@@ -163,7 +163,7 @@ test('cursor drains exact-sized pages and closes on invalid pages', () => {
   expect(s.cursorWalkDecls()).toBe(4);
   expect(Array.from(s.walkBuffer.subarray(0, 4))).toEqual([1, 2, 3, 4]);
   expect(close).toHaveBeenCalledTimes(1);
-  addon.handleCursorNextV2 = () => -1;
+  addon.handleCursorNext = () => -1;
   expect(() => s.cursorWalkDecls()).toThrow(/invalid/);
   expect(() => [...s.declarationBatches()]).toThrow(/invalid/);
   expect(close).toHaveBeenCalledTimes(3);
@@ -174,7 +174,7 @@ test.skipIf(!isNativeBridgeAvailable())(
   'native sessions isolate reentrant parses and large UTF-8 fields',
   () => {
     const service = createNativeService();
-    const addon = service.handleAddon!;
+    const addon = service.handleBridge!;
     const a = new NativeHandleSession(addon, 1);
     const b = new NativeHandleSession(addon, 1);
     try {
@@ -206,7 +206,7 @@ test.skipIf(!isNativeBridgeAvailable())(
   'native cursors do not truncate beyond 200000 declarations',
   () => {
     const service = createNativeService();
-    const s = new NativeHandleSession(service.handleAddon!);
+    const s = new NativeHandleSession(service.handleBridge!);
     try {
       s.parse('a{' + 'x:y;'.repeat(200_001) + '}');
       let count = 0;
@@ -268,15 +268,15 @@ test('negotiated batch limit bounds cursor pages and rejects oversized atomic wr
       maxBatchSize: 2,
       capabilities: new Uint32Array(HANDLE_REQUIRED_CAPABILITIES),
     }),
-    handleCursorNextV2(_session, _cursor, buffer) {
+    handleCursorNext(_session, _cursor, buffer) {
       expect(buffer.length).toBeLessThanOrEqual(2);
       const page = ids.subarray(offset, offset + buffer.length);
       buffer.set(page);
       offset += page.length;
       return page.length;
     },
-    handleReadFieldsV2: read,
-    handleSetFieldsV2: write,
+    handleReadFields: read,
+    handleSetFields: write,
   });
   const session = new NativeHandleSession(addon, 3);
   session.parse('');
@@ -338,9 +338,7 @@ test('each required capability is negotiated independently, including newer mino
 test('parse forwards source options and rejects malformed owner IDs without leaks', () => {
   const parse = vi.fn(() => ({ sessionId: 1, rootId: 1 }));
   const close = vi.fn();
-  const session = new NativeHandleSession(
-    mockAddon({ handleParseV2: parse, handleCloseV2: close }),
-  );
+  const session = new NativeHandleSession(mockAddon({ handleParse: parse, handleClose: close }));
   session.parse('a{}', { from: '/source.css', document: 'input', trackSource: true });
   expect(parse).toHaveBeenCalledWith(
     'a{}',

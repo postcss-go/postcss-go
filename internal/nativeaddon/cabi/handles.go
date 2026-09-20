@@ -25,8 +25,8 @@ import (
 
 var handleSessions asthandle.Registry
 
-//export pcgoHandleFreeErrorV2_1
-func pcgoHandleFreeErrorV2_1(out *C.pcgoHandleError) {
+//export pcgoHandleFreeError
+func pcgoHandleFreeError(out *C.pcgoHandleError) {
 	if out != nil {
 		C.free(unsafe.Pointer(out.message))
 		out.message = nil
@@ -34,8 +34,8 @@ func pcgoHandleFreeErrorV2_1(out *C.pcgoHandleError) {
 	}
 }
 
-//export pcgoHandleSessionCountV2
-func pcgoHandleSessionCountV2() C.uint { return C.uint(handleSessions.Len()) }
+//export pcgoHandleSessionCount
+func pcgoHandleSessionCount() C.uint { return C.uint(handleSessions.Len()) }
 
 // Error memory is owned by this invocation and freed by the C caller.
 func handleFail(out *C.pcgoHandleError, err error) C.int {
@@ -58,13 +58,15 @@ func copyOut(value string, buf *C.char, capacity C.int) int {
 	return copy(out, value)
 }
 
-//export pcgoHandleParseV2_1
-func pcgoHandleParseV2_1(buf *C.char, length C.int, rootOut *C.uint, optionsJSON *C.char, optionsLength C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleParse
+func pcgoHandleParse(buf *C.char, length C.int, rootOut *C.uint, optionsJSON *C.char, optionsLength C.int, errorOut *C.pcgoHandleError) C.uint {
 	css := C.GoStringN(buf, length)
 	var options *struct {
-		From        string `json:"from"`
-		Document    string `json:"document"`
-		TrackSource bool   `json:"trackSource"`
+		From         string `json:"from"`
+		Document     string `json:"document"`
+		TrackSource  bool   `json:"trackSource"`
+		SourceMap    string `json:"sourceMap"`
+		SourceMapURL string `json:"sourceMapUrl"`
 	}
 	if optionsJSON != nil {
 		decoder := json.NewDecoder(strings.NewReader(C.GoStringN(optionsJSON, optionsLength)))
@@ -80,7 +82,15 @@ func pcgoHandleParseV2_1(buf *C.char, length C.int, rootOut *C.uint, optionsJSON
 	}
 	var parseOptions sourcemap.Options
 	if options != nil {
-		parseOptions = sourcemap.Options{From: options.From, Document: options.Document, TrackSource: options.TrackSource}
+		parseOptions = sourcemap.Options{
+			From:         options.From,
+			Document:     options.Document,
+			TrackSource:  options.TrackSource,
+			SourceMapURL: options.SourceMapURL,
+		}
+		if options.SourceMap != "" {
+			parseOptions.SourceMap = []byte(options.SourceMap)
+		}
 	}
 	id, root, err := handleSessions.ParseWithOptions(css, parseOptions)
 	if err != nil {
@@ -91,13 +101,13 @@ func pcgoHandleParseV2_1(buf *C.char, length C.int, rootOut *C.uint, optionsJSON
 	return C.uint(id)
 }
 
-//export pcgoHandleCloseV2
-func pcgoHandleCloseV2(id C.uint) {
+//export pcgoHandleClose
+func pcgoHandleClose(id C.uint) {
 	handleSessions.Close(uint32(id))
 }
 
-//export pcgoHandleTypeV2_1
-func pcgoHandleTypeV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleType
+func pcgoHandleType(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -110,8 +120,8 @@ func pcgoHandleTypeV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleE
 	return C.int(kind)
 }
 
-//export pcgoHandleGetFieldV2_1
-func pcgoHandleGetFieldV2_1(sessionID C.uint, handle C.uint, field C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleGetField
+func pcgoHandleGetField(sessionID C.uint, handle C.uint, field C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -124,8 +134,8 @@ func pcgoHandleGetFieldV2_1(sessionID C.uint, handle C.uint, field C.int, buf *C
 	return C.int(copyOut(value, buf, capacity))
 }
 
-//export pcgoHandleSetFieldV2_1
-func pcgoHandleSetFieldV2_1(sessionID C.uint, handle C.uint, field C.int, buf *C.char, length C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleSetField
+func pcgoHandleSetField(sessionID C.uint, handle C.uint, field C.int, buf *C.char, length C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -137,8 +147,8 @@ func pcgoHandleSetFieldV2_1(sessionID C.uint, handle C.uint, field C.int, buf *C
 	return 0
 }
 
-//export pcgoHandleWalkDeclsV2_1
-func pcgoHandleWalkDeclsV2_1(sessionID C.uint, root C.uint, out *C.uint, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleWalkDecls
+func pcgoHandleWalkDecls(sessionID C.uint, root C.uint, out *C.uint, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -159,8 +169,8 @@ func pcgoHandleWalkDeclsV2_1(sessionID C.uint, root C.uint, out *C.uint, capacit
 	return C.int(len(handles))
 }
 
-//export pcgoHandleOpenCursorV2_1
-func pcgoHandleOpenCursorV2_1(sessionID C.uint, root C.uint, declsOnly C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleOpenCursor
+func pcgoHandleOpenCursor(sessionID C.uint, root C.uint, declsOnly C.int, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -175,8 +185,8 @@ func pcgoHandleOpenCursorV2_1(sessionID C.uint, root C.uint, declsOnly C.int, er
 	return C.uint(id)
 }
 
-//export pcgoHandleCursorNextV2_1
-func pcgoHandleCursorNextV2_1(sessionID C.uint, id C.uint, out *C.uint, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleCursorNext
+func pcgoHandleCursorNext(sessionID C.uint, id C.uint, out *C.uint, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -190,8 +200,8 @@ func pcgoHandleCursorNextV2_1(sessionID C.uint, id C.uint, out *C.uint, capacity
 	return C.int(n)
 }
 
-//export pcgoHandleCloseCursorV2_1
-func pcgoHandleCloseCursorV2_1(sessionID C.uint, id C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleCloseCursor
+func pcgoHandleCloseCursor(sessionID C.uint, id C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -203,8 +213,8 @@ func pcgoHandleCloseCursorV2_1(sessionID C.uint, id C.uint, errorOut *C.pcgoHand
 	return 0
 }
 
-//export pcgoHandleReadFieldsV2_1
-func pcgoHandleReadFieldsV2_1(sessionID C.uint, handles *C.uint, count C.int, field C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleReadFields
+func pcgoHandleReadFields(sessionID C.uint, handles *C.uint, count C.int, field C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -245,8 +255,8 @@ func pcgoHandleReadFieldsV2_1(sessionID C.uint, handles *C.uint, count C.int, fi
 	return C.int(offset)
 }
 
-//export pcgoHandleSetFieldsV2_1
-func pcgoHandleSetFieldsV2_1(sessionID C.uint, handles *C.uint, count C.int, field C.int, buf *C.char, length C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleSetFields
+func pcgoHandleSetFields(sessionID C.uint, handles *C.uint, count C.int, field C.int, buf *C.char, length C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -278,8 +288,8 @@ func pcgoHandleSetFieldsV2_1(sessionID C.uint, handles *C.uint, count C.int, fie
 	return 0
 }
 
-//export pcgoHandleNewDeclV2_1
-func pcgoHandleNewDeclV2_1(sessionID C.uint, prop *C.char, propLen C.int, value *C.char, valueLen C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleNewDecl
+func pcgoHandleNewDecl(sessionID C.uint, prop *C.char, propLen C.int, value *C.char, valueLen C.int, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -294,8 +304,8 @@ func pcgoHandleNewDeclV2_1(sessionID C.uint, prop *C.char, propLen C.int, value 
 	return C.uint(handle)
 }
 
-//export pcgoHandleAppendV2_1
-func pcgoHandleAppendV2_1(sessionID C.uint, parent C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleAppend
+func pcgoHandleAppend(sessionID C.uint, parent C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -307,8 +317,8 @@ func pcgoHandleAppendV2_1(sessionID C.uint, parent C.uint, child C.uint, errorOu
 	return 0
 }
 
-//export pcgoHandleDisposeV2_1
-func pcgoHandleDisposeV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleDispose
+func pcgoHandleDispose(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -320,8 +330,8 @@ func pcgoHandleDisposeV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHand
 	return 0
 }
 
-//export pcgoHandleStringifyV2_1
-func pcgoHandleStringifyV2_1(sessionID C.uint, handle C.uint, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleStringify
+func pcgoHandleStringify(sessionID C.uint, handle C.uint, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -334,8 +344,8 @@ func pcgoHandleStringifyV2_1(sessionID C.uint, handle C.uint, buf *C.char, capac
 	return C.int(copyOut(css, buf, capacity))
 }
 
-//export pcgoHandleReadSnapshotsV2_1
-func pcgoHandleReadSnapshotsV2_1(sessionID C.uint, handles *C.uint, count C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleReadSnapshots
+func pcgoHandleReadSnapshots(sessionID C.uint, handles *C.uint, count C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	if count < 0 || uint32(count) > asthandle.MaxBatchSize || capacity < 0 || (count > 0 && handles == nil) || (capacity > 0 && buf == nil) {
 		return handleFail(errorOut, asthandle.ErrInvalidArgument)
 	}
@@ -366,8 +376,8 @@ func pcgoHandleReadSnapshotsV2_1(sessionID C.uint, handles *C.uint, count C.int,
 	return C.int(len(encoded))
 }
 
-//export pcgoHandleApplyPatchesV2_1
-func pcgoHandleApplyPatchesV2_1(
+//export pcgoHandleApplyPatches
+func pcgoHandleApplyPatches(
 	sessionID C.uint,
 	handles *C.uint,
 	fields *C.int,
@@ -415,8 +425,8 @@ func pcgoHandleApplyPatchesV2_1(
 	return 0
 }
 
-//export pcgoHandleInsertBeforeV2_1
-func pcgoHandleInsertBeforeV2_1(sessionID C.uint, target C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleInsertBefore
+func pcgoHandleInsertBefore(sessionID C.uint, target C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -428,8 +438,8 @@ func pcgoHandleInsertBeforeV2_1(sessionID C.uint, target C.uint, child C.uint, e
 	return 0
 }
 
-//export pcgoHandleRemoveV2_1
-func pcgoHandleRemoveV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleRemove
+func pcgoHandleRemove(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -441,8 +451,8 @@ func pcgoHandleRemoveV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandl
 	return 0
 }
 
-//export pcgoHandleCloneV2_1
-func pcgoHandleCloneV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleClone
+func pcgoHandleClone(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -457,8 +467,8 @@ func pcgoHandleCloneV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandle
 	return C.uint(id)
 }
 
-//export pcgoHandlePrependV2_1
-func pcgoHandlePrependV2_1(sessionID C.uint, parent C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandlePrepend
+func pcgoHandlePrepend(sessionID C.uint, parent C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -470,8 +480,8 @@ func pcgoHandlePrependV2_1(sessionID C.uint, parent C.uint, child C.uint, errorO
 	return 0
 }
 
-//export pcgoHandleInsertAfterV2_1
-func pcgoHandleInsertAfterV2_1(sessionID C.uint, target C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleInsertAfter
+func pcgoHandleInsertAfter(sessionID C.uint, target C.uint, child C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -483,8 +493,8 @@ func pcgoHandleInsertAfterV2_1(sessionID C.uint, target C.uint, child C.uint, er
 	return 0
 }
 
-//export pcgoHandleReplaceWithV2_1
-func pcgoHandleReplaceWithV2_1(sessionID C.uint, target C.uint, handles *C.uint, count C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleReplaceWith
+func pcgoHandleReplaceWith(sessionID C.uint, target C.uint, handles *C.uint, count C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -501,8 +511,8 @@ func pcgoHandleReplaceWithV2_1(sessionID C.uint, target C.uint, handles *C.uint,
 	return 0
 }
 
-//export pcgoHandleNewRuleV2_1
-func pcgoHandleNewRuleV2_1(sessionID C.uint, selector *C.char, selectorLen C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleNewRule
+func pcgoHandleNewRule(sessionID C.uint, selector *C.char, selectorLen C.int, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -517,8 +527,8 @@ func pcgoHandleNewRuleV2_1(sessionID C.uint, selector *C.char, selectorLen C.int
 	return C.uint(id)
 }
 
-//export pcgoHandleNewAtRuleV2_1
-func pcgoHandleNewAtRuleV2_1(sessionID C.uint, name *C.char, nameLen C.int, params *C.char, paramsLen C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleNewAtRule
+func pcgoHandleNewAtRule(sessionID C.uint, name *C.char, nameLen C.int, params *C.char, paramsLen C.int, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -533,8 +543,8 @@ func pcgoHandleNewAtRuleV2_1(sessionID C.uint, name *C.char, nameLen C.int, para
 	return C.uint(id)
 }
 
-//export pcgoHandleNewCommentV2_1
-func pcgoHandleNewCommentV2_1(sessionID C.uint, text *C.char, textLen C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleNewComment
+func pcgoHandleNewComment(sessionID C.uint, text *C.char, textLen C.int, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -549,8 +559,8 @@ func pcgoHandleNewCommentV2_1(sessionID C.uint, text *C.char, textLen C.int, err
 	return C.uint(id)
 }
 
-//export pcgoHandleSetRawV2_1
-func pcgoHandleSetRawV2_1(sessionID C.uint, handle C.uint, patchJSON *C.char, patchLen C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleSetRaw
+func pcgoHandleSetRaw(sessionID C.uint, handle C.uint, patchJSON *C.char, patchLen C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -566,8 +576,8 @@ func pcgoHandleSetRawV2_1(sessionID C.uint, handle C.uint, patchJSON *C.char, pa
 	return 0
 }
 
-//export pcgoHandleGetRawsV2_1
-func pcgoHandleGetRawsV2_1(sessionID C.uint, handle C.uint, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleGetRaws
+func pcgoHandleGetRaws(sessionID C.uint, handle C.uint, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -580,8 +590,8 @@ func pcgoHandleGetRawsV2_1(sessionID C.uint, handle C.uint, buf *C.char, capacit
 	return C.int(copyOut(value, buf, capacity))
 }
 
-//export pcgoHandleStringifyMapV2_1
-func pcgoHandleStringifyMapV2_1(sessionID C.uint, handle C.uint, optionsJSON *C.char, optionsLen C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleStringifyMap
+func pcgoHandleStringifyMap(sessionID C.uint, handle C.uint, optionsJSON *C.char, optionsLen C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -618,8 +628,8 @@ func pcgoHandleStringifyMapV2_1(sessionID C.uint, handle C.uint, optionsJSON *C.
 	return C.int(len(encoded))
 }
 
-//export pcgoHandleParentV2_1
-func pcgoHandleParentV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleParent
+func pcgoHandleParent(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -634,8 +644,8 @@ func pcgoHandleParentV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandl
 	return C.uint(parent)
 }
 
-//export pcgoHandleChildCountV2_1
-func pcgoHandleChildCountV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
+//export pcgoHandleChildCount
+func pcgoHandleChildCount(sessionID C.uint, handle C.uint, errorOut *C.pcgoHandleError) C.int {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -648,8 +658,8 @@ func pcgoHandleChildCountV2_1(sessionID C.uint, handle C.uint, errorOut *C.pcgoH
 	return C.int(count)
 }
 
-//export pcgoHandleChildAtV2_1
-func pcgoHandleChildAtV2_1(sessionID C.uint, handle C.uint, index C.int, errorOut *C.pcgoHandleError) C.uint {
+//export pcgoHandleChildAt
+func pcgoHandleChildAt(sessionID C.uint, handle C.uint, index C.int, errorOut *C.pcgoHandleError) C.uint {
 	session, release := handleSessions.Acquire(uint32(sessionID))
 	defer release()
 	if session == nil {
@@ -662,4 +672,40 @@ func pcgoHandleChildAtV2_1(sessionID C.uint, handle C.uint, index C.int, errorOu
 		return 0
 	}
 	return C.uint(child)
+}
+
+//export pcgoHandleStringifyBuilder
+func pcgoHandleStringifyBuilder(sessionID C.uint, handle C.uint, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+	session, release := handleSessions.Acquire(uint32(sessionID))
+	defer release()
+	if session == nil {
+		return handleFail(errorOut, asthandle.ErrClosed)
+	}
+	value, err := session.StringifyBuilder(asthandle.Handle(handle))
+	if err != nil {
+		return handleFail(errorOut, err)
+	}
+	return C.int(copyOut(value, buf, capacity))
+}
+
+//export pcgoHandleQuery
+func pcgoHandleQuery(sessionID C.uint, handle C.uint, kind *C.char, kindLen C.int, optionsJSON *C.char, optionsLen C.int, buf *C.char, capacity C.int, errorOut *C.pcgoHandleError) C.int {
+	session, release := handleSessions.Acquire(uint32(sessionID))
+	defer release()
+	if session == nil {
+		return handleFail(errorOut, asthandle.ErrClosed)
+	}
+	kindName := ""
+	if kind != nil && kindLen > 0 {
+		kindName = C.GoStringN(kind, kindLen)
+	}
+	options := ""
+	if optionsJSON != nil && optionsLen > 0 {
+		options = C.GoStringN(optionsJSON, optionsLen)
+	}
+	value, err := session.Query(asthandle.Handle(handle), kindName, options)
+	if err != nil {
+		return handleFail(errorOut, err)
+	}
+	return C.int(copyOut(value, buf, capacity))
 }

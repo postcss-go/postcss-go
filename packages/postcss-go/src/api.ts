@@ -1,4 +1,4 @@
-import { Document, asProcessRoot, Node, Root, toAst } from './ast.js';
+import { Document, asProcessRoot, Node, Root } from './ast.js';
 import { createDefaultAsyncService } from './native.js';
 import type { PostcssGoService } from './service.js';
 import type { ProcessOptions, ProcessResult, RootNode } from './types.js';
@@ -94,7 +94,7 @@ export async function stringifyAst(
 ): Promise<string> {
   const activeService = service ?? createDefaultAsyncService();
   try {
-    return await activeService.stringify(toAst(root));
+    return await activeService.stringify(root);
   } finally {
     if (!service) await activeService.close();
   }

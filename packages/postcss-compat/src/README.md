@@ -2,7 +2,7 @@
 
 TypeScript sources in this directory compile to CommonJS under `../dist/`.
 Those `.js` files replace matching modules under `vendor/postcss/lib/` when
-`POSTCSS_COMPAT_MODE=go` (via `scripts/prepare-upstream-compat.mjs`).
+`POSTCSS_COMPAT_MODE=go` (via `scripts/upstream.mjs prepare`).
 
 Upstream test runs copy the vendored tree into a temp directory first, so
 overrides are applied only for that run and do not rewrite `vendor/postcss/lib/`.

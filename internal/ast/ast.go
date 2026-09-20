@@ -843,12 +843,21 @@ func cloneAfter(node Node, overrides ...Node) (Node, error) {
 	return clone, node.Parent().InsertAfter(node, clone)
 }
 
+func markAtRuleBlock(parent Container) {
+	if at, ok := parent.(*AtRule); ok {
+		at.Block = true
+	}
+}
+
 func appendNodes(parent Container, dst *[]Node, nodes ...Node) {
 	var sample Node
 	if len(*dst) > 0 {
 		sample = (*dst)[len(*dst)-1]
 	}
 	prepared := prepareNodes(parent, sample, nodes...)
+	if len(prepared) > 0 {
+		markAtRuleBlock(parent)
+	}
 	*dst = append(*dst, prepared...)
 }
 
@@ -858,6 +867,9 @@ func prependNodes(parent Container, dst *[]Node, nodes ...Node) {
 		sample = (*dst)[0]
 	}
 	prepared := prepareNodes(parent, sample, nodes...)
+	if len(prepared) > 0 {
+		markAtRuleBlock(parent)
+	}
 	*dst = append(prepared, *dst...)
 	if tracked, ok := parent.(iteratorContainer); ok {
 		tracked.shiftIteratorsOnInsert(0, len(prepared), true)
@@ -865,11 +877,19 @@ func prependNodes(parent Container, dst *[]Node, nodes ...Node) {
 }
 
 func insertBefore(parent Container, dst *[]Node, target Node, nodes ...Node) error {
+	if indexNode(*dst, target) < 0 {
+		return fmt.Errorf("target node not found")
+	}
+	prepared := prepareNodes(parent, target, nodes...)
+	if len(prepared) > 0 {
+		markAtRuleBlock(parent)
+	}
+	// prepareNodes detaches nodes that already had a parent, so an insert that
+	// moves a current sibling shifts the target. Locate it again.
 	index := indexNode(*dst, target)
 	if index < 0 {
 		return fmt.Errorf("target node not found")
 	}
-	prepared := prepareNodes(parent, target, nodes...)
 	*dst = append((*dst)[:index], append(prepared, (*dst)[index:]...)...)
 	if tracked, ok := parent.(iteratorContainer); ok {
 		tracked.shiftIteratorsOnInsert(index, len(prepared), true)
@@ -878,11 +898,19 @@ func insertBefore(parent Container, dst *[]Node, target Node, nodes ...Node) err
 }
 
 func insertAfter(parent Container, dst *[]Node, target Node, nodes ...Node) error {
+	if indexNode(*dst, target) < 0 {
+		return fmt.Errorf("target node not found")
+	}
+	prepared := prepareNodes(parent, target, nodes...)
+	if len(prepared) > 0 {
+		markAtRuleBlock(parent)
+	}
+	// prepareNodes detaches nodes that already had a parent, so an insert that
+	// moves a current sibling shifts the target. Locate it again.
 	index := indexNode(*dst, target)
 	if index < 0 {
 		return fmt.Errorf("target node not found")
 	}
-	prepared := prepareNodes(parent, target, nodes...)
 	pos := index + 1
 	*dst = append((*dst)[:pos], append(prepared, (*dst)[pos:]...)...)
 	if tracked, ok := parent.(iteratorContainer); ok {
@@ -924,7 +952,13 @@ func prepareNodes(parent Container, sample Node, nodes ...Node) []Node {
 			_ = currentParent.RemoveChild(node)
 		}
 		if sample != nil {
-			if !HasRaw(node, "before") {
+			skipRootFirst := false
+			if root, ok := parent.(*Root); ok && root.First() == sample {
+				// PostCSS Root#inheritBefore does not copy the first child's before
+				// onto nodes inserted after it.
+				skipRootFirst = true
+			}
+			if !skipRootFirst && !HasRaw(node, "before") {
 				if before, ok := mutationBefore(sample); ok {
 					SetRawString(node, "before", strings.Map(func(r rune) rune {
 						if r == ' ' || r == '\t' || r == '\r' || r == '\n' {

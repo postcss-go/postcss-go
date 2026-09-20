@@ -607,7 +607,7 @@ func TestStringifySourceMapNodeBoundaries(t *testing.T) {
 	assertMapping(1, 5, 1, 5)
 	assertMapping(1, 12, 1, 12)
 	assertMapping(1, 15, 1, 15)
-	assertMapping(1, 18, 1, 2)
+	assertMapping(1, 17, 1, 17)
 }
 
 func TestStringifySourceMapNoSourceNodeBoundaries(t *testing.T) {

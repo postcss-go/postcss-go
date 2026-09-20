@@ -110,6 +110,18 @@ function writeCompileFlags() {
   );
 }
 
+const generate = run('go', ['generate', './internal/asthandle'], {
+  cwd: repoRoot,
+  env: withGoCache({
+    ...process.env,
+    GOFLAGS: process.env.GOFLAGS ? `${process.env.GOFLAGS} -mod=mod` : '-mod=mod',
+  }),
+});
+if (generate.status !== 0) {
+  console.error('postcss-go: handle protocol generate failed');
+  process.exit(generate.status ?? 1);
+}
+
 const tuple = hostTuple();
 mkdirSync(outDir, { recursive: true });
 writeCompileFlags();

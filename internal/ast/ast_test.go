@@ -595,8 +595,8 @@ func TestMutationBeforeAndPrepareNodes(t *testing.T) {
 	root.Append(block)
 	added := NewRule(".c")
 	root.Append(added)
-	if before, _ := added.RawFormattingReadOnly()["before"].(string); before != "\n" {
-		t.Fatalf("expected multiline after to become before, got %q", before)
+	if _, ok := added.RawFormattingReadOnly()["before"]; ok {
+		t.Fatal("appending after the first root child must not copy before")
 	}
 
 	empty := NewRule(".d")
@@ -642,6 +642,23 @@ func TestRootRemoveChildTransfersBefore(t *testing.T) {
 	}
 	if root.First() != second || len(root.Children()) != 1 {
 		t.Fatal("expected only the bubbled sibling to remain")
+	}
+}
+
+func TestInsertAfterFirstChildDoesNotCopyBefore(t *testing.T) {
+	root := NewRoot()
+	first := NewRule("a")
+	SetRawString(first, "before", "")
+	second := NewRule("b")
+	SetRawString(second, "before", " ")
+	root.Append(first)
+	root.Append(second)
+	inserted := NewRule(".a")
+	if err := root.InsertAfter(first, inserted); err != nil {
+		t.Fatalf("insert after first: %v", err)
+	}
+	if _, ok := LookupRawString(inserted, "before"); ok {
+		t.Fatal("inserting after the first root child must not copy before")
 	}
 }
 

@@ -22,7 +22,6 @@ test.runIf(isNativeBridgeAvailable())(
               `
       const {workerData} = require('node:worker_threads');
       (async () => {
-        process.env.POSTCSS_GO_NATIVE_AST = 'handle';
         const {Processor} = await import(workerData.entryUrl);
         const retained = [];
         const processor = new Processor([{postcssPlugin: 'worker', Declaration(decl) {

@@ -1,6 +1,5 @@
-// Package asthandle is an opaque-handle ABI over the Go AST for declaration-heavy
-// plugin paths. Production Node N-API can opt into this model; the default
-// binary AST codec remains for full PostCSS compatibility and WASM transport.
+// Package asthandle is an opaque-handle ABI over the Go AST. Live nodes stay in
+// a Go arena; TypeScript only forwards handle operations and public class identity.
 package asthandle
 
 //go:generate go run ./cmd/genprotocol

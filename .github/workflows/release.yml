@@ -56,19 +56,19 @@ jobs:
           path: native-artifacts
 
       - name: Install native addons into platform packages
-        run: node ./scripts/install-native-artifacts.mjs
+        run: node ./scripts/native-artifacts.mjs install
 
       - name: Typecheck packages
         run: pnpm --filter @postcss-go/shared build && pnpm check
 
       - name: Snapshot validated native addons
-        run: node ./scripts/check-native-artifacts.mjs snapshot "$RUNNER_TEMP/native-artifacts.json"
+        run: node ./scripts/native-artifacts.mjs snapshot "$RUNNER_TEMP/native-artifacts.json"
 
       - name: Build publishable JavaScript and WASM
         run: pnpm build:release
 
       - name: Verify validated native addons are unchanged
-        run: node ./scripts/check-native-artifacts.mjs verify "$RUNNER_TEMP/native-artifacts.json"
+        run: node ./scripts/native-artifacts.mjs verify "$RUNNER_TEMP/native-artifacts.json"
 
       - name: Create release PR or publish packages
         id: changesets

@@ -251,7 +251,7 @@ func ToDTO(node ast.Node) (*NodeDTO, error) {
 }
 
 // SourceToBridgeDTO applies the PostCSS-facing source-column adjustments used by
-// ToDTO. The binary codec calls this while walking a live AST so it can skip
+// ToDTO. Handle snapshots call this while walking a live AST so they can skip
 // allocating an intermediate NodeDTO tree.
 func SourceToBridgeDTO(
 	loc *postcss.SourceLocation,

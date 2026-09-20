@@ -289,6 +289,23 @@ export function attachPreviousMap(input: Input, css: string, options: ProcessOpt
   return input;
 }
 
+/** Attach from/previous-map onto an existing Input without rewriting Go source.input. */
+export function annotateOwnedInput(root: Node, css: string, options: ProcessOptions = {}): void {
+  const visit = (node: Node): void => {
+    const input = node.source?.input as Input | undefined;
+    if (input && typeof input === 'object') {
+      try {
+        if (options.from && !input.file) input.file = resolveInputPath(options.from);
+        attachPreviousMap(input, css, options);
+      } catch {
+        // Immutable arena Input already carries from/map from session parse.
+      }
+    }
+    for (const child of (node as { nodes?: Node[] }).nodes ?? []) visit(child);
+  };
+  visit(root);
+}
+
 /** Attach one Input, including previous-map metadata, to a live AST. */
 export function attachInputMetadata(root: Node, css: string, options: ProcessOptions = {}): Input {
   return attachPreviousMap(attachInput(root, css, options), css, options);
@@ -319,9 +336,16 @@ function normalizePoint(
 
 function resolveInputPath(value: string): string {
   if (/^\w+:\/\//.test(value) || isAbsolutePath(value)) return value;
-  const cwd =
-    typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : '.';
-  return resolvePath(cwd, value);
+  return resolvePath(workingDirectory(), value);
+}
+
+/** The Go WASM `process` shim throws ENOSYS from `cwd`; treat that as unrooted. */
+function workingDirectory(): string {
+  try {
+    return globalThis.process?.cwd?.() ?? '.';
+  } catch {
+    return '.';
+  }
 }
 
 function resolvePath(base: string, relative: string): string {

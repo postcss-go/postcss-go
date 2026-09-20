@@ -6,25 +6,40 @@ import {
 } from '@postcss-go/shared/map-options';
 import { joinMapAnnotationPath } from '@postcss-go/shared/map-path';
 
-import { asProcessRoot, fromAst, toAst, type ProcessRoot } from '../ast.js';
+import {
+  asProcessRoot,
+  fromAst,
+  fromJSONLocal,
+  Node,
+  setConstructedNodeIntern,
+  type ProcessRoot,
+} from '../ast.js';
+import {
+  internDetached,
+  isGoOwned,
+  parseRetained,
+  setDefaultHandleBridge,
+} from '../retained-session.js';
 import { assertSupportedAst } from '../ast-utils.js';
+import { attachInputMetadata, annotateOwnedInput } from '../input.js';
 import { dispatchProcess } from '../dispatch.js';
+import { ownerOf } from '../handle-facade.js';
 import { SyncBackendUnavailableError } from '../errors.js';
 import { WasmWorkerError, errorFromWasmDto, type WasmErrorDTO } from './errors.js';
-import { attachInputMetadata } from '../input.js';
+import type { HandleBridge } from '../handle-session.js';
+import { loadMainThreadHandleBridge, type MainThreadHandleBridgeOptions } from './handle-bridge.js';
 import type { AcceptedPlugin } from '../plugin-types.js';
 import type { PluginResult } from '../plugin-runtime.js';
 import { WASM_WORKER_BACKEND_CAPABILITIES, type PostcssGoService } from '../service.js';
-import { prepareStringifyOptions } from '../source-map-output.js';
+import { prepareStringifyOptions, finalizeMappedCSS } from '../source-map-output.js';
+import { stringifyDocumentChildren } from '../document-stringify.js';
 import type {
   AstNode,
   AstStringifyResult,
-  DocumentNode,
   NoWorkResult,
   ParseResult,
   ProcessOptions,
   ProcessResult,
-  RootNode,
 } from '../types.js';
 
 export interface BrowserWorkerLike {
@@ -41,12 +56,23 @@ export interface BrowserPostcssGoServiceOptions {
   worker?: BrowserWorkerLike;
   /** Reject pending RPC calls after this many milliseconds. Disabled when unset. */
   requestTimeoutMs?: number;
+  /** Preloaded main-thread handle exports; skips asset loading in tests. */
+  handleExports?: MainThreadHandleBridgeOptions['exports'];
+  /** Ready-made main-thread handle transport; skips WASM boot entirely. */
+  handleBridge?: HandleBridge;
+  /**
+   * Run the plugin AST in a main-thread Go instance. Disabling it keeps every
+   * operation on the Worker DTO transport, which is the documented escape
+   * hatch when a host cannot afford a second instance.
+   */
+  mainThreadAst?: boolean;
 }
 
 /**
- * Browser-facing processor: JavaScript plugins run on the calling thread while
- * parse/stringify use the Worker-backed WASM service. Synchronous APIs are not
- * available on this path.
+ * Browser-facing processor: JavaScript plugins run on the calling thread
+ * against a main-thread Go AST session, so nodes are never serialized. The
+ * Worker still serves string-in/string-out work. Synchronous public APIs are
+ * not available on this path.
  */
 export interface BrowserProcessor {
   readonly service: BrowserPostcssGoService;
@@ -62,7 +88,8 @@ export function createBrowserProcessor(
   const service = new BrowserPostcssGoService(options);
   return {
     service,
-    process(css, processOptions = {}) {
+    async process(css, processOptions = {}) {
+      await service.ensureHandleBridge();
       return dispatchProcess(service, String(css), processOptions, plugins);
     },
     close() {
@@ -83,7 +110,12 @@ export class BrowserPostcssGoService implements PostcssGoService {
   readonly workerUrl?: string;
   readonly wasmUrl?: string;
   readonly wasmExecUrl?: string;
+  /** Main-thread Go AST transport; null until `ensureHandleBridge` resolves. */
+  handleBridge: HandleBridge | null = null;
 
+  private handleBridgeLoad?: Promise<HandleBridge | null>;
+  private readonly handleExports?: MainThreadHandleBridgeOptions['exports'];
+  private readonly mainThreadAst: boolean;
   private readonly worker: BrowserWorkerLike;
   private readonly requestTimeoutMs?: number;
   private readonly pending = new Map<
@@ -102,6 +134,13 @@ export class BrowserPostcssGoService implements PostcssGoService {
     this.wasmUrl = options.wasmUrl;
     this.wasmExecUrl = options.wasmExecUrl;
     this.requestTimeoutMs = options.requestTimeoutMs;
+    this.handleExports = options.handleExports;
+    this.mainThreadAst = options.mainThreadAst !== false;
+    this.handleBridge = (this.mainThreadAst ? options.handleBridge : undefined) ?? null;
+    if (this.handleBridge) {
+      setDefaultHandleBridge(this.handleBridge);
+      setConstructedNodeIntern(internDetached);
+    }
     this.worker = options.worker ?? createWorker(options.workerUrl);
     this.worker.onmessage = (event) => this.handleMessage(event.data);
     this.worker.onerror = (event) => {
@@ -121,12 +160,61 @@ export class BrowserPostcssGoService implements PostcssGoService {
     }
   }
 
+  /**
+   * Boot the main-thread AST session once. Asset-loading failures leave the
+   * bridge null so the service keeps working through the Worker transport.
+   */
+  async ensureHandleBridge(): Promise<HandleBridge | null> {
+    if (!this.mainThreadAst) return null;
+    if (this.handleBridge) return this.handleBridge;
+    this.handleBridgeLoad ??= loadMainThreadHandleBridge({
+      wasmUrl: this.wasmUrl,
+      wasmExecUrl: this.wasmExecUrl,
+      exports: this.handleExports,
+    }).then(
+      (bridge) => {
+        this.handleBridge = bridge;
+        setDefaultHandleBridge(bridge);
+        setConstructedNodeIntern(internDetached);
+        return bridge;
+      },
+      () => {
+        // Retry on the next dispatch: a host that boots the Go runtime itself
+        // may not have published its exports yet.
+        this.handleBridgeLoad = undefined;
+        return null;
+      },
+    );
+    return this.handleBridgeLoad;
+  }
+
   async parse(css: string, options: ProcessOptions = {}): Promise<ParseResult> {
+    this.assertOpen();
     options = materializePreviousMap(options);
+    if (this.handleBridge) {
+      return {
+        root: parseRetained(this.handleBridge, css, { from: options.from, map: options.map }),
+      };
+    }
+    if (this.shouldLoadHandleBridge()) {
+      const bridge = await this.ensureHandleBridge();
+      if (bridge) {
+        return { root: parseRetained(bridge, css, { from: options.from, map: options.map }) };
+      }
+    }
     return this.call<ParseResult>('parse', { css, options });
   }
 
+  /** Avoid an extra tick when this service has no main-thread assets to boot. */
+  private shouldLoadHandleBridge(): boolean {
+    if (!this.mainThreadAst) return false;
+    if (this.handleExports) return true;
+    if (this.wasmUrl && this.wasmExecUrl) return true;
+    return typeof (globalThis as { postcssGoHandles?: unknown }).postcssGoHandles === 'object';
+  }
+
   process(css: string, options: ProcessOptions = {}): Promise<ProcessResult> {
+    this.assertOpen();
     options = materializePreviousMap(options);
     if (hasAnnotationCallback(options)) {
       return this.processWithAnnotation(css, options);
@@ -141,6 +229,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   noWork(css: string, options: ProcessOptions = {}): Promise<NoWorkResult> {
+    this.assertOpen();
     options = materializePreviousMap(options);
     if (hasAnnotationCallback(options)) {
       return this.resolveNoWorkAnnotation(options).then((resolved) =>
@@ -166,11 +255,58 @@ export class BrowserPostcssGoService implements PostcssGoService {
     return (await this.stringifyResult(ast)).css;
   }
 
-  async stringifyResult(ast: AstNode, options: ProcessOptions = {}): Promise<AstStringifyResult> {
+  async stringifyResult(
+    ast: AstNode | ProcessRoot,
+    options: ProcessOptions = {},
+  ): Promise<AstStringifyResult> {
+    this.assertOpen();
     options = materializePreviousMap(options);
-    assertSupportedAst(ast);
-    const preparedOptions = prepareStringifyOptions(ast, options);
-    const effectiveOptions = await this.resolveStringifyAnnotation(ast, preparedOptions);
+    const live = ast instanceof Node ? ast : internDetached(fromAst(ast));
+    const owner = ownerOf(live);
+    const handle = owner?.handleId(live);
+    if (live instanceof Node && live.type === 'document' && (!owner || handle === undefined)) {
+      const css = stringifyDocumentChildren(live, (child) => {
+        const childOwner = ownerOf(child);
+        const childHandle = childOwner?.handleId(child);
+        if (!childOwner || childHandle === undefined) {
+          throw new WasmWorkerError('postcss-go stringify requires a Go-owned tree');
+        }
+        childOwner.flushPatches();
+        return childOwner.session.stringify(childHandle);
+      });
+      if (!options.map) return { css };
+      const first = (live as { first?: Node }).first;
+      const firstOwner = first ? ownerOf(first) : undefined;
+      const firstHandle = first && firstOwner ? firstOwner.handleId(first) : undefined;
+      if (!first || !firstOwner || firstHandle === undefined) return { css };
+      const mapOpts = options.map && typeof options.map === 'object' ? options.map : {};
+      const mapped = firstOwner.session.stringifyMap(firstHandle, {
+        from: options.from,
+        to: options.to,
+        absolute: Boolean((mapOpts as { absolute?: boolean }).absolute),
+        preserveAnnotation: (mapOpts as { annotation?: unknown }).annotation !== false,
+      });
+      return finalizeMappedCSS(css, mapped.map, options);
+    }
+    if (owner && handle !== undefined) {
+      const effective = await this.resolveStringifyAnnotationLive(asProcessRoot(live), options);
+      const wantsMap = Boolean(effective.map);
+      if (!wantsMap) return { css: owner.session.stringify(handle) };
+      const mapOpts = effective.map && typeof effective.map === 'object' ? effective.map : {};
+      const mapped = owner.session.stringifyMap(handle, {
+        from: effective.from,
+        to: effective.to,
+        absolute: Boolean((mapOpts as { absolute?: boolean }).absolute),
+        preserveAnnotation: (mapOpts as { annotation?: unknown }).annotation !== false,
+      });
+      return finalizeMappedCSS(mapped.css, mapped.map, effective);
+    }
+    assertSupportedAst(live);
+    const preparedOptions = prepareStringifyOptions(live, options);
+    const effectiveOptions = await this.resolveStringifyAnnotationLive(
+      asProcessRoot(live),
+      preparedOptions,
+    );
     const result = await this.call<AstStringifyResult>('stringify', {
       ast,
       options: normalizeProcessOptions(
@@ -209,9 +345,7 @@ export class BrowserPostcssGoService implements PostcssGoService {
   }
 
   private call<T>(method: string, params: unknown): Promise<T> {
-    if (this.closed) {
-      return Promise.reject(new WasmWorkerError('postcss-go WASM service is closed'));
-    }
+    this.assertOpen();
 
     const id = this.nextId++;
     const pending = new Promise<T>((resolve, reject) => {
@@ -250,24 +384,42 @@ export class BrowserPostcssGoService implements PostcssGoService {
     return pending;
   }
 
+  /**
+   * Annotation callbacks run against the live parse tree. Map composition stays
+   * string-in/string-out on Go-owned arenas; Worker DTO trees stringify as before.
+   */
   private async processWithAnnotation(
     css: string,
     options: ProcessOptions,
   ): Promise<ProcessResult> {
-    // Match the native path: parse once, resolve the annotation against the
-    // same live tree (with Input metadata), then stringify — avoid a second
-    // Go parse via `process`.
-    const parseOptions = normalizeProcessOptions(
+    const normalized = normalizeProcessOptions(
       options as NormalizeProcessOptionsInput,
       joinMapAnnotationPath,
     ) as ProcessOptions;
-    const parsed = await this.parse(css, parseOptions);
-    const live = asProcessRoot(fromAst(parsed.root));
-    attachInputMetadata(live, css, options);
+    const parsed = await this.parse(css, normalized);
+    const live = asProcessRoot(
+      parsed.root instanceof Node ? parsed.root : (fromJSONLocal(parsed.root as object) as Node),
+    );
+    if (isGoOwned(live)) annotateOwnedInput(live, css, options);
+    else attachInputMetadata(live, css, options);
     const effective = await this.resolveStringifyAnnotationLive(live, options);
-    const root = toAst(live) as RootNode | DocumentNode;
-    const stringified = await this.stringifyResult(root, effective);
-    return { ...stringified, root, messages: [], backend: 'wasm-worker' };
+    if (isGoOwned(live) && effective.map) {
+      const processed = await this.call<ProcessResult>('process', {
+        css,
+        options: normalizeProcessOptions(
+          effective as NormalizeProcessOptionsInput,
+          joinMapAnnotationPath,
+        ) as ProcessOptions,
+      });
+      return {
+        ...processed,
+        root: live,
+        messages: processed.messages ?? [],
+        backend: 'wasm-worker',
+      };
+    }
+    const stringified = await this.stringifyResult(live, effective);
+    return { ...stringified, root: live, messages: [], backend: 'wasm-worker' };
   }
 
   private async resolveNoWorkAnnotation(options: ProcessOptions): Promise<ProcessOptions> {
@@ -290,12 +442,14 @@ export class BrowserPostcssGoService implements PostcssGoService {
     ) {
       return options;
     }
-    const live = asProcessRoot(fromAst(root));
+    // DTO-only service API: the caller already serialized its tree, so this is
+    // the one browser path that still hydrates. It retires with the DTO surface.
+    const live = asProcessRoot(root instanceof Node ? root : internDetached(fromAst(root)));
     const annotation = await options.map.annotation(options.to, live as never);
     return { ...options, map: { ...options.map, annotation } };
   }
 
-  /** Resolve annotation against an already-hydrated live root (preserves Input). */
+  /** Resolve the annotation against a root that is already live. */
   private async resolveStringifyAnnotationLive(
     live: ProcessRoot,
     options: ProcessOptions,
@@ -340,6 +494,10 @@ export class BrowserPostcssGoService implements PostcssGoService {
       return;
     }
     request.resolve(response.result);
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new WasmWorkerError('postcss-go WASM service is closed');
   }
 
   /** Mark the service unusable, reject pending RPCs, and terminate the Worker. */

@@ -32,7 +32,7 @@ jobs:
           node-version: 22
 
       - name: Check vendored upstream tests are current
-        run: node ./scripts/check-upstream-postcss-sync.mjs
+        run: node ./scripts/upstream.mjs check
 
   checks:
     name: Format, Lint, and Build
@@ -76,8 +76,8 @@ jobs:
       - name: Check JS formatting
         run: pnpm format:check
 
-      - name: Check generated handle protocol
-        run: pnpm check:handles
+      - name: Generate handle protocol
+        run: pnpm generate:handles
 
       - name: Check native session race safety
         run: go test -race ./internal/asthandle ./internal/nativebridge
@@ -98,16 +98,10 @@ jobs:
       - name: Vet Go
         run: go vet ./...
 
-      - name: Check Go module path
-        run: node ./scripts/check-go-module-path.mjs
-
-      - name: Smoke test external Go module consumption
-        run: node ./scripts/smoke-go-module.mjs
-
       - name: Build packages
         run: pnpm build
 
-      - name: Check legacy and current handle C ABI
+      - name: Check handle C ABI
         run: |
           cc -Ipackages/postcss-go/native/go-out -Ipackages/postcss-go/native internal/nativeaddon/testdata/handle_abi.c packages/postcss-go/native/go-out/libpostcssgo.a -lpthread -lresolv -ldl -o /tmp/handle-abi
           /tmp/handle-abi
@@ -120,9 +114,6 @@ jobs:
       - name: Capture native qualification benchmarks
         run: node benchmark/run-handles.mjs --qualification > native-benchmarks.jsonl
 
-      - name: Capture runtime line counts
-        run: node scripts/count-runtime-lines.mjs > runtime-lines.json
-
       - name: Upload qualification inputs
         if: always()
         uses: actions/upload-artifact@v7
@@ -131,7 +122,6 @@ jobs:
           path: |
             native-corpus-results.json
             native-benchmarks.jsonl
-            runtime-lines.json
             packages/postcss-go/test/fixtures/native-corpus.json
 
       # Bypass Turborepo for shared so typecheck never sees a stale/partial

@@ -1,0 +1,4 @@
+{
+  "comment": "Gzipped cmd/wasm size before the main-thread handle exports landed. Phase 8 allows 10% growth; regenerate only with a recorded justification.",
+  "wasmGzipBytes": 1437392
+}

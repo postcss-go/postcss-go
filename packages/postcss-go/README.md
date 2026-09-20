@@ -214,9 +214,10 @@ const processor = createBrowserProcessor([], {
 ```
 
 See the [browser WASM guide](https://postcss-go.github.io/guide/browser-wasm/) for CSP and asset-loading details.
-Browser plugins may mutate the hydrated AST; `helpers.postcss.parse`,
-`root.append('.a{}')`, `Node#toString()`, and `helpers.postcss.stringify` throw
-`SyncBackendUnavailableError`.
+Browser plugins run against a main-thread Go/WASM handle session
+(`postcssGoHandles`); the Worker stays string-in/string-out.
+`helpers.postcss.parse`, `root.append('.a{}')`, `Node#toString()`, and
+`helpers.postcss.stringify` throw `SyncBackendUnavailableError`.
 
 `isNativeBridgeAvailable()` is the boolean discovery shortcut. The CLI prints
 `Backend: native (native addon available)` with `--verbose`. There is no silent

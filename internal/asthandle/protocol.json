@@ -91,7 +91,8 @@
   "operations": [
     {
       "name": "ProtocolInfo",
-      "id": 0
+      "id": 0,
+      "bridge": "handleProtocolInfo"
     },
     {
       "name": "SessionCount",
@@ -99,135 +100,177 @@
     },
     {
       "name": "Parse",
-      "id": 2
+      "id": 2,
+      "bridge": "handleParse"
     },
     {
       "name": "Close",
-      "id": 3
+      "id": 3,
+      "bridge": "handleClose"
     },
     {
       "name": "Type",
-      "id": 4
+      "id": 4,
+      "bridge": "handleType"
     },
     {
       "name": "GetField",
-      "id": 5
+      "id": 5,
+      "bridge": "handleGetField"
     },
     {
       "name": "SetField",
-      "id": 6
+      "id": 6,
+      "bridge": "handleSetField"
     },
     {
       "name": "WalkDecls",
-      "id": 7
+      "id": 7,
+      "bridge": "handleWalkDecls"
     },
     {
       "name": "OpenCursor",
-      "id": 8
+      "id": 8,
+      "bridge": "handleOpenCursor"
     },
     {
       "name": "CursorNext",
-      "id": 9
+      "id": 9,
+      "bridge": "handleCursorNext"
     },
     {
       "name": "CloseCursor",
-      "id": 10
+      "id": 10,
+      "bridge": "handleCloseCursor"
     },
     {
       "name": "ReadFields",
-      "id": 11
+      "id": 11,
+      "bridge": "handleReadFields"
     },
     {
       "name": "SetFields",
-      "id": 12
+      "id": 12,
+      "bridge": "handleSetFields"
     },
     {
       "name": "Stringify",
-      "id": 13
+      "id": 13,
+      "bridge": "handleStringify"
     },
     {
       "name": "NewDecl",
-      "id": 14
+      "id": 14,
+      "bridge": "handleNewDecl"
     },
     {
       "name": "Append",
-      "id": 15
+      "id": 15,
+      "bridge": "handleAppend"
     },
     {
       "name": "Dispose",
-      "id": 16
+      "id": 16,
+      "bridge": "handleDispose"
     },
     {
       "name": "ReadSnapshots",
-      "id": 17
+      "id": 17,
+      "bridge": "handleReadSnapshots"
     },
     {
       "name": "ApplyPatches",
-      "id": 18
+      "id": 18,
+      "bridge": "handleApplyPatches"
     },
     {
       "name": "InsertBefore",
-      "id": 19
+      "id": 19,
+      "bridge": "handleInsertBefore"
     },
     {
       "name": "Remove",
-      "id": 20
+      "id": 20,
+      "bridge": "handleRemove"
     },
     {
       "name": "Clone",
-      "id": 21
+      "id": 21,
+      "bridge": "handleClone"
     },
     {
       "name": "Prepend",
-      "id": 22
+      "id": 22,
+      "bridge": "handlePrepend"
     },
     {
       "name": "InsertAfter",
-      "id": 23
+      "id": 23,
+      "bridge": "handleInsertAfter"
     },
     {
       "name": "ReplaceWith",
-      "id": 24
+      "id": 24,
+      "bridge": "handleReplaceWith"
     },
     {
       "name": "NewRule",
-      "id": 25
+      "id": 25,
+      "bridge": "handleNewRule"
     },
     {
       "name": "NewAtRule",
-      "id": 26
+      "id": 26,
+      "bridge": "handleNewAtRule"
     },
     {
       "name": "NewComment",
-      "id": 27
+      "id": 27,
+      "bridge": "handleNewComment"
     },
     {
       "name": "SetRaw",
-      "id": 28
+      "id": 28,
+      "bridge": "handleSetRaw"
     },
     {
       "name": "GetRaw",
-      "id": 29
+      "id": 29,
+      "bridge": "handleGetRaws"
     },
     {
       "name": "StringifyMap",
-      "id": 30
+      "id": 30,
+      "bridge": "handleStringifyMap"
     },
     {
       "name": "Parent",
-      "id": 31
+      "id": 31,
+      "bridge": "handleParent"
     },
     {
       "name": "ChildCount",
-      "id": 32
+      "id": 32,
+      "bridge": "handleChildCount"
     },
     {
       "name": "ChildAt",
-      "id": 33
+      "id": 33,
+      "bridge": "handleChildAt"
     },
     {
       "name": "RefreshSnapshot",
       "id": 34
+    },
+    {
+      "name": "StringifyBuilder",
+      "id": 35,
+      "bridge": "handleStringifyBuilder"
+    },
+    {
+      "name": "Query",
+      "id": 36,
+      "bridge": "handleQuery"
     }
   ],
   "nodeKinds": [

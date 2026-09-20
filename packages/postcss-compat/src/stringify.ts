@@ -232,7 +232,7 @@ function approxDepth(node: PostCSSNode, limit = 2500): number {
 }
 
 function stringifyWithUpstream(node: PostCSSNode, builder?: Builder): string | void {
-  // Sibling PostCSS lib modules exist only after prepare-upstream-compat copies
+  // Sibling PostCSS lib modules exist only after `upstream.mjs prepare` copies
   // these overrides into vendor/postcss/lib (or a temp test copy).
   const nodeRequire = createRequire(__filename);
   const Stringifier = nodeRequire('./stringifier.js');

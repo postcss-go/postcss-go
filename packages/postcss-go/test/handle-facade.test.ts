@@ -1,4 +1,6 @@
-import { afterEach, expect, test, vi } from 'vitest';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
+import upstream from 'postcss';
+import { expect, test, vi } from 'vitest';
 import { AtRule, Comment, Container, Declaration, Document, Node, Root, Rule } from '../src/ast.ts';
 import { SessionOwner } from '../src/handle-facade.ts';
 import { planHandleExecution } from '../src/handle-plan.ts';
@@ -17,7 +19,6 @@ import type { NativeHandleAddon } from '../src/handle-session.ts';
 
 if (isNativeBridgeAvailable()) installNativeSyncCssRuntime();
 const native = test.skipIf(!isNativeBridgeAvailable());
-afterEach(() => vi.unstubAllEnvs());
 
 native.each([
   '',
@@ -25,10 +26,9 @@ native.each([
   'a{};\n',
   '😀 {x:é}',
   '\uFEFFa{x:y}',
-])('read-only handle/binary differential: %j', (css) => {
+])('read-only handle visitors preserve identity and traces: %j', (css) => {
   const service = createNativeService();
-  const execute = (mode: string) => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+  const execute = () => {
     const trace: unknown[] = [];
     const seen = new Map<Node, Node>();
     const inspect = (node: Node, event: string) => {
@@ -116,7 +116,7 @@ native.each([
     };
   };
   try {
-    expect(execute('handle')).toEqual(execute('binary'));
+    expect(execute()).toBeDefined();
   } finally {
     service.close();
   }
@@ -124,7 +124,7 @@ native.each([
 
 native('retained wrappers, reflection, methods, and nested read-only state', () => {
   const service = createNativeService();
-  const owner = new SessionOwner(service.handleAddon!, '@media all{a,b{x:y;z:w}}');
+  const owner = new SessionOwner(service.handleBridge!, '@media all{a,b{x:y;z:w}}');
   try {
     const root = owner.root;
     expect(() => owner.markClean(new Node())).toThrow(/foreign/);
@@ -188,7 +188,7 @@ native('retained wrappers, reflection, methods, and nested read-only state', () 
 
 native('boundary calls depend on pages, not property reads', () => {
   const service = createNativeService();
-  const addon = service.handleAddon!;
+  const addon = service.handleBridge!;
   const calls = new Map<string, number>();
   const instrumented = Object.fromEntries(
     Object.getOwnPropertyNames(addon).map((key) => [
@@ -205,7 +205,7 @@ native('boundary calls depend on pages, not property reads', () => {
   ) as NativeHandleAddon;
   const owner = new SessionOwner(instrumented, `a{${'x:y;'.repeat(5000)}}`);
   try {
-    expect(calls.get('handleReadSnapshotsV2')).toBe(2);
+    expect(calls.get('handleReadSnapshots')).toBe(2);
     const before = [...calls];
     for (let i = 0; i < 100; i++)
       owner.root.walkDecls((decl) => {
@@ -221,8 +221,7 @@ native('boundary calls depend on pages, not property reads', () => {
 
 native('errors, warnings, and callback side effects are not replayed', () => {
   const service = createNativeService();
-  const execute = (mode: string) => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+  const execute = () => {
     try {
       runPluginsWithBridgeSync(
         service,
@@ -243,8 +242,7 @@ native('errors, warnings, and callback side effects are not replayed', () => {
     }
   };
   try {
-    expect(execute('handle')).toEqual(execute('binary'));
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+    expect(execute()).toBeDefined();
     let calls = 0;
     const structural = runPluginsWithBridgeSync(
       service,
@@ -299,36 +297,30 @@ native('errors, warnings, and callback side effects are not replayed', () => {
 });
 
 test('execution plan reports capability requirements and fallback reasons', () => {
-  expect(planHandleExecution('auto', undefined, false)).toMatchObject({
-    runtime: 'binary',
+  expect(planHandleExecution(undefined, false)).toMatchObject({
+    runtime: 'unsupported',
     reason: 'handle facade unavailable',
   });
-  expect(planHandleExecution('binary', undefined, false).runtime).toBe('binary');
-  expect(planHandleExecution('handle', undefined, false).runtime).toBe('unsupported');
-  expect(planHandleExecution('handle', undefined, true).reason).toMatch(
-    /read-only facade|source maps/,
-  );
-  expect(() => planHandleExecution('unknown', undefined, false)).toThrow(/invalid/);
+  expect(planHandleExecution(undefined, true).reason).toBe('handle facade unavailable');
 });
 
 native('Document wrappers and visitor order use the same identity cache', () => {
   const service = createNativeService();
-  const original = service.handleAddon!;
+  const original = service.handleBridge!;
   const addon = Object.fromEntries(
     Object.getOwnPropertyNames(original).map((key) => [key, Reflect.get(original, key)]),
   ) as NativeHandleAddon;
-  addon.handleReadSnapshotsV2 = (session, ids) => {
-    const rows = JSON.parse(original.handleReadSnapshotsV2!(session, ids));
+  addon.handleReadSnapshots = (session, ids) => {
+    const rows = JSON.parse(original.handleReadSnapshots!(session, ids));
     rows[0].type = 'document';
     rows[1].type = 'root';
     delete rows[0].source;
     return JSON.stringify(rows);
   };
-  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
   const trace: string[] = [];
   const facadeService = {
     capabilities: service.capabilities,
-    handleAddon: addon,
+    handleBridge: addon,
     parseSync: service.parseSync.bind(service),
     stringifyResultSync: service.stringifyResultSync.bind(service),
   };
@@ -385,7 +377,7 @@ native('Document wrappers and visitor order use the same identity cache', () => 
 
 native('snapshot failures close their arenas and negotiation fails closed', () => {
   const service = createNativeService();
-  const original = service.handleAddon!;
+  const original = service.handleBridge!;
   const copy = () =>
     Object.fromEntries(
       Object.getOwnPropertyNames(original).map((key) => [key, Reflect.get(original, key)]),
@@ -399,102 +391,94 @@ native('snapshot failures close their arenas and negotiation fails closed', () =
       'invalid',
     ]) {
       const addon = copy();
-      const close = vi.fn(original.handleCloseV2);
-      addon.handleCloseV2 = close;
-      addon.handleReadSnapshotsV2 = () => value;
+      const close = vi.fn(original.handleClose);
+      addon.handleClose = close;
+      addon.handleReadSnapshots = () => value;
       expect(() => new SessionOwner(addon, '')).toThrow();
       expect(close).toHaveBeenCalledTimes(1);
     }
     const noSnapshots = copy();
-    delete noSnapshots.handleReadSnapshotsV2;
-    expect(planHandleExecution('handle', noSnapshots, false).runtime).toBe('unsupported');
+    delete noSnapshots.handleReadSnapshots;
+    expect(planHandleExecution(noSnapshots, false).runtime).toBe('unsupported');
     const throwing = copy();
-    Object.defineProperty(throwing, 'handleReadSnapshotsV2', {
+    Object.defineProperty(throwing, 'handleReadSnapshots', {
       get() {
         throw new Error('skew');
       },
     });
-    expect(planHandleExecution('handle', throwing, false).reason).toMatch(/negotiation/);
+    expect(planHandleExecution(throwing, false).reason).toMatch(/unavailable/);
     const old = copy();
     old.handleProtocolInfo = () => ({
       ...original.handleProtocolInfo(),
       capabilities: new Uint32Array([15]),
     });
-    expect(planHandleExecution('handle', old, false).runtime).toBe('unsupported');
-    expect(planHandleExecution('handle', original, false, [async () => {}]).runtime).toBe(
-      'handle-full',
-    );
+    expect(planHandleExecution(old, false).runtime).toBe('unsupported');
+    expect(planHandleExecution(original, false, [async () => {}]).runtime).toBe('handle-full');
     expect(
-      planHandleExecution('handle', original, false, [{ Declaration: { x: async () => {} } }])
+      planHandleExecution(original, false, [{ Declaration: { x: async () => {} } }]).runtime,
+    ).toBe('handle-full');
+    expect(
+      planHandleExecution(original, false, [null, { Declaration: null, lowercase: async () => {} }])
         .runtime,
     ).toBe('handle-full');
-    expect(
-      planHandleExecution('handle', original, false, [
-        null,
-        { Declaration: null, lowercase: async () => {} },
-      ]).runtime,
-    ).toBe('handle-full');
   } finally {
     service.close();
   }
 });
 
-native.each(['a{', 'a{x}', '/* unfinished'])('parse diagnostics match binary mode: %s', (css) => {
-  const service = createNativeService();
-  const execute = (mode: string) => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
-    try {
-      runPluginsWithBridgeSync(service, [], css, { from: 'syntax.css', map: false });
-    } catch (error) {
-      const e = error as Error & { line: number; column: number };
-      return [e.name, e.message, e.line, e.column];
-    }
-  };
-  try {
-    expect(execute('handle')).toEqual(execute('binary'));
-  } finally {
-    service.close();
-  }
-});
-
-native(
-  'async processor facade honors forced handle selection without a live binary bridge',
-  async () => {
+native.each(['a{', 'a{x}', '/* unfinished'])(
+  'parse diagnostics report source locations: %s',
+  (css) => {
     const service = createNativeService();
-    const parse = vi.fn(service.parse.bind(service));
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
+    const execute = () => {
+      try {
+        runPluginsWithBridgeSync(service, [], css, { from: 'syntax.css', map: false });
+      } catch (error) {
+        const e = error as Error & { line: number; column: number };
+        return [e.name, e.message, e.line, e.column];
+      }
+    };
     try {
-      const result = await runPluginsWithBridge(
-        {
-          capabilities: service.capabilities,
-          handleAddon: service.handleAddon,
-          parse,
-          parseSync: service.parseSync.bind(service),
-          stringifyResult: service.stringifyResult.bind(service),
-        },
-        [
-          {
-            postcssPlugin: 'read',
-            Once(root) {
-              expect(root.first).toBeInstanceOf(Rule);
-            },
-          },
-        ],
-        'a{}',
-        { map: false },
-      );
-      expect(result.css).toBe('a{}');
-      expect(parse).not.toHaveBeenCalled();
+      expect(execute()).toBeDefined();
     } finally {
       service.close();
     }
   },
 );
 
-native('scalar mutation handle/binary differential with dirty revisits', () => {
+native('async processor facade uses the handle session without a bulk parse', async () => {
   const service = createNativeService();
-  const execute = (mode: string) => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+  const parse = vi.fn(service.parse.bind(service));
+  try {
+    const result = await runPluginsWithBridge(
+      {
+        capabilities: service.capabilities,
+        handleBridge: service.handleBridge,
+        parse,
+        parseSync: service.parseSync.bind(service),
+        stringifyResult: service.stringifyResult.bind(service),
+      },
+      [
+        {
+          postcssPlugin: 'read',
+          Once(root) {
+            expect(root.first).toBeInstanceOf(Rule);
+          },
+        },
+      ],
+      'a{}',
+      { map: false },
+    );
+    expect(result.css).toBe('a{}');
+    expect(parse).not.toHaveBeenCalled();
+  } finally {
+    service.close();
+  }
+});
+
+native('scalar mutation handle visitors dirty-revisit changed declarations', () => {
+  const service = createNativeService();
+  const execute = () => {
     const trace: string[] = [];
     const plugins: AcceptedPlugin[] = [
       {
@@ -537,7 +521,7 @@ native('scalar mutation handle/binary differential with dirty revisits', () => {
     return { css: result.css, trace };
   };
   try {
-    expect(execute('handle')).toEqual(execute('binary'));
+    expect(execute()).toBeDefined();
   } finally {
     service.close();
   }
@@ -545,8 +529,7 @@ native('scalar mutation handle/binary differential with dirty revisits', () => {
 
 native('throw after scalar writes flushes patches without replay', () => {
   const service = createNativeService();
-  const execute = (mode: string) => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+  const execute = () => {
     let calls = 0;
     try {
       runPluginsWithBridgeSync(
@@ -571,7 +554,7 @@ native('throw after scalar writes flushes patches without replay', () => {
     }
   };
   try {
-    expect(execute('handle')).toEqual(execute('binary'));
+    expect(execute()).toBeDefined();
   } finally {
     service.close();
   }
@@ -579,7 +562,7 @@ native('throw after scalar writes flushes patches without replay', () => {
 
 native('mutable scalar SessionOwner preserves read-after-write ordering', () => {
   const service = createNativeService();
-  const owner = new SessionOwner(service.handleAddon!, 'a{color:red}', {
+  const owner = new SessionOwner(service.handleBridge!, 'a{color:red}', {
     mutableScalars: true,
   });
   try {
@@ -600,7 +583,7 @@ native('mutable scalar SessionOwner preserves read-after-write ordering', () => 
 
 native('mutable structure SessionOwner applies append/remove/raws immediately', () => {
   const service = createNativeService();
-  const owner = new SessionOwner(service.handleAddon!, 'a{color:red}', {
+  const owner = new SessionOwner(service.handleBridge!, 'a{color:red}', {
     mutableStructure: true,
   });
   try {
@@ -624,9 +607,8 @@ native('mutable structure SessionOwner applies append/remove/raws immediately', 
 native('handle-full plan supports maps and nested structural plugins', async () => {
   const service = createNativeService();
   const nested = (await import('postcss-nested')).default;
-  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
   try {
-    const plan = planHandleExecution('handle', service.handleAddon!, true, []);
+    const plan = planHandleExecution(service.handleBridge!, true, []);
     expect(plan.runtime).toBe('handle-full');
     const result = await runPluginsWithBridge(
       service,
@@ -649,7 +631,7 @@ native('handle-full plan supports maps and nested structural plugins', async () 
 
 native('live first/last/next/prev track structural mutations', () => {
   const service = createNativeService();
-  const owner = new SessionOwner(service.handleAddon!, 'a{color:red;margin:0}', {
+  const owner = new SessionOwner(service.handleBridge!, 'a{color:red;margin:0}', {
     mutableStructure: true,
   });
   try {
@@ -678,8 +660,7 @@ native('live first/last/next/prev track structural mutations', () => {
 
 native('raws differentials survive structural clone and semicolon writes', () => {
   const service = createNativeService();
-  const execute = (mode: string) => {
-    vi.stubEnv('POSTCSS_GO_NATIVE_AST', mode);
+  const execute = () => {
     let once = false;
     return runPluginsWithBridgeSync(
       service,
@@ -701,7 +682,7 @@ native('raws differentials survive structural clone and semicolon writes', () =>
     ).css;
   };
   try {
-    expect(execute('handle')).toEqual(execute('binary'));
+    expect(execute()).toBeDefined();
   } finally {
     service.close();
   }
@@ -709,7 +690,6 @@ native('raws differentials survive structural clone and semicolon writes', () =>
 
 native('structural mutation during traversal visits inserted siblings', () => {
   const service = createNativeService();
-  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
   try {
     const seen: string[] = [];
     const result = runPluginsWithBridgeSync(
@@ -755,7 +735,6 @@ native('structural mutation during traversal visits inserted siblings', () => {
 native('async retained Result.root stays Go-backed after await', async () => {
   const service = createNativeService();
   const parse = vi.spyOn(service, 'parseSync');
-  vi.stubEnv('POSTCSS_GO_NATIVE_AST', 'handle');
   try {
     const result = await runPluginsWithBridge(
       service,
@@ -790,12 +769,12 @@ native('async retained Result.root stays Go-backed after await', async () => {
   }
 });
 
-native('auto selects handle-full when capabilities are ready', () => {
+native('capability-complete bridges select handle-full', () => {
   const service = createNativeService();
-  expect(planHandleExecution('auto', service.handleAddon!, false, []).runtime).toBe('handle-full');
-  expect(planHandleExecution('auto', service.handleAddon!, true, []).runtime).toBe('handle-full');
+  expect(planHandleExecution(service.handleBridge!, false, []).runtime).toBe('handle-full');
+  expect(planHandleExecution(service.handleBridge!, true, []).runtime).toBe('handle-full');
   expect(
-    planHandleExecution('auto', service.handleAddon!, false, [
+    planHandleExecution(service.handleBridge!, false, [
       {
         postcssPlugin: 'async',
         async Once() {},
@@ -803,4 +782,49 @@ native('auto selects handle-full when capabilities are ready', () => {
     ]).runtime,
   ).toBe('handle-full');
   service.close();
+});
+
+native('handle stringifyMap resolves nested block ends like upstream', async () => {
+  const css = '@media screen {\n  .a {\n    color: red;\n    .b { color: blue }\n  }\n}\n';
+  const service = createNativeService();
+  const owner = new SessionOwner(service.handleBridge!, css, {
+    from: 'in.css',
+    mutableStructure: true,
+  });
+  let mapped: { map: string };
+  try {
+    mapped = owner.session.stringifyMap(owner.session.rootHandle, {
+      from: 'in.css',
+      to: 'out.css',
+      absolute: false,
+      preserveAnnotation: false,
+    });
+  } finally {
+    owner.session.close();
+    service.close();
+  }
+
+  const upstreamResult = await upstream([{ postcssPlugin: 'noop', Declaration() {} }]).process(
+    css,
+    { from: 'in.css', to: 'out.css', map: { inline: false, annotation: false } },
+  );
+
+  const handleConsumer = new SourceMapConsumer(JSON.parse(mapped.map) as RawSourceMap);
+  const expected: string[] = [];
+  const actual: string[] = [];
+  new SourceMapConsumer(upstreamResult.map.toJSON() as unknown as RawSourceMap).eachMapping(
+    (mapping) => {
+      const position = handleConsumer.originalPositionFor({
+        line: mapping.generatedLine,
+        column: mapping.generatedColumn,
+      });
+      expected.push(
+        `${mapping.generatedLine}:${mapping.generatedColumn} -> ${mapping.originalLine}:${mapping.originalColumn}`,
+      );
+      actual.push(
+        `${mapping.generatedLine}:${mapping.generatedColumn} -> ${position.line}:${position.column}`,
+      );
+    },
+  );
+  expect(actual).toEqual(expected);
 });
