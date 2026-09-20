@@ -44,7 +44,7 @@ Deterministic CSS with a fixed number of rules:
 | Medium | 1,000  |
 | Large  | 10,000 |
 
-The generator lives in `benchmark/fixtures.go` and is mirrored in `benchmark/postcss.bench.mjs`.
+The generator lives in `benchmark/fixtures.go` and is mirrored in `benchmark/run.mjs`.
 
 #### Real-world CSS fixtures
 
@@ -63,8 +63,7 @@ Vendored stylesheets from common CSS sources (see `benchmark/fixtures/manifest.j
 | Materialize       | [Materialize](https://github.com/Dogfalo/materialize)                | 175 KB |
 
 Bulma / Pure / UIkit / Materialize are included in the local Go suite, the JS
-cross-engine table, and CodSpeed CI; their Go `Benchmark*Real_*` cases live in
-`extended_real_bench_test.go`.
+cross-engine table, and CodSpeed CI.
 
 Refresh fixtures:
 
@@ -80,9 +79,9 @@ Three scenarios are measured for each workload:
 2. **ParseStringify** — parse, then stringify back to CSS
 3. **Process** — parse, walk the AST, then stringify (empty plugin list on the Go side; equivalent manual pipeline on the postcss side — upstream `process([])` skips parsing and is not used here)
 
-In addition, `benchmark/stages_bench_test.go` isolates the individual Go
-pipeline stages, so a change can be attributed to a single stage instead of the
-whole scenario. These are Go-only and have no JavaScript counterpart:
+In addition, `benchmark/bench_test.go` isolates the individual Go pipeline
+stages, so a change can be attributed to a single stage instead of the whole
+scenario. These are Go-only and have no JavaScript counterpart:
 
 | Conceptual label (oxc-style) | Go / CodSpeed id       | Measures                                                               |
 | ---------------------------- | ---------------------- | ---------------------------------------------------------------------- |
@@ -130,23 +129,21 @@ pnpm bench
 ```
 
 `benchmark/run.mjs` is the single engine-comparison runner. To diagnose one
-implementation independently, run its underlying command directly:
+JS implementation independently:
 
 ```bash
 go test -mod=mod ./benchmark/ -bench=. -benchmem -count=5
-node benchmark/postcss.bench.mjs
-node benchmark/csstree.bench.mjs
-node benchmark/lezer.bench.mjs
-node benchmark/tree-sitter.bench.mjs
+node benchmark/run.mjs postcss
+node benchmark/run.mjs csstree
+node benchmark/run.mjs lezer
+node benchmark/run.mjs tree-sitter
 node benchmark/run.mjs
 ```
 
 ### Continuous tracking in CI
 
-The whole Go engine suite (`benchmark/bench_test.go`,
-`benchmark/small_bench_test.go`, `benchmark/extended_real_bench_test.go` and
-`benchmark/stages_bench_test.go`) runs on every push to `main` and on every pull
-request through [CodSpeed](https://codspeed.io), in
+The whole Go engine suite in `benchmark/bench_test.go` runs on every push to
+`main` and on every pull request through [CodSpeed](https://codspeed.io), in
 `.github/workflows/codspeed.yml`:
 
 ```bash
@@ -159,8 +156,8 @@ instrument supported for Go — and reports per-benchmark differences against th
 pull request base. The job runs on
 [`codspeed-macro`](https://codspeed.io/docs/features/macro-runners), a dedicated
 16-core ARM64 bare-metal runner, so base and head are measured on identical
-hardware. That is what makes the full suite trackable: the `codspeed` build tag
-that used to compile `small_bench_test.go` and `extended_real_bench_test.go` out
+hardware. That is what makes the full suite trackable: a `codspeed` build tag
+that used to compile the small synthetics and heavier real-world fixtures out
 of CI existed only because shared GitHub runners could not measure them
 reliably.
 

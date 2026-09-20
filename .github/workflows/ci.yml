@@ -112,7 +112,7 @@ jobs:
           node scripts/qualify-native-corpus.mjs > native-corpus-results.json
 
       - name: Capture native qualification benchmarks
-        run: node benchmark/run-handles.mjs --qualification > native-benchmarks.jsonl
+        run: node benchmark/run.mjs handles --qualification > native-benchmarks.jsonl
 
       - name: Upload qualification inputs
         if: always()
