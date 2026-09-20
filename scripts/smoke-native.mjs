@@ -102,6 +102,25 @@ async function smoke(packageName, cwd) {
   });
 }
 
+function removeStaging(path) {
+  try {
+    rmSync(path, {
+      recursive: true,
+      force: true,
+      maxRetries: isWindows ? 5 : 0,
+      retryDelay: 50,
+    });
+  } catch (error) {
+    // Windows keeps libpostcssgo.dll mapped in this process after a successful
+    // smoke, so unlink fails with EPERM. The runner temp dir is discarded.
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (isWindows && (code === 'EPERM' || code === 'EBUSY' || code === 'ENOTEMPTY')) {
+      return;
+    }
+    throw error;
+  }
+}
+
 const staging = mkdtempSync(resolve(tmpdir(), 'postcss-go-native-pack-'));
 try {
   const directories = [
@@ -131,5 +150,5 @@ try {
   await smoke(installedEntry, staging);
   console.log(`postcss-go: native package smoke passed for ${process.platform}-${process.arch}`);
 } finally {
-  rmSync(staging, { recursive: true, force: true });
+  removeStaging(staging);
 }

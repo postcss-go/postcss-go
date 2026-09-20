@@ -67,8 +67,17 @@ func TestStructuralMutationsAndFactories(t *testing.T) {
 	if err := session.Prepend(root, root); !errors.Is(err, ErrCycle) {
 		t.Fatalf("expected cycle, got %v", err)
 	}
-	if err := session.Prepend(0, rule); err == nil {
-		t.Fatal("invalid parent accepted")
+	if err := session.InsertAfter(0, rule); err == nil {
+		t.Fatal("invalid insert-after target accepted")
+	}
+	if err := session.InsertAfter(rule, 0); err == nil {
+		t.Fatal("invalid insert-after child accepted")
+	}
+	if err := session.InsertAfter(decl, root); !errors.Is(err, ErrCycle) {
+		t.Fatalf("expected cycle inserting root after decl, got %v", err)
+	}
+	if err := session.ReplaceWith(rule, 0); err == nil {
+		t.Fatal("invalid replace child accepted")
 	}
 	if err := session.ReplaceWith(0); err == nil {
 		t.Fatal("invalid replace target accepted")
