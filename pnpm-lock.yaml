@@ -147,9 +147,6 @@ importers:
       slash:
         specifier: ^5.1.0
         version: 5.1.0
-      source-map-js:
-        specifier: ^1.2.1
-        version: 1.2.1
       tinyglobby:
         specifier: ^0.2.15
         version: 0.2.17
@@ -191,6 +188,9 @@ importers:
       postcss-nested:
         specifier: 8.0.1
         version: 8.0.1(postcss@8.5.15)
+      source-map-js:
+        specifier: ^1.2.1
+        version: 1.2.1
       unplugin-dts:
         specifier: ^1.0.3
         version: 1.0.3(@rspack/core@1.7.12)(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.61.1)(typescript@6.0.3)(vite@8.1.5(@types/node@22.19.20)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(lightningcss@1.33.0)(postcss@8.5.15))
