@@ -897,3 +897,95 @@ func TestParsePendingBeforeOnDeclaration(t *testing.T) {
 		t.Fatalf("custom comment only: %v", err)
 	}
 }
+
+func TestParseFreeSemicolonsBetweenDeclarationsAndStatements(t *testing.T) {
+	// Free semicolon between declarations must belong to the second declaration's before raw,
+	// not be relocated to the end of the rule container.
+	css := "a { color: red; ; background: blue; }"
+	root, err := Parse(css, sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule := root.Children()[0].(*ast.Rule)
+	if len(rule.Children()) != 2 {
+		t.Fatalf("expected 2 declarations, got %d", len(rule.Children()))
+	}
+	decl2 := rule.Children()[1].(*ast.Declaration)
+	if before, _ := ast.LookupRawString(decl2, "before"); before != " ; " {
+		t.Errorf("expected decl2.raws.before to be %q, got %q", " ; ", before)
+	}
+	if after, _ := ast.LookupRawString(rule, "after"); after != " " {
+		t.Errorf("expected rule.raws.after to be %q, got %q", " ", after)
+	}
+
+	// Double semicolon between declarations
+	root, err = Parse("a { color: red;; background: blue }", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule = root.Children()[0].(*ast.Rule)
+	decl2 = rule.Children()[1].(*ast.Declaration)
+	if before, _ := ast.LookupRawString(decl2, "before"); before != "; " {
+		t.Errorf("expected double-semi decl2.raws.before to be %q, got %q", "; ", before)
+	}
+	if after, _ := ast.LookupRawString(rule, "after"); after != " " {
+		t.Errorf("expected double-semi rule.raws.after to be %q, got %q", " ", after)
+	}
+
+	// Semicolon between at-rules
+	root, err = Parse(`@import "a.css"; ; @import "b.css";`, sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(root.Children()) != 2 {
+		t.Fatalf("expected 2 at-rules, got %d", len(root.Children()))
+	}
+	atRule2 := root.Children()[1].(*ast.AtRule)
+	if before, _ := ast.LookupRawString(atRule2, "before"); before != " ; " {
+		t.Errorf("expected atRule2.raws.before to be %q, got %q", " ; ", before)
+	}
+
+	// Semicolon after comment before rule
+	root, err = Parse("/* c */ ; a {}", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule = root.Children()[1].(*ast.Rule)
+	if before, _ := ast.LookupRawString(rule, "before"); before != " ; " {
+		t.Errorf("expected rule.raws.before after comment to be %q, got %q", " ; ", before)
+	}
+
+	// Free semicolons at root level
+	root, err = Parse(";;;", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if after, _ := ast.LookupRawString(root, "after"); after != ";;;" {
+		t.Errorf("expected root.raws.after to be %q, got %q", ";;;", after)
+	}
+
+	// Free semicolons in empty block
+	root, err = Parse("a { ;;; }", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule = root.Children()[0].(*ast.Rule)
+	if after, _ := ast.LookupRawString(rule, "after"); after != " ;;; " {
+		t.Errorf("expected empty rule.raws.after to be %q, got %q", " ;;; ", after)
+	}
+
+	// Semicolon before comment inside block
+	root, err = Parse("a { ; /* c */ color: red; }", sourcemap.Options{})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	rule = root.Children()[0].(*ast.Rule)
+	comment := rule.Children()[0].(*ast.Comment)
+	decl := rule.Children()[1].(*ast.Declaration)
+	if before, _ := ast.LookupRawString(comment, "before"); before != " ; " {
+		t.Errorf("expected comment.raws.before to be %q, got %q", " ; ", before)
+	}
+	if before, _ := ast.LookupRawString(decl, "before"); before != " " {
+		t.Errorf("expected decl.raws.before to be %q, got %q", " ", before)
+	}
+}
