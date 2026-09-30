@@ -768,3 +768,26 @@ func TestSourceMapMetadataOptions(t *testing.T) {
 		t.Fatalf("absolute output URL must be preserved, got %q", urlPayload.File)
 	}
 }
+
+func TestStringifyFreeSemicolons(t *testing.T) {
+	tests := []string{
+		"a { color: red; ; background: blue; }",
+		"a { color: red;; background: blue }",
+		`@import "a.css"; ; @import "b.css";`,
+		"/* c */ ; a {}",
+		";;;",
+		"a { ;;; }",
+		"a{/*c*/;color:red}",
+		"a { ; /*c*/ color: red; }",
+	}
+	for _, css := range tests {
+		root, err := parser.Parse(css, sourcemap.Options{})
+		if err != nil {
+			t.Fatalf("parse %q: %v", css, err)
+		}
+		got := Stringify(root)
+		if got != css {
+			t.Errorf("roundtrip failed for %q:\nwant: %q\ngot:  %q", css, css, got)
+		}
+	}
+}

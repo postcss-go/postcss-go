@@ -46,6 +46,14 @@ func Parse(css string, opts sourcemap.Options) (*ast.Root, error) {
 			ast.SetRawBool(p.root, "semicolon", false)
 		}
 	}
+	if p.pendingBefore != "" {
+		after := p.pendingBefore
+		if existing, ok := ast.LookupRawString(p.root, "after"); ok {
+			after = existing + p.pendingBefore
+		}
+		ast.SetRawString(p.root, "after", after)
+		p.pendingBefore = ""
+	}
 	p.root.SetRange(ast.SourceRange{Start: 0, End: len(input.CSS)})
 	if p.trackSource {
 		p.root.SetSource(input.Location(input.FromOffset(0), input.FromOffset(len(input.CSS))))
@@ -80,7 +88,11 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 					ast.SetRawBool(container, "semicolon", false)
 				}
 			}
-			ast.SetRawString(container, "after", "")
+			after := p.takePendingBefore(container, "")
+			if existing, ok := ast.LookupRawString(container, "after"); ok {
+				after = existing + after
+			}
+			ast.SetRawString(container, "after", after)
 			return nil
 		}
 		var blockTrailing string
@@ -117,10 +129,10 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 					}
 				}
 			}
-			if blockTrailing != "" {
-				after := blockTrailing
+			if blockTrailing != "" || p.pendingBefore != "" {
+				after := p.takePendingBefore(container, blockTrailing)
 				if text, ok := ast.LookupRawString(container, "after"); ok {
-					after = text + blockTrailing
+					after = text + after
 				}
 				ast.SetRawString(container, "after", after)
 			}
@@ -135,6 +147,13 @@ func (p *Parser) parseInto(container ast.Container, stopOnBrace bool) error {
 	}
 	if stopOnBrace {
 		return p.syntaxError("Unclosed block: missing closing brace", p.blockStart)
+	}
+	if p.pendingBefore != "" {
+		after := p.takePendingBefore(container, "")
+		if text, ok := ast.LookupRawString(container, "after"); ok {
+			after = text + after
+		}
+		ast.SetRawString(container, "after", after)
 	}
 	return nil
 }
@@ -228,8 +247,12 @@ func (p *Parser) collectStatement(stopOnBrace bool) ([]tokenizer.Token, bool, er
 func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) error {
 	trimmed := trimSpaceTokens(tokens)
 	if len(trimmed) == 0 {
-		if spaces := tokensText(p.input, tokens); spaces != "" {
-			ast.SetRawString(container, "after", spaces)
+		if spaces := tokensText(p.input, tokens); spaces != "" || p.pendingBefore != "" {
+			after := p.takePendingBefore(container, spaces)
+			if text, ok := ast.LookupRawString(container, "after"); ok {
+				after = text + after
+			}
+			ast.SetRawString(container, "after", after)
 		}
 		return nil
 	}
@@ -318,6 +341,12 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 			node := p.makeComment(body[0])
 			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
 			ast.AppendParsed(container, node)
+			if end > 0 && tokens[end-1].Kind == ";" {
+				commentEnd := body[0].End
+				if commentEnd+1 < tokens[end-1].End+1 {
+					p.pendingBefore += p.input[commentEnd+1 : tokens[end-1].End+1]
+				}
+			}
 			return nil
 		}
 		if err := p.appendDeclaration(container, rawBody, true, tokens[len(tokens)-1].Start+1); err != nil {
@@ -343,7 +372,7 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 		}
 		if len(trimmed) == 1 && trimmed[0].Kind == "comment" {
 			node := p.makeComment(trimmed[0])
-			ast.SetRawString(node, "before", leadingSpace(p.input, tokens))
+			ast.SetRawString(node, "before", p.takePendingBefore(container, leadingSpace(p.input, tokens)))
 			ast.AppendParsed(container, node)
 			return nil
 		}
@@ -357,41 +386,32 @@ func (p *Parser) buildNode(container ast.Container, tokens []tokenizer.Token) er
 
 func (p *Parser) freeSemicolon(container ast.Container, tokens []tokenizer.Token) error {
 	children := container.Children()
-	if len(children) == 0 {
-		p.pendingBefore += tokensText(p.input, tokens)
-		return nil
+	if len(children) > 0 {
+		prev := children[len(children)-1]
+		if rule, ok := prev.(*ast.Rule); ok {
+			own := tokensText(p.input, tokens)
+			if text, ok := ast.LookupRawString(rule, "ownSemicolon"); ok {
+				ast.SetRawString(rule, "ownSemicolon", text+own)
+			} else {
+				ast.SetRawString(rule, "ownSemicolon", own)
+			}
+			// Match PostCSS freeSemicolon: line/column sit on the semicolon token,
+			// while offset is exclusive (one past the semicolon), so a trailing
+			// newline after `} ;` is not part of the rule's source end.
+			if p.trackSource && rule.Source() != nil && len(tokens) > 0 {
+				semi := tokens[len(tokens)-1]
+				end := semi.Start + 1
+				start := rule.Source().Start.Offset
+				rule.SetRange(ast.SourceRange{Start: start, End: end})
+				var loc sourcemap.Location
+				p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(semi.Start), &loc)
+				loc.End.Offset = end
+				rule.SetSource(&loc)
+			}
+			return nil
+		}
 	}
-	prev := children[len(children)-1]
-	switch node := prev.(type) {
-	case *ast.Rule:
-		own := tokensText(p.input, tokens)
-		if text, ok := ast.LookupRawString(node, "ownSemicolon"); ok {
-			ast.SetRawString(node, "ownSemicolon", text+own)
-		} else {
-			ast.SetRawString(node, "ownSemicolon", own)
-		}
-		// Match PostCSS freeSemicolon: line/column sit on the semicolon token,
-		// while offset is exclusive (one past the semicolon), so a trailing
-		// newline after `} ;` is not part of the rule's source end.
-		if p.trackSource && node.Source() != nil && len(tokens) > 0 {
-			semi := tokens[len(tokens)-1]
-			end := semi.Start + 1
-			start := node.Source().Start.Offset
-			node.SetRange(ast.SourceRange{Start: start, End: end})
-			var loc sourcemap.Location
-			p.src.FillLocation(p.src.FromOffset(start), p.src.FromOffset(semi.Start), &loc)
-			loc.End.Offset = end
-			node.SetSource(&loc)
-		}
-	case *ast.Declaration:
-		ast.SetRawBool(container, "semicolon", true)
-		text := tokensText(p.input, tokens)
-		after := text
-		if existing, ok := ast.LookupRawString(container, "after"); ok {
-			after = existing + text
-		}
-		ast.SetRawString(container, "after", after)
-	}
+	p.pendingBefore += tokensText(p.input, tokens)
 	return nil
 }
 
@@ -498,15 +518,7 @@ func (p *Parser) appendDeclaration(container ast.Container, tokens []tokenizer.T
 	if text, ok := ast.LookupRawString(decl, "before"); ok {
 		declBefore += text
 	}
-	ast.SetRawString(decl, "before", declBefore)
-	if pending := p.pendingBefore; pending != "" {
-		if text, ok := ast.LookupRawString(decl, "before"); ok {
-			ast.SetRawString(decl, "before", pending+text)
-		} else {
-			ast.SetRawString(decl, "before", pending)
-		}
-		p.pendingBefore = ""
-	}
+	ast.SetRawString(decl, "before", p.takePendingBefore(container, declBefore))
 	ast.AppendParsed(container, decl)
 	p.appendTrailingComments(container, trailing)
 	return nil
@@ -520,7 +532,7 @@ func (p *Parser) appendLeadingComments(container ast.Container, tokens []tokeniz
 			before += token.Text(p.input)
 		case "comment":
 			node := p.makeComment(token)
-			ast.SetRawString(node, "before", before)
+			ast.SetRawString(node, "before", p.takePendingBefore(container, before))
 			ast.AppendParsed(container, node)
 			before = ""
 		}
